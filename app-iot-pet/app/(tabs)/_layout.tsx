@@ -20,13 +20,13 @@ export default function TabLayout() {
         tabBarBackground: TabBarBackground,
         tabBarStyle: Platform.select({
           ios: {
-            // Remove absolute positioning to prevent floating
+            position: 'absolute',
           },
           default: {},
         }),
       }}>
       <Tabs.Screen
-        name="index"
+        name="home"
         options={{
           title: 'หน้าหลัก',
           tabBarIcon: ({ color }) => <IconSymbol size={28} name="house.fill" color={color} />,

@@ -7,4 +7,4 @@ export default function Devices() {
       <Text>Devices</Text>
     </View>
   );
-}
+} 

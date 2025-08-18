@@ -10,7 +10,7 @@ import { useColorScheme } from '@/hooks/useColorScheme';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 
 export default function TabLayout() {
-  const colorScheme = useColorScheme(); 
+  const colorScheme = useColorScheme();
 
   return (
     <Tabs
@@ -21,14 +21,13 @@ export default function TabLayout() {
         tabBarBackground: TabBarBackground,
         tabBarStyle: Platform.select({
           ios: {
-            // Use a transparent background on iOS to show the blur effect
             position: 'absolute',
           },
           default: {},
         }),
       }}>
       <Tabs.Screen
-        name="index"
+        name="home"
         options={{
           title: 'หน้าหลัก',
           tabBarIcon: ({ color }) => <IconSymbol size={28} name="house.fill" color={color} />,

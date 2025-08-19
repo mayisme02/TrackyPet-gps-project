@@ -50,7 +50,6 @@ export default function Signup() {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       <ScrollView contentContainerStyle={styles.scrollContainer}>
-        <View style={styles.registerCard}>
           <Text style={styles.title}>ลงทะเบียน</Text>
           <Text style={styles.subtitle}>
             By signing in you are agreeing our Term and privacy policy
@@ -58,7 +57,7 @@ export default function Signup() {
 
           <View style={styles.form}>
             <View style={styles.inputGroup}>
-              <Text style={styles.icon}>👤</Text>
+              <Text style={styles.icon}></Text>
               <TextInput
                 style={styles.input}
                 placeholder="Username"
@@ -68,7 +67,7 @@ export default function Signup() {
               />
             </View>
             <View style={styles.inputGroup}>
-              <Text style={styles.icon}>📞</Text>
+              <Text style={styles.icon}></Text>
               <TextInput
                 style={styles.input}
                 placeholder="Telephone Number"
@@ -78,7 +77,7 @@ export default function Signup() {
               />
             </View>
             <View style={styles.inputGroup}>
-              <Text style={styles.icon}>📧</Text>
+              <Text style={styles.icon}></Text>
               <TextInput
                 style={styles.input}
                 placeholder="Email Address"
@@ -89,7 +88,7 @@ export default function Signup() {
               />
             </View>
             <View style={styles.inputGroup}>
-              <Text style={styles.icon}>🔒</Text>
+              <Text style={styles.icon}></Text>
               <TextInput
                 style={styles.input}
                 placeholder="Create Password"
@@ -109,7 +108,6 @@ export default function Signup() {
               </Text>
             </TouchableOpacity>
           </View>
-        </View>
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -125,22 +123,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     padding: 20,
   },
-  registerCard: {
-    backgroundColor: '#fff',
-    borderRadius: 20,
-    padding: 30,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 10,
-    elevation: 5,
-  },
   title: {
     fontSize: 28,
     fontWeight: 'bold',
     textAlign: 'center',
     marginBottom: 10,
-    color: '#333',
+    color: '#7D4E34',
   },
   subtitle: {
     fontSize: 14,
@@ -154,7 +142,7 @@ const styles = StyleSheet.create({
   inputGroup: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#f8f9fa',
+    backgroundColor: '#D4D4D4',
     borderRadius: 10,
     marginBottom: 15,
     borderWidth: 1,
@@ -171,7 +159,7 @@ const styles = StyleSheet.create({
     paddingRight: 15,
   },
   btnSignup: {
-    backgroundColor: '#0a7ea4',
+    backgroundColor: '#7D4E34',
     borderRadius: 10,
     padding: 15,
     alignItems: 'center',
@@ -189,7 +177,7 @@ const styles = StyleSheet.create({
     color: '#666',
   },
   linkText: {
-    color: '#0a7ea4',
+    color: '#000000ff',
     fontWeight: '600',
   },
 });

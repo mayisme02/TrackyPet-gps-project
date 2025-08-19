@@ -113,7 +113,6 @@ return () => {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       <ScrollView contentContainerStyle={styles.scrollContainer}>
-        <View style={styles.loginCard}>
           <Text style={styles.loginTitle}>เข้าสู่ระบบ</Text>
           <View style={styles.form}>
             <TextInput
@@ -166,11 +165,9 @@ return () => {
               </Text>
             </TouchableOpacity>
           </Link>
-        </View>
       </ScrollView>
     </KeyboardAvoidingView>
   );
-
 }
 
 const styles = StyleSheet.create({

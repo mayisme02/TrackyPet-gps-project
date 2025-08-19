@@ -25,7 +25,7 @@ function isFirebaseAuthError(error: unknown): error is FirebaseAuthError {
   return typeof error === 'object' && error !== null && 'code' in error;
 }
 
-export default function ResetPasswordScreen() {
+export default function resetpasswordScreen() {
   const [email, setEmail] = useState('');
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
@@ -108,7 +108,6 @@ export default function ResetPasswordScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       <ScrollView contentContainerStyle={styles.scrollContainer}>
-        <View style={styles.resetCard}>
           <Text style={styles.title}>รีเซ็ตรหัสผ่าน</Text>
           <Text style={styles.subtitle}>
             กรอกอีเมลของคุณเพื่อรับลิงก์รีเซ็ตรหัสผ่าน
@@ -116,7 +115,7 @@ export default function ResetPasswordScreen() {
 
           <View style={styles.form}>
             <View style={styles.inputGroup}>
-              <Text style={styles.icon}>📧</Text>
+              <Text style={styles.icon}></Text>
               <TextInput
                 style={styles.input}
                 placeholder="Email Address"
@@ -151,9 +150,10 @@ export default function ResetPasswordScreen() {
           </View>
 
           <TouchableOpacity onPress={handleBackToLogin} style={styles.backButton}>
-            <Text style={styles.backLink}>← กลับไปหน้าเข้าสู่ระบบ</Text>
+            <Text>
+              กลับไปหน้า <Text style={styles.backLink}>เข้าสู่ระบบ</Text>
+            </Text>
           </TouchableOpacity>
-        </View>
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -162,22 +162,12 @@ export default function ResetPasswordScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: '#ffffffff',
   },
   scrollContainer: {
     flexGrow: 1,
     justifyContent: 'center',
     padding: 20,
-  },
-  resetCard: {
-    backgroundColor: '#fff',
-    borderRadius: 20,
-    padding: 30,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 10,
-    elevation: 5,
   },
   title: {
     fontSize: 28,
@@ -199,7 +189,7 @@ const styles = StyleSheet.create({
   inputGroup: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#f8f9fa',
+    backgroundColor: '#D4D4D4',
     borderRadius: 10,
     marginBottom: 15,
     borderWidth: 1,
@@ -239,7 +229,7 @@ const styles = StyleSheet.create({
     borderColor: '#c3e6cb',
   },
   btnReset: {
-    backgroundColor: '#0a7ea4',
+    backgroundColor: '#7D4E34',
     borderRadius: 10,
     padding: 15,
     alignItems: 'center',
@@ -260,7 +250,7 @@ const styles = StyleSheet.create({
   },
   backLink: {
     fontSize: 16,
-    color: '#0a7ea4',
+    color: '#000000ff',
     fontWeight: '600',
     textAlign: 'center',
   },

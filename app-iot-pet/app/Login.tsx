@@ -166,32 +166,11 @@ return () => {
               </Text>
             </TouchableOpacity>
           </Link>
-
-          <View style={styles.divider}>
-            <View style={styles.dividerLine} />
-            <Text style={styles.dividerText}>or connect with</Text>
-            <View style={styles.dividerLine} />
-          </View>
-
-          <TouchableOpacity
-            style={[styles.socialButton, styles.googleButton, isCooldown && styles.buttonDisabled]}
-            onPress={handleGoogleLogin}
-            disabled={isCooldown}
-          >
-            <Text style={styles.socialButtonText}>Login with Google</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.socialButton, styles.facebookButton, isCooldown && styles.buttonDisabled]}
-            onPress={handleFacebookLogin}
-            disabled={isCooldown}
-          >
-            <Text style={styles.socialButtonText}>Login with Facebook</Text>
-          </TouchableOpacity>
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
   );
+
 }
 
 const styles = StyleSheet.create({
@@ -204,16 +183,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     padding: 20,
   },
-    loginCard: {
-    backgroundColor: '#fff',
-    borderRadius: 20,
-    padding: 30,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 10,
-    elevation: 5,
-  },
+  
   backButton: {
     alignSelf: 'flex-start',
     marginBottom: 20,
@@ -299,24 +269,5 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#666',
   },
-  socialButton: {
-    borderRadius: 10,
-    padding: 15,
-    alignItems: 'center',
-    marginBottom: 10,
-    borderWidth: 1,
-  },
-  googleButton: {
-    backgroundColor: '#ffbf0eff',
-    borderColor: '#e9ecef',
-  },
-  facebookButton: {
-    backgroundColor: '#ffbf0eff',
-    borderColor: '#e9ecef',
-  },
-  socialButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
-  },
+
 });

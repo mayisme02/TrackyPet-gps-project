@@ -159,7 +159,7 @@ return () => {
             </TouchableOpacity>
           </View>
 
-          <Link href="/Register" asChild>
+          <Link href="/Regitser" asChild>
             <TouchableOpacity>
               <Text style={styles.signupText}>
                 ยังไม่มีบัญชีผู้ใช้? <Text style={styles.linkText}>Sign Up</Text>

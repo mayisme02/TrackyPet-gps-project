@@ -11,7 +11,7 @@
     "ios": {
       "supportsTablet": true,
       "config": {
-        "googleMapsApiKey":  "process.env.GOOGLE_MAPS_API_KEY"
+        "googleMapsApiKey": "process.env.GOOGLE_MAPS_API_KEY"
       }
     },
     "android": {
@@ -41,7 +41,8 @@
           "resizeMode": "contain",
           "backgroundColor": "#ffffff"
         }
-      ]
+      ],
+      "expo-font"
     ],
     "experiments": {
       "typedRoutes": true

@@ -1,18 +1,33 @@
 import React from 'react';
-import { Text } from 'react-native';
+import { Text, StyleSheet, SafeAreaView, View } from 'react-native';
 import ParallaxScrollView from '@/components/ParallaxScrollView';
+import ThaiText from '@/components/ThaiText';
 
 export default function Pets() {
+
   return (
     <>
       <ParallaxScrollView
         headerBackgroundColor={{ light: '#f2bb14', dark: '#f2bb14' }}
         headerImage={
-          <Text style={{ fontSize: 24, fontWeight: 'bold', color: '#fff' }}>
-            {/* Pet Header */}
-          </Text>
+          <SafeAreaView style={styles.headerContainer}>
+            <ThaiText style={styles.TextHeader}>สัตว์เลี้ยง</ThaiText>
+          </SafeAreaView>
         }>
       </ParallaxScrollView>
     </>
   );
 }
+const styles = StyleSheet.create({
+  headerContainer: { 
+    height: 175,              
+    justifyContent: 'center',     
+    alignItems: 'center',        
+  },
+  TextHeader: {
+    fontSize: 22, 
+    fontWeight: 'bold', 
+    color: '#fff',
+    textAlign: 'center',
+  },
+});

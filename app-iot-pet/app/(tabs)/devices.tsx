@@ -10,7 +10,7 @@ export default function Devices() {
           headerBackgroundColor={{ light: '#f2bb14', dark: '#f2bb14' }}
           headerImage={
            <SafeAreaView style={styles.headerContainer}>
-              <ThaiText style={styles.TextHeader}>อุปกรณ์</ThaiText>
+              <Text style={styles.TextHeader}>อุปกรณ์</Text>
             </SafeAreaView>
           }>
         </ParallaxScrollView>

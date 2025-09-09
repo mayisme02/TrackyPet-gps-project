@@ -10,7 +10,7 @@ export default function Profiles() {
           headerBackgroundColor={{ light: '#f2bb14', dark: '#f2bb14' }}
           headerImage={
             <SafeAreaView style={styles.headerContainer}>
-                <ThaiText style={styles.TextHeader}>บัญชีผู้ใช้</ThaiText>
+                <Text style={styles.TextHeader}>บัญชีผู้ใช้</Text>
             </SafeAreaView>
           }>
         </ParallaxScrollView>

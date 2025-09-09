@@ -11,7 +11,7 @@ export default function Pets() {
         headerBackgroundColor={{ light: '#f2bb14', dark: '#f2bb14' }}
         headerImage={
           <SafeAreaView style={styles.headerContainer}>
-            <ThaiText style={styles.TextHeader}>สัตว์เลี้ยง</ThaiText>
+            <Text style={styles.TextHeader}>สัตว์เลี้ยง</Text>
           </SafeAreaView>
         }>
       </ParallaxScrollView>

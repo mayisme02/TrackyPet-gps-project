@@ -1,7 +1,6 @@
 import React from 'react';
 import { Text, StyleSheet, SafeAreaView, View } from 'react-native';
 import ParallaxScrollView from '@/components/ParallaxScrollView';
-import ThaiText from '@/components/ThaiText';
 
 export default function Pets() {
 

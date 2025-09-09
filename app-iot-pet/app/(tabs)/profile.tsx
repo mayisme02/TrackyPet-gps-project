@@ -1,7 +1,6 @@
 import React from 'react';
 import { Text, StyleSheet, SafeAreaView } from 'react-native';
 import ParallaxScrollView from '@/components/ParallaxScrollView';
-import ThaiText from '@/components/ThaiText';
 
 export default function Profiles() {
   return (
@@ -14,6 +13,7 @@ export default function Profiles() {
             </SafeAreaView>
           }>
         </ParallaxScrollView>
+        
     </>
   );
 } 

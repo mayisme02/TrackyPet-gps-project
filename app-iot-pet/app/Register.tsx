@@ -29,7 +29,7 @@ export default function Signup() {
       });
 
       Alert.alert('สำเร็จ', 'ลงทะเบียนสำเร็จ! กำลังนำคุณไปยังหน้าแท็บ');
-      router.replace('./(tabs)');
+      router.replace('/(tabs)/home');
     } catch (error: any) {
       console.error('Registration error:', error);
       if (error.code === 'auth/email-already-in-use') {

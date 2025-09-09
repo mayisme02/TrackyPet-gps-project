@@ -1,22 +1,19 @@
-import { Image } from 'expo-image';
+import { Text } from 'react-native';
 import { StyleSheet } from 'react-native';
-
-// import { HelloWave } from '@/components/HelloWave';
 import ParallaxScrollView from '@/components/ParallaxScrollView';
-// import { ThemedText } from '@/components/ThemedText';
-// import { ThemedView } from '@/components/ThemedView';
 
 export default function HomeScreen() {
   return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: '#A1CEDC', dark: '#f2bb14' }}
-      headerImage={
-        <Image
-          source={require('@/assets/images/partial-react-logo.png')}
-          style={styles.reactLogo}
-        />
-      }>
-    </ParallaxScrollView>
+    <>
+        <ParallaxScrollView
+          headerBackgroundColor={{ light: '#f2bb14', dark: '#f2bb14' }}
+          headerImage={
+            <Text style={{ fontSize: 24, fontWeight: 'bold', color: '#fff' }}>
+                {/* Home Header */}
+            </Text>
+          }>
+        </ParallaxScrollView>
+      </>
   );
 }
 

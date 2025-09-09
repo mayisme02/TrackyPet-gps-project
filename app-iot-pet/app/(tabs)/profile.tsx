@@ -1,10 +1,18 @@
 import React from 'react';
-import { View, Text } from 'react-native';
+import { Text } from 'react-native';
+import ParallaxScrollView from '@/components/ParallaxScrollView';
 
 export default function Profiles() {
   return (
-    <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-      <Text>Profile</Text>
-    </View>
+    <>
+        <ParallaxScrollView
+          headerBackgroundColor={{ light: '#f2bb14', dark: '#f2bb14' }}
+          headerImage={
+            <Text style={{ fontSize: 24, fontWeight: 'bold', color: '#fff' }}>
+                {/* Profile Header */}
+            </Text>
+          }>
+        </ParallaxScrollView>
+    </>
   );
 } 

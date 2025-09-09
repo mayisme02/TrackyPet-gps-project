@@ -85,24 +85,6 @@ return () => {
     router.replace('/(tabs)/home');
   };
 
-  const handleGoogleLogin = async () => {
-    if (isCooldown) return;
-    Alert.alert(
-      'Google Login',
-      'Google Sign-In will be implemented with Firebase Auth',
-      [{ text: 'OK', onPress: () => router.replace('/(tabs)/home') }]
-    );
-  };
-
-  const handleFacebookLogin = async () => {
-    if (isCooldown) return;
-    Alert.alert(
-      'Facebook Login',
-      'Facebook Sign-In will be implemented with Firebase Auth',
-      [{ text: 'OK', onPress: () => router.replace('/(tabs)/home') }]
-    );
-  };
-
   const handleForgotPassword = () => {
     router.push('./resetpassword');
   };

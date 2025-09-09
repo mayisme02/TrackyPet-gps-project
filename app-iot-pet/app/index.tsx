@@ -21,7 +21,6 @@ export default function WelcomeScreen() {
         While You Sit And Stay - We'll Go Out And Play
       </Text>
       
-      {/* ใช้ TouchableOpacity แทน Link */}
       <TouchableOpacity style={styles.btn} onPress={handleGetStarted}>
         <Text style={styles.btnText}>GET STARTED</Text>
       </TouchableOpacity>

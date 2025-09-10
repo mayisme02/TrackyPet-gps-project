@@ -1,6 +1,7 @@
 import React from 'react';
 import { Text, StyleSheet, SafeAreaView, View } from 'react-native';
 import ParallaxScrollView from '@/components/ParallaxScrollView';
+
 export default function Devices() {
   return (
     <>
@@ -12,7 +13,7 @@ export default function Devices() {
             </SafeAreaView>
           }>
         </ParallaxScrollView>
-      </>
+    </>
   );
 } 
 

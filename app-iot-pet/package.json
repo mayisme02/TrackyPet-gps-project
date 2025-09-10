@@ -48,7 +48,9 @@
     "react-native-screens": "~4.11.1",
     "react-native-web": "~0.20.0",
     "react-native-webview": "13.13.5",
-    "react-router-dom": "^7.8.1"
+    "react-router-dom": "^7.8.1",
+    "expo-image-picker": "~16.1.4",
+    "expo-file-system": "~18.1.11"
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",

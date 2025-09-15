@@ -1,4 +1,4 @@
-import { Tabs } from 'expo-router';
+import { Tabs,Stack } from 'expo-router';
 import React from 'react';
 import { Platform } from 'react-native';
 import FontAwesome6 from '@expo/vector-icons/FontAwesome6';
@@ -8,7 +8,6 @@ import TabBarBackground from '@/components/ui/TabBarBackground';
 import { Colors } from '@/constants/Colors';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
-
 export default function TabLayout() {
   const colorScheme = useColorScheme();
 
@@ -61,6 +60,7 @@ export default function TabLayout() {
           tabBarIcon: ({ color }) => <FontAwesome6 name="user-pen" size={24} color={color} />,
         }}
       />
+      <Tabs.Screen name="Editprofile" options={{ href: null }} />  {/*  ซ่อนจากแท็บ */} 
     </Tabs>
   );
 }

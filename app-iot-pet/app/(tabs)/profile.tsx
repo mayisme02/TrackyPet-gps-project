@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, Image, TouchableOpacity, SafeAreaView } from 'r
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 
+
 export default function Profile() {
   return (
     <SafeAreaView style={styles.container}>
@@ -12,7 +13,7 @@ export default function Profile() {
 
       {/* Profile Image */}
       <Image
-        source={{ uri: 'https://i.pravatar.cc/300' }} // แทนที่ด้วยรูปจริง
+        source={require('../../assets/images/nongtennalugkub.jpg')}
         style={styles.profileImage}
       />
 
@@ -23,12 +24,12 @@ export default function Profile() {
           <Text style={{ marginLeft: 4 }}>แก้ไข</Text>
         </TouchableOpacity>
 
-        <Text style={styles.userLabel}>USER</Text>
+        <Text style={styles.userLabel}>Tenlee</Text>
 
         {/* Email */}
         <View style={styles.row}>
           <MaterialIcons name="email" size={20} color="black" />
-          <Text style={styles.infoText}> iamauser@gmail.com</Text>
+          <Text style={styles.infoText}> jaetenisluv@gmail.com</Text>
         </View>
 
         {/* Phone */}

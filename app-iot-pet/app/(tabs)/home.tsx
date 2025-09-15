@@ -1,40 +1,38 @@
 import { Image } from 'expo-image';
 import { StyleSheet } from 'react-native';
+import { View, Text, SafeAreaView, TouchableOpacity } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { router } from 'expo-router';
 
-// import { HelloWave } from '@/components/HelloWave';
-import ParallaxScrollView from '@/components/ParallaxScrollView';
-// import { ThemedText } from '@/components/ThemedText';
-// import { ThemedView } from '@/components/ThemedView';
+const noti = () => {
+  router.push('./notification');
+}
 
 export default function HomeScreen() {
-  return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: '#A1CEDC', dark: '#f2bb14' }}
-      headerImage={
-        <Image
-          source={require('@/assets/images/partial-react-logo.png')}
-          style={styles.reactLogo}
-        />
-      }>
-    </ParallaxScrollView>
-  );
+  return(
+ <SafeAreaView style={styles.container}>
+      <View style={styles.header}>
+        <Text style={styles.headerText}>HELLO !</Text>
+        <TouchableOpacity style={styles.noti} onPress={noti}>
+                  <Ionicons name="notifications" size={24} color="#fff" />
+                </TouchableOpacity>
+      </View>
+    </SafeAreaView>);
 }
 
 const styles = StyleSheet.create({
-  titleContainer: {
-    flexDirection: 'row',
+  container: { flex: 1, backgroundColor: '#fff' },
+  header: {
+    backgroundColor: '#FFB800',
+    height: 100,
+    justifyContent: 'center',
     alignItems: 'center',
-    gap: 8,
   },
-  stepContainer: {
-    gap: 8,
-    marginBottom: 8,
-  },
-  reactLogo: {
-    height: 178,
-    width: 290,
-    bottom: 0,
-    left: 0,
+  noti:{
     position: 'absolute',
+    right: 16,
+    top: 50,
   },
-}); 
+  headerText: { fontSize: 18, fontWeight: 'bold', color: 'white' ,top: 50,position: 'absolute', left: 16},
+  body: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+});

@@ -61,6 +61,7 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen name="Editprofile" options={{ href: null }} />  {/*  ซ่อนจากแท็บ */} 
+      <Tabs.Screen name="notification" options={{ href: null }} /> 
     </Tabs>
   );
 }

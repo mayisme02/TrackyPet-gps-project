@@ -39,7 +39,7 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="map"
+        name="map2"
         options={{
           title: 'แผนที่',
           tabBarIcon: ({ color }) => <FontAwesome6 name="map-pin" size={24} color={color} />,
@@ -61,6 +61,7 @@ export default function TabLayout() {
       />
       <Tabs.Screen name="Editprofile" options={{ href: null }} />  {/*  ซ่อนจากแท็บ */} 
       <Tabs.Screen name="notification" options={{ href: null }} /> 
+      <Tabs.Screen name="map" options={{ href: null }} />
     </Tabs>
   );
 }

@@ -1,195 +1,156 @@
-import React, { useState } from 'react';
-import {View,Text,TextInput,TouchableOpacity,StyleSheet,Alert,KeyboardAvoidingView,Platform,ScrollView,
-} from 'react-native';
-import { router } from 'expo-router';
-import { auth, db } from '../firebase/firebase';
-import { doc, setDoc } from 'firebase/firestore';
-import { createUserWithEmailAndPassword } from 'firebase/auth';
+import React, { useState } from "react";
+import {
+  View,
+  Text,
+  Platform,
+  KeyboardAvoidingView,
+  TextInput,
+  TouchableOpacity,
+  ActivityIndicator,
+  Alert,
+} from "react-native";
+import styles from "../assets/styles/signup.styles";
+import { Ionicons } from "@expo/vector-icons";
+import { COLOR } from "../assets/constants/color"
+import { useRouter } from "expo-router";
+import { useAuthStore } from "../store/authStore";
+import { JSX } from "react/jsx-runtime";
 
-export default function Signup() {
-  const [username, setUsername] = useState('');
-  const [telephone, setTelephone] = useState('');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+type RegisterResult = {
+  success: boolean;
+  error?: string;
+};
 
-  const handleSubmit = async () => {
-    if (password.length < 6) {
-      Alert.alert('ข้อผิดพลาด', 'รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร');
-      return;
-    }
+export default function Register(): JSX.Element {
+  const [username, setUsername] = useState<string>("");
+  const [email, setEmail] = useState<string>("");
+  const [password, setPassword] = useState<string>("");
+  const [showPassword, setShowPassword] = useState<boolean>(false);
 
-    try {
-      const userCredential = await createUserWithEmailAndPassword(auth, email.trim(), password);
-      const user = userCredential.user;
-
-      await setDoc(doc(db, 'users', user.uid), {
-        username,
-        telephone,
-        email,
-      });
-
-      Alert.alert('สำเร็จ', 'ลงทะเบียนสำเร็จ! กำลังนำคุณไปยังหน้าแท็บ');
-      router.replace('/(tabs)/home');
-    } catch (error: any) {
-      console.error('Registration error:', error);
-      if (error.code === 'auth/email-already-in-use') {
-        Alert.alert('ข้อผิดพลาด', 'อีเมลนี้ถูกใช้งานแล้ว กรุณาใช้อีเมลอื่น');
-      } else {
-        Alert.alert('ข้อผิดพลาด', 'เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง');
-      }
-    }
+  const { user, isLoading, register, token } = useAuthStore() as {
+    user: { username: string; email: string; profileImage?: string } | null;
+    isLoading: boolean;
+    token: string | null;
+    register: (username: string, email: string, password: string) => Promise<RegisterResult>;
   };
 
-  const handleLoginLink = () => {
-    router.replace('./Login'); 
+  const router = useRouter();
+
+  const handleSignUp = async () => {
+    const result = await register(username, email, password);
+
+    if (!result.success) {
+      Alert.alert("Error", result.error || "Registration failed");
+    }
   };
 
   return (
     <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      style={{ flex: 1 }}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
     >
-      <ScrollView contentContainerStyle={styles.scrollContainer}>
-        <View style={styles.registerCard}>
-          <Text style={styles.title}>ลงทะเบียน</Text>
-          <Text style={styles.subtitle}>
-            By signing in you are agreeing our Term and privacy policy
-          </Text>
+      <View style={styles.container}>
+        <View style={styles.card}>
+          {/* HEADER */}
+          <View style={styles.header}>
+            <Text style={styles.title}>BookWorm🐛</Text>
+            <Text style={styles.subtitle}>Share your favorite reads</Text>
+          </View>
 
-          <View style={styles.form}>
+          <View style={styles.formContainer}>
+            {/* USERNAME INPUT */}
             <View style={styles.inputGroup}>
-              <Text style={styles.icon}>👤</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="Username"
-                value={username}
-                onChangeText={setUsername}
-                autoCapitalize="none"
-              />
-            </View>
-            <View style={styles.inputGroup}>
-              <Text style={styles.icon}>📞</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="Telephone Number"
-                value={telephone}
-                onChangeText={setTelephone}
-                keyboardType="phone-pad"
-              />
-            </View>
-            <View style={styles.inputGroup}>
-              <Text style={styles.icon}>📧</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="Email Address"
-                value={email}
-                onChangeText={setEmail}
-                keyboardType="email-address"
-                autoCapitalize="none"
-              />
-            </View>
-            <View style={styles.inputGroup}>
-              <Text style={styles.icon}>🔒</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="Create Password"
-                value={password}
-                onChangeText={setPassword}
-                secureTextEntry
-              />
+              <Text style={styles.label}>Username</Text>
+              <View style={styles.inputContainer}>
+                <Ionicons
+                  name="person-outline"
+                  size={20}
+                  color={COLOR.primary}
+                  style={styles.inputIcon}
+                />
+                <TextInput
+                  style={styles.input}
+                  placeholder="johndoe"
+                  placeholderTextColor={COLOR.placeholderText}
+                  value={username}
+                  onChangeText={setUsername}
+                  autoCapitalize="none"
+                />
+              </View>
             </View>
 
-            <TouchableOpacity style={styles.btnSignup} onPress={handleSubmit}>
-              <Text style={styles.btnText}>SIGN UP</Text>
+            {/* EMAIL INPUT */}
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}>Email</Text>
+              <View style={styles.inputContainer}>
+                <Ionicons
+                  name="mail-outline"
+                  size={20}
+                  color={COLOR.primary}
+                  style={styles.inputIcon}
+                />
+                <TextInput
+                  style={styles.input}
+                  placeholder="johndoe@gmail.com"
+                  value={email}
+                  placeholderTextColor={COLOR.placeholderText}
+                  onChangeText={setEmail}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                />
+              </View>
+            </View>
+
+            {/* PASSWORD INPUT */}
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}>Password</Text>
+              <View style={styles.inputContainer}>
+                <Ionicons
+                  name="lock-closed-outline"
+                  size={20}
+                  color={COLOR.primary}
+                  style={styles.inputIcon}
+                />
+                <TextInput
+                  style={styles.input}
+                  placeholder="******"
+                  placeholderTextColor={COLOR.placeholderText}
+                  value={password}
+                  onChangeText={setPassword}
+                  secureTextEntry={!showPassword}
+                />
+                <TouchableOpacity
+                  onPress={() => setShowPassword(!showPassword)}
+                  style={styles.eyeIcon}
+                >
+                  <Ionicons
+                    name={showPassword ? "eye-outline" : "eye-off-outline"}
+                    size={20}
+                    color={COLOR.primary}
+                  />
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {/* SIGNUP BUTTON */}
+            <TouchableOpacity style={styles.button} onPress={handleSignUp} disabled={isLoading}>
+              {isLoading ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.buttonText}>Sign Up</Text>
+              )}
             </TouchableOpacity>
 
-            <TouchableOpacity onPress={handleLoginLink}>
-              <Text style={styles.loginLink}>
-                มีบัญชีผู้ใช้แล้ว? <Text style={styles.linkText}>Login</Text>
-              </Text>
-            </TouchableOpacity>
+            {/* FOOTER */}
+            <View style={styles.footer}>
+              <Text style={styles.footerText}>Already have an account?</Text>
+              <TouchableOpacity onPress={() => router.back()}>
+                <Text style={styles.link}>Login</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
-      </ScrollView>
+      </View>
     </KeyboardAvoidingView>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f5f5f5',
-  },
-  scrollContainer: {
-    flexGrow: 1,
-    justifyContent: 'center',
-    padding: 20,
-  },
-  registerCard: {
-    backgroundColor: '#fff',
-    borderRadius: 20,
-    padding: 30,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 10,
-    elevation: 5,
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    textAlign: 'center',
-    marginBottom: 10,
-    color: '#333',
-  },
-  subtitle: {
-    fontSize: 14,
-    color: '#666',
-    textAlign: 'center',
-    marginBottom: 20,
-  },
-  form: {
-    marginBottom: 20,
-  },
-  inputGroup: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#f8f9fa',
-    borderRadius: 10,
-    marginBottom: 15,
-    borderWidth: 1,
-    borderColor: '#e9ecef',
-  },
-  icon: {
-    fontSize: 20,
-    padding: 15,
-  },
-  input: {
-    flex: 1,
-    fontSize: 16,
-    paddingVertical: 15,
-    paddingRight: 15,
-  },
-  btnSignup: {
-    backgroundColor: '#0a7ea4',
-    borderRadius: 10,
-    padding: 15,
-    alignItems: 'center',
-    marginTop: 10,
-  },
-  btnText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  loginLink: {
-    textAlign: 'center',
-    marginTop: 15,
-    fontSize: 14,
-    color: '#666',
-  },
-  linkText: {
-    color: '#0a7ea4',
-    fontWeight: '600',
-  },
-});

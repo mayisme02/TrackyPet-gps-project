@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { View,Text,TextInput,TouchableOpacity, StyleSheet, Alert, KeyboardAvoidingView, Platform, ScrollView, ActivityIndicator} from 'react-native';
 import { Link, router } from 'expo-router';
 import { signInWithEmailAndPassword, onAuthStateChanged } from 'firebase/auth';
-import { auth } from '../firebase/firebase';
+import { auth,db } from '../firebase/firebase';
+import { doc, getDoc } from "firebase/firestore";
 
 export default function LoginScreen() {
   const [email, setEmail] = useState('');
@@ -13,7 +14,6 @@ export default function LoginScreen() {
   const [cooldownTime, setCooldownTime] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
 
-  // Cooldown timer for too many requests
   useEffect(() => {
     let timer: number;
 if (isCooldown && cooldownTime > 0) {
@@ -41,8 +41,43 @@ return () => {
       setErrorMessage('กรุณาใส่รหัสผ่าน');
       return;
     }
+    
 
     setIsLoading(true);
+    try {
+    const userCred = await signInWithEmailAndPassword(auth, email.trim(), password);
+    const user = userCred.user;
+
+    // ดึงข้อมูลจาก Firestore
+    const snap = await getDoc(doc(db, "users", user.uid));
+    if (snap.exists()) {
+      const profile = snap.data();
+
+      // ส่งข้อมูลไป Profile
+      router.replace({
+        pathname: "/(tabs)/profile",
+        params: {
+          username: profile.username,
+          email: profile.email,
+          telephone: profile.telephone,
+          avatarUrl: profile.avatarUrl ?? "",
+        },
+      });
+    } else {
+      Alert.alert("ไม่พบข้อมูลผู้ใช้ในฐานข้อมูล");
+    }
+  } catch (error: any) {
+    console.error("Login error:", error);
+    if (error.code === "auth/wrong-password") {
+      setErrorMessage("รหัสผ่านไม่ถูกต้อง");
+    } else if (error.code === "auth/user-not-found") {
+      setErrorMessage("ไม่พบบัญชีผู้ใช้นี้");
+    } else {
+      setErrorMessage("เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง");
+    }
+  } finally {
+    setIsLoading(false);
+  }
     try {
       await signInWithEmailAndPassword(auth, email.trim(), password);
       setErrorMessage('');
@@ -74,27 +109,11 @@ return () => {
     router.replace('/(tabs)/home');
   };
 
-  const handleGoogleLogin = async () => {
-    if (isCooldown) return;
-    Alert.alert(
-      'Google Login',
-      'Google Sign-In will be implemented with Firebase Auth',
-      [{ text: 'OK', onPress: () => router.replace('/(tabs)/home') }]
-    );
-  };
-
-  const handleFacebookLogin = async () => {
-    if (isCooldown) return;
-    Alert.alert(
-      'Facebook Login',
-      'Facebook Sign-In will be implemented with Firebase Auth',
-      [{ text: 'OK', onPress: () => router.replace('/(tabs)/home') }]
-    );
-  };
-
   const handleForgotPassword = () => {
     router.push('./resetpassword');
   };
+
+  
 
   return (
     <KeyboardAvoidingView

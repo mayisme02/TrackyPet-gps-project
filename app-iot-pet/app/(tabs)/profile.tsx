@@ -1,8 +1,3 @@
-<<<<<<< HEAD
-import React from 'react';
-import { Text, StyleSheet, SafeAreaView } from 'react-native';
-import ParallaxScrollView from '@/components/ParallaxScrollView';
-=======
 import React, { useEffect, useState } from "react";
 import { View, Text, StyleSheet, Image, TouchableOpacity, SafeAreaView, ActivityIndicator } from "react-native";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
@@ -59,36 +54,8 @@ export default function Profile() {
   const mail = profile?.email ?? email ?? "-";
   const phone = profile?.telephone ?? telephone ?? "-";
   const avatar = profile?.avatarUrl ?? avatarUrl ?? "";
->>>>>>> origin
 
   return (
-<<<<<<< HEAD
-    <>
-        <ParallaxScrollView
-          headerBackgroundColor={{ light: '#f2bb14', dark: '#f2bb14' }}
-          headerImage={
-            <SafeAreaView style={styles.headerContainer}>
-                <Text style={styles.TextHeader}>บัญชีผู้ใช้</Text>
-            </SafeAreaView>
-          }>
-        </ParallaxScrollView>
-        
-    </>
-  );
-} 
-const styles = StyleSheet.create({
-  headerContainer: { 
-    height: 175,              
-    justifyContent: 'center',     
-    alignItems: 'center',        
-  },
-  TextHeader: {
-    fontSize: 22, 
-    fontWeight: 'bold', 
-    color: '#fff',
-    textAlign: 'center',
-  },
-=======
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.headerText}>บัญชีผู้ใช้</Text>
@@ -174,5 +141,4 @@ imagePlaceholder: {
   row: { flexDirection: "row", alignItems: "center", marginVertical: 5 },
   infoText: { fontSize: 16 },
   logoutBtn: { flexDirection: "row", marginTop: 15, alignItems: "center" },
->>>>>>> origin
 });

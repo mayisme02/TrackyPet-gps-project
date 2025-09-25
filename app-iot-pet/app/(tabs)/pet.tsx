@@ -34,7 +34,7 @@ export default function Pets() {
 
         <TouchableOpacity 
             style={styles.addButton} 
-            onPress={() => router.push('/AddPet')}>
+            onPress={() => router.push('/')}>
             <Text style={styles.addButtonText}>เพิ่ม</Text>
         </TouchableOpacity>
 

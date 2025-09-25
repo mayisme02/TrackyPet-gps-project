@@ -1,23 +1,6 @@
 import { Text } from 'react-native';
 import { StyleSheet } from 'react-native';
-<<<<<<< HEAD
-import ParallaxScrollView from '@/components/ParallaxScrollView';
-
-export default function HomeScreen() {
-  return (
-    <>
-        <ParallaxScrollView
-          headerBackgroundColor={{ light: '#f2bb14', dark: '#f2bb14' }}
-          headerImage={
-            <Text style={{ fontSize: 24, fontWeight: 'bold', color: '#fff' }}>
-                {/* Home Header */}
-            </Text>
-          }>
-        </ParallaxScrollView>
-      </>
-  );
-=======
-import { View, Text, SafeAreaView, TouchableOpacity } from 'react-native';
+import { View, SafeAreaView, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 
@@ -35,7 +18,6 @@ export default function HomeScreen() {
                 </TouchableOpacity>
       </View>
     </SafeAreaView>);
->>>>>>> origin
 }
 
 const styles = StyleSheet.create({

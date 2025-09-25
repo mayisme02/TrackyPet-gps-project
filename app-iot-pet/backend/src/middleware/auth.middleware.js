@@ -1,7 +1,7 @@
 import jwt from "jsonwebtoken";
 import User from "../models/User";
 
-const response = await fetch(`http://localhost:3000/api/books`,{
+const response = await fetch(`http://localhost:3001/api/pets`,{
     method: "POST",
     body: JSON.stringify({
         title,

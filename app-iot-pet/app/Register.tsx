@@ -53,8 +53,8 @@ export default function Register(): JSX.Element {
         <View style={styles.card}>
           {/* HEADER */}
           <View style={styles.header}>
-            <Text style={styles.title}>BookWorm🐛</Text>
-            <Text style={styles.subtitle}>Share your favorite reads</Text>
+            <Text style={styles.title}>Pet Tracker</Text>
+            <Text style={styles.subtitle}>ตามหาสัตว์เลี้ยงของคุณ</Text>
           </View>
 
           <View style={styles.formContainer}>

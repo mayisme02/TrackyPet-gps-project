@@ -307,8 +307,8 @@ export default function Map2() {
           thumbTintColor="#b87300"
         />
         <View style={{ flexDirection: "row", justifyContent: "space-between", width: "100%" }}>
-          <Text>5M</Text>
-          <Text>500KM</Text>
+          <Text>5 ม.</Text>
+          <Text>500 กม.</Text>
 
         </View>
 

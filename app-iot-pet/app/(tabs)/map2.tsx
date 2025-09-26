@@ -11,6 +11,10 @@ import { ref as dbRef, onValue } from "firebase/database";
 const DEVICE_ID = 'DEVICE-01';
 const PAW_ICON = require('../../assets/images/pow.png');
 const HOME_ICON = require('../../assets/images/home.png');
+const MIN_RADIUS_KM = 0.005;   // 5 เมตร
+const MAX_RADIUS_KM = 500;     // 500 กม.
+const STEP_RADIUS_KM = 0.005;  // ปรับครั้งละ 5 เมตร
+const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
 
 type Latest =
   | {
@@ -46,7 +50,7 @@ export default function Map2() {
 
   // — วงกลม (ศูนย์กลาง + รัศมี)
   const [geofenceCenter, setGeofenceCenter] = useState<{ latitude: number; longitude: number } | null>(null);
-  const [radiusKm, setRadiusKm] = useState<number>(1); // เริ่มที่ 1 กม.
+  const [radiusKm, setRadiusKm] = useState<number>(0.02); // เริ่มที่ 0.02 กม. (20 เมตร)
 
   const [modalVisible, setModalVisible] = useState(false);
   const [pendingCoord, setPendingCoord] = useState<{ latitude: number; longitude: number } | null>(null);
@@ -264,14 +268,38 @@ export default function Map2() {
       <View style={[styles.bottomPanel, { bottom: insets.bottom + 16 }]}>
         <Text style={styles.panelTitle}>กำหนดพื้นที่ให้สัตว์เลี้ยง</Text>
         <Text style={{ marginTop: 4 }}>
-          รัศมี:{" "}
-          {radiusKm >= 1 ? `${radiusKm.toFixed(1)} กม.` : `${Math.round(radiusKm * 1000)} ม.`}
+          รัศมี: {radiusKm >= 1 ? `${radiusKm.toFixed(1)} กม.` : `${Math.round(radiusKm * 1000)} ม.`}
         </Text>
+
+        {/* ปุ่มปรับรัศมีแบบ − / + */}
+    <View style={styles.radiusRow}>
+      <TouchableOpacity
+        style={[styles.radiusBtn, styles.radiusBtnMinus]}
+        onPress={() => setRadiusKm(prev => clamp(parseFloat((prev - STEP_RADIUS_KM).toFixed(3)), MIN_RADIUS_KM, MAX_RADIUS_KM))}
+        onLongPress={() => setRadiusKm(prev => clamp(parseFloat((prev - STEP_RADIUS_KM * 10).toFixed(3)), MIN_RADIUS_KM, MAX_RADIUS_KM))}
+        delayLongPress={250}
+      >
+        <Text style={styles.radiusBtnText}>−</Text>
+      </TouchableOpacity>
+
+      <Text style={styles.radiusValue}>
+        {radiusKm >= 1 ? `${radiusKm.toFixed(2)} กม.` : `${Math.round(radiusKm * 1000)} ม.`}
+      </Text>
+
+      <TouchableOpacity
+        style={[styles.radiusBtn, styles.radiusBtnPlus]}
+        onPress={() => setRadiusKm(prev => clamp(parseFloat((prev + STEP_RADIUS_KM).toFixed(3)), MIN_RADIUS_KM, MAX_RADIUS_KM))}
+        onLongPress={() => setRadiusKm(prev => clamp(parseFloat((prev + STEP_RADIUS_KM * 10).toFixed(3)), MIN_RADIUS_KM, MAX_RADIUS_KM))}
+        delayLongPress={250}
+      >
+        <Text style={styles.radiusBtnText}>+</Text>
+      </TouchableOpacity>
+    </View>
         <Slider
-          style={{ width: "100%", marginTop: 6 }}
-          minimumValue={0.1}  // 100 เมตร
-          maximumValue={500}  // 500 กม.
-          step={0.1}
+        style={{ width: "100%", marginTop: 6 }}
+          minimumValue={MIN_RADIUS_KM}
+           maximumValue={MAX_RADIUS_KM}
+           step={STEP_RADIUS_KM}
           value={radiusKm}
           onValueChange={setRadiusKm}
           minimumTrackTintColor="#f2bb14"
@@ -279,8 +307,9 @@ export default function Map2() {
           thumbTintColor="#b87300"
         />
         <View style={{ flexDirection: "row", justifyContent: "space-between", width: "100%" }}>
-          <Text>0.1KM</Text>
+          <Text>5M</Text>
           <Text>500KM</Text>
+
         </View>
 
         <View style={styles.panelButtons}>
@@ -360,6 +389,26 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     shadowOffset: { width: 0, height: 4 },
   },
+  radiusRow: {
+    marginTop: 10,
+    width: "100%",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  radiusBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    elevation: 3,
+  },
+  radiusBtnMinus: { backgroundColor: "#e0e0e0" },
+  radiusBtnPlus:  { backgroundColor: "#f2bb14" },
+  radiusBtnText:  { fontSize: 24, fontWeight: "700", color: "#222" },
+  radiusValue:    { fontSize: 16, fontWeight: "700" },
   searchInput: {
     flex: 1,
     paddingHorizontal: 16,

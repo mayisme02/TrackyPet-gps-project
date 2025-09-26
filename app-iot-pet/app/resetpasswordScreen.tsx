@@ -1,26 +1,13 @@
 import React, { useState } from 'react';
-import {
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  StyleSheet,
-  Alert,
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
-  ActivityIndicator,
-} from 'react-native';
+import {View,Text,TextInput,TouchableOpacity,StyleSheet,Alert,KeyboardAvoidingView,Platform,ScrollView,ActivityIndicator,} from 'react-native';
 import { router } from 'expo-router';
 import { sendPasswordResetEmail } from 'firebase/auth';
 import { auth } from '../firebase/firebase';
 
-// Type definition สำหรับ Firebase Auth Error
 interface FirebaseAuthError extends Error {
   code: string;
 }
 
-// Type guard function เพื่อตรวจสอบว่าเป็น Firebase Auth Error หรือไม่
 function isFirebaseAuthError(error: unknown): error is FirebaseAuthError {
   return typeof error === 'object' && error !== null && 'code' in error;
 }
@@ -40,7 +27,6 @@ export default function resetpasswordScreen() {
       return;
     }
 
-    // ตรวจสอบรูปแบบอีเมล
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email.trim())) {
       setError('รูปแบบอีเมลไม่ถูกต้อง');
@@ -54,7 +40,6 @@ export default function resetpasswordScreen() {
       setMessage('ส่งลิงก์รีเซ็ตรหัสผ่านไปที่อีเมลแล้ว');
       setEmail('');
       
-      // แสดง Alert แทน message เพื่อให้เด่นชัดขึ้น
       Alert.alert(
         'สำเร็จ',
         'ส่งลิงก์รีเซ็ตรหัสผ่านไปที่อีเมลแล้ว กรุณาตรวจสอบอีเมลของคุณ',
@@ -70,7 +55,6 @@ export default function resetpasswordScreen() {
       
       let errorMessage = 'เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง';
       
-      // ใช้ type guard function ในการตรวจสอบ
       if (isFirebaseAuthError(err)) {
         switch (err.code) {
           case 'auth/user-not-found':

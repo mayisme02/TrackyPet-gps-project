@@ -10,6 +10,7 @@ import { ref as dbRef, onValue } from "firebase/database";
 
 const DEVICE_ID = 'DEVICE-01';
 const PAW_ICON = require('../../assets/images/pow.png');
+const HOME_ICON = require('../../assets/images/home.png');
 
 type Latest =
   | {
@@ -52,18 +53,6 @@ export default function Map2() {
   const [searchText, setSearchText] = useState("");
   const GOOGLE_API_KEY = "AIzaSyCSFB11ZL46SmsP15p9MSVnu6KkUhZPN40";
 
-  const toThaiTime = (utc?: string) => {
-    try {
-      if (!utc) return "-";
-      return new Date(utc).toLocaleString("th-TH", { timeZone: "Asia/Bangkok" }) || "-";
-    } catch {
-      if (!utc) return "-";
-      const d = new Date(utc);
-      d.setMinutes(d.getMinutes() + 7 * 60);
-      return `${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear() + 543} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}:${String(d.getSeconds()).padStart(2, "0")}`;
-    }
-  };
-
   const moveCamera = (lat: number, lng: number, zoom = zoomLevel) => {
     const newRegion: Region = {
       ...region,
@@ -104,7 +93,7 @@ export default function Map2() {
       if (v && typeof v.lat === "number" && typeof v.lng === "number") {
         const p = { latitude: v.lat, longitude: v.lng };
         setDevicePos(p);
-        setLatestThaiTime(v.th || toThaiTime(v.utc));
+        setLatestThaiTime(v.th || "-");
 
         if (followDevice) moveCamera(p.latitude, p.longitude);
       }
@@ -207,7 +196,7 @@ export default function Map2() {
               fillColor={inGeofence === false ? "rgba(220,0,0,0.15)" : "rgba(0,122,255,0.15)"}
             />
             {/* หมุดhome*/}
-            <Marker coordinate={geofenceCenter} pinColor="#d00" />
+            <Marker key="home" coordinate={geofenceCenter} image={HOME_ICON} anchor={{ x: 0.5, y: 1 }} />
           </>
         )}
 

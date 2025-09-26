@@ -110,7 +110,7 @@ return () => {
   };
 
   const handleForgotPassword = () => {
-    router.push('./resetpassword');
+    router.push('./resetpasswordScreen');
   };
 
   

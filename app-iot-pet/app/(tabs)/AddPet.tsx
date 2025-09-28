@@ -78,7 +78,7 @@ export default function AddPet() {
       await ensureAuth();
       const uid = auth.currentUser!.uid;
 
-      // 3) สร้าง/อัปเดตเอกสาร users/{uid} (เผื่อเก็บโปรไฟล์ผู้ใช้ในอนาคต)
+      // 3) สร้าง/อัปเดตเอกสาร users/{uid}
       await setDoc(
         doc(db, "users", uid),
         { lastActiveAt: serverTimestamp() },
@@ -90,7 +90,7 @@ export default function AddPet() {
         name: petName,
         breed,
         gender,
-        age,        // ถ้าอยากเป็นตัวเลข: Number(age) || null
+        age,
         color,
         height,
         weight,
@@ -100,7 +100,10 @@ export default function AddPet() {
       });
 
       Alert.alert("เพิ่มข้อมูลสัตว์เลี้ยงเรียบร้อย!");
-      router.back();
+
+      // 🔹 เปลี่ยนจาก router.back() เป็น router.replace ไปหน้า Pets โดยตรง
+      router.replace("/(tabs)/pet");
+
     } catch (err: any) {
       console.log("Firestore error:", err?.code, err?.message);
       Alert.alert("ผิดพลาด", err?.message ?? "Unknown error");
@@ -245,18 +248,18 @@ const styles = StyleSheet.create({
   button: {
     backgroundColor: "#FFC107", borderRadius: 12, paddingVertical: 15, alignItems: "center", marginTop: 15
   },
-  buttonText: { 
-    color: "#fff", 
-    fontWeight: "bold", 
-    fontSize: 16 
+  buttonText: {
+    color: "#fff",
+    fontWeight: "bold",
+    fontSize: 16
   },
-  InputTitle: { 
-    fontSize: 14, 
-    fontWeight: "bold", 
-    marginBottom: 10 
+  InputTitle: {
+    fontSize: 14,
+    fontWeight: "bold",
+    marginBottom: 10
   },
-  inputGroup: { 
-    flex: 1, 
-    marginHorizontal: 5 
+  inputGroup: {
+    flex: 1,
+    marginHorizontal: 5
   },
 });

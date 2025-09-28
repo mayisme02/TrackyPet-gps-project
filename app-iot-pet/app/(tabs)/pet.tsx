@@ -4,7 +4,7 @@ import ParallaxScrollView from "@/components/ParallaxScrollView";
 import { useRouter } from "expo-router";
 import FontAwesome6 from "@expo/vector-icons/FontAwesome6";
 import { auth, db } from "../../firebase/firebase";
-import { onSnapshot, collection } from "firebase/firestore";
+import { onSnapshot, collection, query, orderBy } from "firebase/firestore";
 
 interface Pet {
   id: string;
@@ -26,7 +26,10 @@ export default function Pets() {
   useEffect(() => {
     if (!auth.currentUser) return;
     const uid = auth.currentUser.uid;
-    const q = collection(db, "users", uid, "pets");
+    const q = query(
+      collection(db, "users", uid, "pets"),
+      orderBy("createdAt", "asc") // เรียงจากเก่า -> ใหม่
+    );
 
     // ฟังการเปลี่ยนแปลงแบบ realtime
     const unsubscribe = onSnapshot(q, (querySnapshot) => {

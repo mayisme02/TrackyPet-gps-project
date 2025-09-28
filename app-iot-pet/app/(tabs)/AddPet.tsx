@@ -1,13 +1,26 @@
-import React, { useState } from "react";
-import {View, Text, TextInput, TouchableOpacity, StyleSheet,Image, SafeAreaView, ActivityIndicator, Alert} from "react-native";
+import React, { useEffect, useState } from "react";
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Image, SafeAreaView, ActivityIndicator, Alert } from "react-native";
 import { useRouter } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import * as ImageManipulator from "expo-image-manipulator";
 import FontAwesome6 from "@expo/vector-icons/FontAwesome6";
-import { auth, db } from "../../firebase/firebase";             
+import { auth, db } from "../../firebase/firebase";
 import { signInAnonymously } from "firebase/auth";
-import { doc, setDoc, collection, addDoc, serverTimestamp } from "firebase/firestore";
-import { uploadToCloudinary } from "../uploadToCloudinary"; 
+import { doc, setDoc, collection, addDoc, serverTimestamp, getDocs } from "firebase/firestore";
+import { uploadToCloudinary } from "../uploadToCloudinary";
+
+interface Pet {
+  id: string;
+  name: string;
+  breed: string;
+  gender: string;
+  age: string;
+  color: string;
+  height: string;
+  weight: string;
+  photoURL?: string;           // ไม่บังคับ มีหรือไม่มีก็ได้
+  cloudinaryPublicId?: string; // ไม่บังคับ
+}
 
 export default function AddPet() {
   const router = useRouter();
@@ -20,6 +33,7 @@ export default function AddPet() {
   const [weight, setWeight] = useState("");
   const [image, setImage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [petList, setPetList] = useState<Pet[]>([]);
 
   async function ensureAuth() {
     if (!auth.currentUser) {
@@ -95,6 +109,26 @@ export default function AddPet() {
     }
   };
 
+  // 
+  const getPetList = async () => {
+    if (!auth.currentUser) return; // กัน null
+    const uid = auth.currentUser.uid;
+
+    const querySnapshot = await getDocs(collection(db, "users", uid, "pets"));
+
+    const pets = querySnapshot.docs.map((doc) => ({
+      id: doc.id,
+      ...(doc.data() as Omit<Pet, "id">), // cast ให้ตรง type
+    }));
+
+    setPetList(pets);
+  };
+
+  useEffect(() => {
+    getPetList();
+  }, []);
+
+
   return (
     <>
       <SafeAreaView style={styles.headerContainer}>
@@ -160,17 +194,69 @@ export default function AddPet() {
 }
 
 const styles = StyleSheet.create({
-  headerContainer: { height: 100 },
-  backButton: { paddingHorizontal: 20, alignItems: "flex-start" },
-  backButtonText: { color: "black", fontSize: 18, fontWeight: "bold" },
-  container: { flex: 1, padding: 20, backgroundColor: "#fff" },
-  title: { fontSize: 18, fontWeight: "bold", marginBottom: 15, textAlign: "center" },
-  input: { backgroundColor: "#eee", borderRadius: 15, padding: 12, marginBottom: 12, fontSize: 16 },
-  row: { flexDirection: "row", marginBottom: 12, justifyContent: "space-between" },
-  inputSmall: { backgroundColor: "#eee", borderRadius: 15, padding: 12, fontSize: 16, textAlign: "center" },
-  imagePicker: { justifyContent: "center", alignItems: "center", marginTop: 5, height: 150 },
-  button: { backgroundColor: "#FFC107", borderRadius: 12, paddingVertical: 15, alignItems: "center", marginTop: 15 },
-  buttonText: { color: "#fff", fontWeight: "bold", fontSize: 16 },
-  InputTitle: { fontSize: 14, fontWeight: "bold", marginBottom: 10 },
-  inputGroup: { flex: 1, marginHorizontal: 5 },
+  headerContainer: {
+    height: 100
+  },
+  backButton: {
+    paddingHorizontal: 20,
+    alignItems: "flex-start"
+  },
+  backButtonText: {
+    color: "black",
+    fontSize: 18,
+    fontWeight: "bold"
+  },
+  container: {
+    flex: 1,
+    padding: 20,
+    backgroundColor: "#fff"
+  },
+  title: {
+    fontSize: 18,
+    fontWeight: "bold",
+    marginBottom: 15,
+    textAlign: "center"
+  },
+  input: {
+    backgroundColor: "#eee",
+    borderRadius: 15,
+    padding: 12,
+    marginBottom: 12,
+    fontSize: 16
+  },
+  row: {
+    flexDirection: "row",
+    marginBottom: 12,
+    justifyContent: "space-between"
+  },
+  inputSmall: {
+    backgroundColor: "#eee",
+    borderRadius: 15,
+    padding: 12,
+    fontSize: 16,
+    textAlign: "center"
+  },
+  imagePicker: {
+    justifyContent: "center",
+    alignItems: "center",
+    marginTop: 5,
+    height: 150
+  },
+  button: {
+    backgroundColor: "#FFC107", borderRadius: 12, paddingVertical: 15, alignItems: "center", marginTop: 15
+  },
+  buttonText: { 
+    color: "#fff", 
+    fontWeight: "bold", 
+    fontSize: 16 
+  },
+  InputTitle: { 
+    fontSize: 14, 
+    fontWeight: "bold", 
+    marginBottom: 10 
+  },
+  inputGroup: { 
+    flex: 1, 
+    marginHorizontal: 5 
+  },
 });

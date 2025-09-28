@@ -5,12 +5,37 @@ import AntDesign from '@expo/vector-icons/AntDesign';
 
 // Pet Object
 /*
-    1.id
-    2.title
-    3.isChecked
+    const [petName, setPetName] = useState("");
+    const [breed, setBreed] = useState("");
+    const [gender, setGender] = useState("");
+    const [age, setAge] = useState("");
+    const [color, setColor] = useState("");
+    const [height, setHeight] = useState("");
+    const [weight, setWeight] = useState("");
+    const [image, setImage] = useState<string | null>(null);
 */
 
-const PetItem = () => {
+const PetItem = (props: 
+  { title: string 
+    | number 
+    | bigint 
+    | boolean 
+    | React.ReactElement<unknown, string 
+    | React.JSXElementConstructor<any>> 
+    | Iterable<React.ReactNode> 
+    | React.ReactPortal 
+    | Promise<string 
+    | number 
+    | bigint 
+    | boolean 
+    | React.ReactPortal 
+    | React.ReactElement<unknown, string 
+    | React.JSXElementConstructor<any>> 
+    | Iterable<React.ReactNode> 
+    | null 
+    | undefined> 
+    | null 
+    | undefined; }) => {
   return (
     <View style={styles.container }>
       {/* pet icon */}
@@ -19,7 +44,7 @@ const PetItem = () => {
       </Pressable>
 
       {/* shopping text */}
-      <Text style={styles.title }> Dog Dog </Text>
+      <Text style={styles.title}>{props.title}</Text>
 
       {/* delete button */}
       <Pressable> 
@@ -34,7 +59,7 @@ export default PetItem
 const styles = StyleSheet.create({
     container: {
         flexDirection: "row",
-        backgroundColor: "lightgray",
+        backgroundColor: "#D4D4D4",
         justifyContent: "space-between",
         padding: 10,
         alignItems: "center",

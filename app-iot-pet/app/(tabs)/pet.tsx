@@ -1,10 +1,26 @@
 import React, { useEffect, useState } from "react";
-import { Text, StyleSheet, SafeAreaView, View, TouchableOpacity, FlatList, Image } from "react-native";
+import {
+  Text,
+  StyleSheet,
+  SafeAreaView,
+  View,
+  TouchableOpacity,
+  Image,
+  Alert,
+} from "react-native";
 import ParallaxScrollView from "@/components/ParallaxScrollView";
 import { useRouter } from "expo-router";
 import FontAwesome6 from "@expo/vector-icons/FontAwesome6";
 import { auth, db } from "../../firebase/firebase";
-import { onSnapshot, collection, query, orderBy } from "firebase/firestore";
+import {
+  onSnapshot,
+  collection,
+  query,
+  orderBy,
+  deleteDoc,
+  doc,
+} from "firebase/firestore";
+import { SwipeListView } from "react-native-swipe-list-view";
 
 interface Pet {
   id: string;
@@ -28,23 +44,59 @@ export default function Pets() {
     const uid = auth.currentUser.uid;
     const q = query(
       collection(db, "users", uid, "pets"),
-      orderBy("createdAt", "asc") // เรียงจากเก่า -> ใหม่
+      orderBy("createdAt", "asc")
     );
 
-    // ฟังการเปลี่ยนแปลงแบบ realtime
     const unsubscribe = onSnapshot(q, (querySnapshot) => {
       const petsData = querySnapshot.docs.map((doc) => ({
         id: doc.id,
         ...(doc.data() as Omit<Pet, "id">),
       }));
-      console.log("Pets fetched:", petsData);
       setPets(petsData);
     });
 
-    // cleanup
     return () => unsubscribe();
   }, []);
 
+  // ฟังก์ชันยืนยันก่อนลบ
+  const confirmDelete = (
+    rowMap: { [key: string]: any },
+    rowKey: string,
+    petId: string,
+    petName: string
+  ) => {
+    Alert.alert("ยืนยันการลบ", `คุณแน่ใจหรือไม่ว่าต้องการลบ ${petName}?`, [
+      { text: "ยกเลิก", style: "cancel" },
+      {
+        text: "ลบ",
+        style: "destructive",
+        onPress: () => handleDelete(rowMap, rowKey, petId),
+      },
+    ]);
+  };
+
+  // ฟังก์ชันลบสัตว์เลี้ยง
+  const handleDelete = async (
+    rowMap: { [key: string]: any },
+    rowKey: string,
+    petId: string
+  ) => {
+    try {
+      if (!auth.currentUser) return;
+      const uid = auth.currentUser.uid;
+      await deleteDoc(doc(db, "users", uid, "pets", petId));
+      console.log("Pet deleted:", petId);
+
+      // ✅ ปิด row ที่เปิดอยู่
+      if (rowMap[rowKey]) {
+        rowMap[rowKey].closeRow();
+      }
+    } catch (error) {
+      console.error("Error deleting pet:", error);
+    }
+  };
+
+  // การ์ดสัตว์เลี้ยง
   const renderPetItem = ({ item }: { item: Pet }) => (
     <View style={styles.petCard}>
       {item.photoURL ? (
@@ -52,12 +104,27 @@ export default function Pets() {
       ) : (
         <FontAwesome6 name="dog" size={50} color={"gray"} />
       )}
-      <View style={{ marginLeft: 12 }}>
+      <View style={{ flex: 1, marginLeft: 12 }}>
         <Text style={styles.petName}>{item.name}</Text>
         <Text style={styles.petDetail}>
           {item.breed} • {item.age} ปี • {item.gender}
         </Text>
       </View>
+    </View>
+  );
+
+  // การ์ดซ่อน (swipe to delete)
+  const renderHiddenItem = (
+    { item }: { item: Pet },
+    rowMap: { [key: string]: any }
+  ) => (
+    <View style={styles.hiddenContainer}>
+      <TouchableOpacity
+        style={styles.deleteButton}
+        onPress={() => confirmDelete(rowMap, item.id, item.id, item.name)}
+      >
+        <FontAwesome6 name="trash" size={18} color="#fff" />
+      </TouchableOpacity>
     </View>
   );
 
@@ -78,13 +145,18 @@ export default function Pets() {
       {pets.length === 0 ? (
         <View style={styles.emptyContainer}>
           <FontAwesome6 name="dog" size={100} color={"lightgray"} />
-          <Text style={styles.emptyText}>เพิ่มความน่ารักด้วยสัตว์เลี้ยงตัวแรกของคุณ</Text>
+          <Text style={styles.emptyText}>
+            เพิ่มความน่ารักด้วยสัตว์เลี้ยงตัวแรกของคุณ
+          </Text>
         </View>
       ) : (
-        <FlatList
+        <SwipeListView
           data={pets}
           renderItem={renderPetItem}
+          renderHiddenItem={renderHiddenItem}
           keyExtractor={(item) => item.id}
+          rightOpenValue={-75} // ปัดซ้าย 75 px
+          disableRightSwipe={true} // ห้ามปัดไปทางขวา
           contentContainerStyle={{ padding: 16 }}
         />
       )}
@@ -123,7 +195,7 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
   },
   noOfItem: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: "bold",
   },
   addButton: {
@@ -169,5 +241,23 @@ const styles = StyleSheet.create({
   petDetail: {
     fontSize: 14,
     color: "#666",
+  },
+  hiddenContainer: {
+    flex: 1,
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    alignItems: "center",
+    marginBottom: 12,
+    borderRadius: 12,
+    overflow: "hidden",
+  },
+  deleteButton: {
+    justifyContent: "center",
+    alignItems: "center",
+    width: 75,
+    height: "100%",
+    backgroundColor: "#C21F04",
+    borderTopRightRadius: 12,
+    borderBottomRightRadius: 12,
   },
 });

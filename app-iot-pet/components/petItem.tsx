@@ -1,77 +1,85 @@
-import { Pressable, StyleSheet, Text, View } from 'react-native'
-import React from 'react'
-import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
-import AntDesign from '@expo/vector-icons/AntDesign';
+import React from "react";
+import {
+  StyleSheet,
+  Text,
+  View,
+  Pressable,
+  Animated,
+} from "react-native";
+import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
+import FontAwesome6 from "@expo/vector-icons/FontAwesome6";
+import { RectButton, Swipeable } from "react-native-gesture-handler";
 
-// Pet Object
-/*
-    const [petName, setPetName] = useState("");
-    const [breed, setBreed] = useState("");
-    const [gender, setGender] = useState("");
-    const [age, setAge] = useState("");
-    const [color, setColor] = useState("");
-    const [height, setHeight] = useState("");
-    const [weight, setWeight] = useState("");
-    const [image, setImage] = useState<string | null>(null);
-*/
-
-const PetItem = (props: 
-  { title: string 
-    | number 
-    | bigint 
-    | boolean 
-    | React.ReactElement<unknown, string 
-    | React.JSXElementConstructor<any>> 
-    | Iterable<React.ReactNode> 
-    | React.ReactPortal 
-    | Promise<string 
-    | number 
-    | bigint 
-    | boolean 
-    | React.ReactPortal 
-    | React.ReactElement<unknown, string 
-    | React.JSXElementConstructor<any>> 
-    | Iterable<React.ReactNode> 
-    | null 
-    | undefined> 
-    | null 
-    | undefined; }) => {
-  return (
-    <View style={styles.container }>
-      {/* pet icon */}
-      <Pressable>  
-        <MaterialCommunityIcons name="dog" size={24} color="black" />
-      </Pressable>
-
-      {/* shopping text */}
-      <Text style={styles.title}>{props.title}</Text>
-
-      {/* delete button */}
-      <Pressable> 
-        <AntDesign name="delete" size={24} color="black" />
-      </Pressable>
-    </View>
-  )
+interface PetItemProps {
+  title: string;
+  onDelete?: () => void;
+  onPress?: () => void;
 }
 
-export default PetItem
+const PetItem: React.FC<PetItemProps> = ({ title, onDelete, onPress }) => {
+  // render เฉพาะ swipe ด้านขวา -> ซ้าย
+  const renderRightActions = (
+    progress: Animated.AnimatedInterpolation<number>,
+    dragX: Animated.AnimatedInterpolation<number>
+  ) => {
+    return (
+      <View style={styles.rightActionWrapper}>
+        <RectButton style={styles.deleteButton} onPress={onDelete}>
+          <FontAwesome6 name="trash" size={22} color="#fff" />
+        </RectButton>
+      </View>
+    );
+  };
+
+  return (
+    <Swipeable
+      renderRightActions={renderRightActions}
+      overshootRight={false} // กันไม่ให้ swipe เลยไปเกิน
+      enableTrackpadTwoFingerGesture
+    >
+      <View style={styles.cardWrapper}>
+        <Pressable style={styles.container} onPress={onPress}>
+          <MaterialCommunityIcons name="dog" size={24} color="black" />
+          <Text style={styles.title}>{title}</Text>
+        </Pressable>
+      </View>
+    </Swipeable>
+  );
+};
+
+export default PetItem;
 
 const styles = StyleSheet.create({
-    container: {
-        flexDirection: "row",
-        backgroundColor: "#D4D4D4",
-        justifyContent: "space-between",
-        padding: 10,
-        alignItems: "center",
-        width: "90%",
-        alignSelf: "center",
-        borderRadius: 10,
-        marginVertical: 10,
-    },
-    title: {
-        flex: 1,
-        marginLeft: 10,
-        fontSize: 17,
-        fontWeight: "500",
-    }
-})
+  cardWrapper: {
+    width: "90%",
+    alignSelf: "center",
+    marginVertical: 10,
+  },
+  container: {
+    flexDirection: "row",
+    backgroundColor: "#D4D4D4",
+    alignItems: "center",
+    padding: 10,
+    borderRadius: 10,
+  },
+  title: {
+    flex: 1,
+    marginLeft: 10,
+    fontSize: 17,
+    fontWeight: "500",
+  },
+  rightActionWrapper: {
+    justifyContent: "center",
+    marginVertical: 10,
+    borderRadius: 10,
+    overflow: "hidden", // สำคัญ! ให้แดงไม่เกินมุมโค้ง
+    width: 70,
+    alignSelf: "center",
+  },
+  deleteButton: {
+    flex: 1,
+    backgroundColor: "#C21F04",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+});

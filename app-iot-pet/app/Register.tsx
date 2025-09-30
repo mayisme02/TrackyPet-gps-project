@@ -1,183 +1,149 @@
-import React, { useState } from 'react';
-import {View,Text,TextInput,TouchableOpacity,StyleSheet,Alert,KeyboardAvoidingView,Platform,ScrollView,
-} from 'react-native';
-import { router } from 'expo-router';
-import { auth, db } from '../firebase/firebase';
-import { doc, setDoc } from 'firebase/firestore';
-import { createUserWithEmailAndPassword } from 'firebase/auth';
+import React from "react";
+import { SafeAreaView, View, Text, Image, TouchableOpacity, StyleSheet } from "react-native";
+import { useRouter, useLocalSearchParams } from "expo-router";
+import { Ionicons, MaterialIcons } from "@expo/vector-icons";
+import ParallaxScrollView from "@/components/ParallaxScrollView";
 
-export default function Signup() {
-  const [username, setUsername] = useState('');
-  const [telephone, setTelephone] = useState('');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+type Pet = {
+  id: string;
+  name: string;
+  breed: string;
+  age: string;
+  weight: string;
+  height: string;
+  color: string;
+  gender: string;
+  photoURL?: string;
+};
 
-  const handleSubmit = async () => {
-    if (password.length < 6) {
-      Alert.alert('ข้อผิดพลาด', 'รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร');
-      return;
-    }
+export default function PetScreen() {
+  const router = useRouter();
+  const { pet } = useLocalSearchParams<{ pet: string }>();
 
-    try {
-      const userCredential = await createUserWithEmailAndPassword(auth, email.trim(), password);
-      const user = userCredential.user;
+  const petData: Pet | null = pet ? JSON.parse(pet) : null;
+  if (!petData) return null;
 
-      await setDoc(doc(db, 'users', user.uid), {
-        username,
-        telephone,
-        email,
-      });
-
-      Alert.alert('สำเร็จ', 'ลงทะเบียนสำเร็จ! กำลังนำคุณไปยังหน้าแท็บ');
-      router.replace('/(tabs)/home');
-    } catch (error: any) {
-      console.error('Registration error:', error);
-      if (error.code === 'auth/email-already-in-use') {
-        Alert.alert('ข้อผิดพลาด', 'อีเมลนี้ถูกใช้งานแล้ว กรุณาใช้อีเมลอื่น');
-      } else {
-        Alert.alert('ข้อผิดพลาด', 'เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง');
-      }
-    }
-  };
-
-  const handleLoginLink = () => {
-    router.replace('/Login'); 
+  const handleViewHistory = () => {
+    console.log("View history of:", petData.id);
   };
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+    <ParallaxScrollView
+      headerBackgroundColor={{ light: "#f2bb14", dark: "#f2bb14" }}
+      headerImage={
+        <SafeAreaView style={styles.headerContainer}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+            <Ionicons name="arrow-back" size={26} color="#fff" />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>ข้อมูลสัตว์เลี้ยง</Text>
+          <View style={{ width: 26 }} />
+        </SafeAreaView>
+      }
     >
-      <ScrollView contentContainerStyle={styles.scrollContainer}>
-          <Text style={styles.title}>ลงทะเบียน</Text>
-          <Text style={styles.subtitle}>
-            By signing in you are agreeing our Term and privacy policy
-          </Text>
+      {/* Image */}
+      {petData.photoURL ? (
+        <Image source={{ uri: petData.photoURL }} style={styles.image} />
+      ) : null}
 
-          <View style={styles.form}>
-            <View style={styles.inputGroup}>
-              <Text style={styles.icon}></Text>
-              <TextInput
-                style={styles.input}
-                placeholder="Username"
-                value={username}
-                onChangeText={setUsername}
-                autoCapitalize="none"
-              />
-            </View>
-            <View style={styles.inputGroup}>
-              <Text style={styles.icon}></Text>
-              <TextInput
-                style={styles.input}
-                placeholder="Telephone Number"
-                value={telephone}
-                onChangeText={setTelephone}
-                keyboardType="phone-pad"
-              />
-            </View>
-            <View style={styles.inputGroup}>
-              <Text style={styles.icon}></Text>
-              <TextInput
-                style={styles.input}
-                placeholder="Email Address"
-                value={email}
-                onChangeText={setEmail}
-                keyboardType="email-address"
-                autoCapitalize="none"
-              />
-            </View>
-            <View style={styles.inputGroup}>
-              <Text style={styles.icon}></Text>
-              <TextInput
-                style={styles.input}
-                placeholder="Create Password"
-                value={password}
-                onChangeText={setPassword}
-                secureTextEntry
-              />
-            </View>
-
-            <TouchableOpacity style={styles.btnSignup} onPress={handleSubmit}>
-              <Text style={styles.btnText}>SIGN UP</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity onPress={handleLoginLink}>
-              <Text style={styles.loginLink}>
-                มีบัญชีผู้ใช้แล้ว? <Text style={styles.linkText}>Login</Text>
-              </Text>
-            </TouchableOpacity>
+      {/* Pet Info */}
+      <View style={styles.card}>
+        <View style={styles.cardHeader}>
+          <View>
+            <Text style={styles.petName}>{petData.name}</Text>
+            <Text style={styles.petBreed}>{petData.breed}</Text>
           </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+          <View style={styles.genderTag}>
+            <Ionicons
+              name={petData.gender === "female" ? "female" : "male"}
+              size={18}
+              color="#fff"
+            />
+          </View>
+        </View>
+
+        {/* About Section */}
+        <Text style={styles.sectionTitle}>About</Text>
+        <View style={styles.aboutBox}>
+          <Text style={styles.aboutText}>
+            Age {"\n"}<Text style={styles.aboutValue}>{petData.age}</Text>
+          </Text>
+          <Text style={styles.aboutText}>
+            Weight {"\n"}<Text style={styles.aboutValue}>{petData.weight}</Text>
+          </Text>
+          <Text style={styles.aboutText}>
+            Height {"\n"}<Text style={styles.aboutValue}>{petData.height}</Text>
+          </Text>
+          <Text style={styles.aboutText}>
+            Color {"\n"}<Text style={styles.aboutValue}>{petData.color}</Text>
+          </Text>
+        </View>
+
+        {/* History */}
+        <TouchableOpacity style={styles.history} onPress={handleViewHistory}>
+          <MaterialIcons name="history" size={20} color="#333" />
+          <Text style={styles.historyText}>ดูประวัติเส้นทางย้อนหลัง</Text>
+        </TouchableOpacity>
+      </View>
+    </ParallaxScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#ffffffff',
+  headerContainer: {
+    height: 60,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
   },
-  scrollContainer: {
-    flexGrow: 1,
-    justifyContent: 'center',
-    padding: 20,
+  backButton: {
+    padding: 4,
   },
-  title: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    textAlign: 'center',
-    marginBottom: 10,
-    color: '#7D4E34',
-  },
-  subtitle: {
-    fontSize: 14,
-    color: '#666',
-    textAlign: 'center',
-    marginBottom: 20,
-  },
-  form: {
-    marginBottom: 20,
-  },
-  inputGroup: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#D4D4D4',
-    borderRadius: 10,
-    marginBottom: 15,
-    borderWidth: 1,
-    borderColor: '#e9ecef',
-  },
-  icon: {
+  headerTitle: {
     fontSize: 20,
-    padding: 15,
-  },
-  input: {
+    fontWeight: "bold",
+    color: "#fff",
+    textAlign: "center",
     flex: 1,
-    fontSize: 16,
-    paddingVertical: 15,
-    paddingRight: 15,
   },
-  btnSignup: {
-    backgroundColor: '#7D4E34',
-    borderRadius: 10,
-    padding: 15,
-    alignItems: 'center',
-    marginTop: 10,
+  image: {
+    width: "100%",
+    height: 250,
+    borderBottomLeftRadius: 20,
+    borderBottomRightRadius: 20,
   },
-  btnText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: 'bold',
+  card: {
+    marginTop: -20,
+    backgroundColor: "#fff",
+    borderRadius: 20,
+    padding: 16,
+    marginHorizontal: 12,
+    shadowColor: "#000",
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
   },
-  loginLink: {
-    textAlign: 'center',
-    marginTop: 15,
-    fontSize: 14,
-    color: '#666',
+  cardHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
   },
-  linkText: {
-    color: '#7D4E34',
-    fontWeight: '600',
+  petName: { fontSize: 22, fontWeight: "700", color: "#333" },
+  petBreed: { fontSize: 16, color: "#555", marginTop: 4 },
+  genderTag: { backgroundColor: "#e17055", borderRadius: 20, padding: 8 },
+  sectionTitle: { fontSize: 18, fontWeight: "600", marginTop: 20, marginBottom: 12 },
+  aboutBox: { flexDirection: "row", justifyContent: "space-between", marginBottom: 20 },
+  aboutText: {
+    backgroundColor: "#ffbf0eff",
+    padding: 12,
+    borderRadius: 12,
+    textAlign: "center",
+    width: 80,
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#333",
   },
+  aboutValue: { fontSize: 14, fontWeight: "700", color: "#000" },
+  history: { flexDirection: "row", alignItems: "center" },
+  historyText: { marginLeft: 6, textDecorationLine: "underline", color: "#333" },
 });

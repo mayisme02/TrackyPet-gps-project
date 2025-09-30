@@ -35,7 +35,7 @@ const styles = StyleSheet.create({
   headerText: {
     fontSize: 22,
     fontWeight: 'bold',
-    color: '#fff',
+    color: "black",
     marginLeft: 20,
   },
   noti: {

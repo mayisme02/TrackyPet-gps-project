@@ -8,6 +8,7 @@ export default function RootLayout() {
       <Stack.Screen name="Register" />
       <Stack.Screen name="(tabs)" />
       <Stack.Screen name="Resetpassword" />
+      <Stack.Screen name="PetScreen" />
     </Stack>
   );
 }

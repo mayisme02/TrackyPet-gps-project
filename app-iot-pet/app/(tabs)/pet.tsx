@@ -98,7 +98,15 @@ export default function Pets() {
 
   // การ์ดสัตว์เลี้ยง
   const renderPetItem = ({ item }: { item: Pet }) => (
-    <View style={styles.petCard}>
+    <TouchableOpacity
+      style={styles.petCard}
+      onPress={() =>
+        router.push({
+          pathname: "/PetScreen",
+          params: { pet: JSON.stringify(item) }, // ✅ ส่ง object ไปเป็น string
+        })
+      }
+    >
       {item.photoURL ? (
         <Image source={{ uri: item.photoURL }} style={styles.petImage} />
       ) : (
@@ -110,7 +118,7 @@ export default function Pets() {
           {item.breed} • {item.age} ปี • {item.gender}
         </Text>
       </View>
-    </View>
+    </TouchableOpacity>
   );
 
   // การ์ดซ่อน (swipe to delete)
@@ -180,7 +188,7 @@ const styles = StyleSheet.create({
   TextHeader: {
     fontSize: 22,
     fontWeight: "bold",
-    color: "#fff",
+    color: "black",
     textAlign: "center",
   },
   AddPetHeader: {

@@ -124,7 +124,7 @@ const styles = StyleSheet.create({
   headerText: {
     fontSize: 22,
     fontWeight: "bold",
-    color: "#fff"
+    color: "black"
   },
   profileImage: {
     width: "90%",

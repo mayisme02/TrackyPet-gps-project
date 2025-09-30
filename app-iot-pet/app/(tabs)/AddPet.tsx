@@ -135,13 +135,17 @@ export default function AddPet() {
   return (
     <>
       <SafeAreaView style={styles.headerContainer}>
-        <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+        <TouchableOpacity
+          style={styles.backButton}
+          onPress={() => router.push("/(tabs)/pet")}
+        >
           <Text style={styles.backButtonText}>กลับ</Text>
         </TouchableOpacity>
+
       </SafeAreaView>
 
       <View style={styles.container}>
-        <Text style={styles.title}>เพิ่มข้อมูลสัตว์เลี้ยง</Text>
+        <Text style={styles.title}>เพิ่มข้อมูล</Text>
 
         <Text style={styles.InputTitle}>ชื่อสัตว์เลี้ยง</Text>
         <TextInput placeholder="Pet Name" style={styles.input} value={petName} onChangeText={setPetName} />
@@ -198,7 +202,8 @@ export default function AddPet() {
 
 const styles = StyleSheet.create({
   headerContainer: {
-    height: 100
+    height: 100,
+    backgroundColor: "#f2bb14",
   },
   backButton: {
     paddingHorizontal: 20,
@@ -246,12 +251,12 @@ const styles = StyleSheet.create({
     height: 150
   },
   button: {
-    backgroundColor: "#FFC107", borderRadius: 12, paddingVertical: 15, alignItems: "center", marginTop: 15
+    backgroundColor: "#885900ff", borderRadius: 12, paddingVertical: 15, alignItems: "center", marginTop: 15
   },
   buttonText: {
     color: "#fff",
     fontWeight: "bold",
-    fontSize: 16
+    fontSize: 18
   },
   InputTitle: {
     fontSize: 14,

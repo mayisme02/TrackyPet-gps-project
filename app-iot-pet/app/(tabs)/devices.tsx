@@ -26,7 +26,7 @@ const styles = StyleSheet.create({
   TextHeader: {
     fontSize: 22, 
     fontWeight: 'bold', 
-    color: '#fff',
+    color: "black",
     textAlign: 'center',
   },
 });

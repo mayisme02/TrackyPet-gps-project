@@ -1,38 +1,47 @@
-import { Text } from 'react-native';
-import { StyleSheet } from 'react-native';
-import { View, SafeAreaView, TouchableOpacity } from 'react-native';
+import React from 'react';
+import { Text, StyleSheet, SafeAreaView, View, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
+import ParallaxScrollView from '@/components/ParallaxScrollView';
 
 const noti = () => {
   router.push('./notification');
-}
+};
 
 export default function HomeScreen() {
-  return(
- <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.headerText}>HELLO !</Text>
-        <TouchableOpacity style={styles.noti} onPress={noti}>
-                  <Ionicons name="notifications" size={24} color="#fff" />
-                </TouchableOpacity>
-      </View>
-    </SafeAreaView>);
+  return (
+    <ParallaxScrollView
+      headerBackgroundColor={{ light: '#f2bb14', dark: '#f2bb14' }}
+      headerImage={
+        <SafeAreaView style={styles.headerContainer}>
+          <Text style={styles.headerText}>สวัสดี ! คุณ </Text>
+          <TouchableOpacity style={styles.noti} onPress={noti}>
+            <Ionicons name="notifications" size={24} color="#fff" />
+          </TouchableOpacity>
+        </SafeAreaView>
+      }
+    >
+      {/* เนื้อหาใน body ของ HomeScreen ใส่ตรงนี้ */}
+    </ParallaxScrollView>
+  );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff' },
-  header: {
-    backgroundColor: '#FFB800',
-    height: 100,
+  headerContainer: {
+    height: 175,
     justifyContent: 'center',
-    alignItems: 'center',
+    paddingHorizontal: 16,
   },
-  noti:{
+  headerText: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: '#fff',
+    marginLeft: 20,
+  },
+  noti: {
     position: 'absolute',
     right: 16,
-    top: 50,
+    top: '50%',
+    marginTop: -12, // เพื่อให้ไอคอนอยู่กึ่งกลาง
   },
-  headerText: { fontSize: 18, fontWeight: 'bold', color: 'white' ,top: 50,position: 'absolute', left: 16},
-  body: { flex: 1, justifyContent: 'center', alignItems: 'center' },
 });

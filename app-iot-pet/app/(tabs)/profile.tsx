@@ -3,8 +3,10 @@ import { View, Text, StyleSheet, Image, TouchableOpacity, SafeAreaView, Activity
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { auth, db } from "../../firebase/firebase";
-import { doc, getDoc, onSnapshot } from "firebase/firestore";
+import { doc, onSnapshot } from "firebase/firestore";
 import { useLocalSearchParams } from "expo-router";
+import ParallaxScrollView from "@/components/ParallaxScrollView";
+import { Alert } from "react-native";
 
 export default function Profile() {
   const [profile, setProfile] = useState<any>(null);
@@ -34,7 +36,20 @@ export default function Profile() {
   }, []);
 
   const handleLogout = () => {
-    router.replace("/Login");
+    Alert.alert(
+      "คุณต้องการออกจากระบบใช่ไหม",
+      "",
+      [
+        { text: "ยกเลิก", style: "cancel" },
+        {
+          text: "ออกจากระบบ",
+          style: "destructive",
+          onPress: () => {
+            router.replace("/Login");
+          },
+        },
+      ]
+    );
   };
 
   const handleEditProfile = () => {
@@ -56,11 +71,14 @@ export default function Profile() {
   const avatar = profile?.avatarUrl ?? avatarUrl ?? "";
 
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.headerText}>บัญชีผู้ใช้</Text>
-      </View>
-
+    <ParallaxScrollView
+      headerBackgroundColor={{ light: "#f2bb14", dark: "#f2bb14" }}
+      headerImage={
+        <SafeAreaView style={styles.headerContainer}>
+          <Text style={styles.headerText}>บัญชีผู้ใช้</Text>
+        </SafeAreaView>
+      }
+    >
       {avatar ? (
         <Image source={{ uri: avatar }} style={styles.profileImage} />
       ) : (
@@ -93,37 +111,39 @@ export default function Profile() {
           <Text style={{ color: "red", marginLeft: 6 }}>ออกจากระบบ</Text>
         </TouchableOpacity>
       </View>
-    </SafeAreaView>
+    </ParallaxScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#fff" },
-  header: {
-    backgroundColor: "#FFB800",
-    height: 100,
+  headerContainer: {
+    height: 175,
     justifyContent: "center",
     alignItems: "center",
   },
-  headerText: { fontSize: 18, fontWeight: "bold", color: "white" },
+  headerText: {
+    fontSize: 22,
+    fontWeight: "bold",
+    color: "#fff"
+  },
   profileImage: {
-  width: "90%",    
-  height: 200,     
-  alignSelf: "center",
-  marginTop: -50,
-  borderRadius: 10, 
-  backgroundColor: "#eee",
-},
-imagePlaceholder: {
-  width: "90%",
-  height: 200,
-  alignSelf: "center",
-  marginTop: 40,
-  backgroundColor: "#eee", 
-  justifyContent: "center",
-  alignItems: "center",
-  borderRadius: 10,
-},
+    width: "90%",
+    height: 200,
+    alignSelf: "center",
+    marginTop: 20,
+    borderRadius: 10,
+    backgroundColor: "#eee",
+  },
+  imagePlaceholder: {
+    width: "90%",
+    height: 200,
+    alignSelf: "center",
+    marginTop: 100,
+    backgroundColor: "#eee",
+    justifyContent: "center",
+    alignItems: "center",
+    borderRadius: 10,
+  },
 
   card: {
     backgroundColor: "#fff",
@@ -133,12 +153,33 @@ imagePlaceholder: {
     padding: 20,
     shadowColor: "#000",
     shadowOpacity: 0.2,
-    shadowOffset: { width: 0, height: 2 },
+    shadowOffset: {
+      width: 0,
+      height: 2
+    },
     elevation: 4,
   },
-  editBtn: { flexDirection: "row", alignSelf: "flex-end", marginBottom: 10 },
-  userLabel: { fontSize: 18, fontWeight: "bold", marginBottom: 10 },
-  row: { flexDirection: "row", alignItems: "center", marginVertical: 5 },
-  infoText: { fontSize: 16 },
-  logoutBtn: { flexDirection: "row", marginTop: 15, alignItems: "center" },
+  editBtn: {
+    flexDirection: "row",
+    alignSelf: "flex-end",
+    marginBottom: 10
+  },
+  userLabel: {
+    fontSize: 18,
+    fontWeight: "bold",
+    marginBottom: 10
+  },
+  row: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginVertical: 5
+  },
+  infoText: {
+    fontSize: 16
+  },
+  logoutBtn: {
+    flexDirection: "row",
+    marginTop: 15,
+    alignItems: "center",
+  },
 });

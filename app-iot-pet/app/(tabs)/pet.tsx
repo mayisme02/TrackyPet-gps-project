@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   Image,
   Alert,
+  Pressable
 } from "react-native";
 import ParallaxScrollView from "@/components/ParallaxScrollView";
 import { useRouter } from "expo-router";
@@ -98,12 +99,13 @@ export default function Pets() {
 
   // การ์ดสัตว์เลี้ยง
   const renderPetItem = ({ item }: { item: Pet }) => (
-    <TouchableOpacity
+    <Pressable
       style={styles.petCard}
+      android_ripple={{ color: "transparent" }} // กัน ripple
       onPress={() =>
         router.push({
           pathname: "/PetScreen",
-          params: { pet: JSON.stringify(item) }, // ✅ ส่ง object ไปเป็น string
+          params: { pet: JSON.stringify(item) },
         })
       }
     >
@@ -118,9 +120,8 @@ export default function Pets() {
           {item.breed} • {item.age} ปี • {item.gender}
         </Text>
       </View>
-    </TouchableOpacity>
+    </Pressable>
   );
-
   // การ์ดซ่อน (swipe to delete)
   const renderHiddenItem = (
     { item }: { item: Pet },

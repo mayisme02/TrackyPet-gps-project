@@ -49,9 +49,7 @@ export default function PetScreen() {
           <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
             <Ionicons name="arrow-back" size={26} color="black" />
           </TouchableOpacity>
-
           <Text style={styles.topHeaderTitle}>ข้อมูลสัตว์เลี้ยง</Text>
-
           <View style={{ width: 26 }} />
         </View>
       </SafeAreaView>
@@ -95,24 +93,23 @@ export default function PetScreen() {
           </View>
         </View>
 
-        {/* === Green section: ดูประวัติเส้นทาง / การเชื่อมต่อ / แก้ไข === */}
+        {/* === Gray Section: ดูประวัติเส้นทาง / การเชื่อมต่อ / แก้ไข === */}
         <View style={styles.greenSection}>
           {/* การเชื่อมต่ออุปกรณ์ */}
-          <TouchableOpacity style={styles.greenRow}>
-            <View style={styles.greenIcon}>
+          <TouchableOpacity style={styles.grayRow}>
+            <View style={styles.grayIcon}>
               <MaterialIcons name="devices" size={20} color="#483C32" />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.infoText}>การเชื่อมต่ออุปกรณ์</Text>
               <Text style={styles.connectStatus}>เชื่อมต่อแล้ว</Text>
             </View>
-
             <Ionicons name="chevron-forward" size={20} color="#999" />
           </TouchableOpacity>
 
           {/* ประวัติเส้นทางของสัตว์เลี้ยง */}
-          <TouchableOpacity style={styles.greenRow} onPress={handleViewHistory}>
-            <View style={styles.greenIcon}>
+          <TouchableOpacity style={styles.grayRow} onPress={handleViewHistory}>
+            <View style={styles.grayIcon}>
               <MaterialIcons name="history" size={20} color="#483C32" />
             </View>
             <Text style={styles.infoText}>ดูประวัติเส้นทางย้อนหลัง</Text>
@@ -120,8 +117,8 @@ export default function PetScreen() {
           </TouchableOpacity>
 
           {/* แก้ไขข้อมูล */}
-          <TouchableOpacity style={styles.greenRow} onPress={handleEdit}>
-            <View style={styles.greenIcon}>
+          <TouchableOpacity style={styles.grayRow} onPress={handleEdit}>
+            <View style={styles.grayIcon}>
               <AntDesign name="edit" size={20} color="#483C32" />
             </View>
             <Text style={styles.infoText}>แก้ไขข้อมูล</Text>
@@ -134,6 +131,7 @@ export default function PetScreen() {
 }
 
 const styles = StyleSheet.create({
+  // ส่วนของ Header
   container: {
     backgroundColor: "#f2bb14",
     height: 120,
@@ -145,6 +143,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     marginTop: 10,
   },
+  // ปุ่มกลับไปยังหน้า Pet
   backButton: {
     padding: 4,
   },
@@ -166,7 +165,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     backgroundColor: "#F3F3F3",
   },
-  /* White card */
+  /* การ์ดข้อมูลสัตว์เลี้ยง */
   infoCard: {
     marginTop: -20,
     backgroundColor: "#fff",
@@ -210,14 +209,14 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: "#000",
   },
-  /* Green section (เมนูด้านล่าง) */
+  // Gray section (เมนูด้านล่าง) 
   greenSection: {
     marginTop: 15,
     marginHorizontal: 12,
     borderRadius: 12,
     overflow: "hidden",
   },
-  greenRow: {
+  grayRow: {
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: 14,
@@ -226,7 +225,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: "#DFDFDFFF",
   },
-  greenIcon: {
+  grayIcon: {
     width: 36,
     height: 36,
     borderRadius: 8,
@@ -276,14 +275,16 @@ const styles = StyleSheet.create({
     marginBottom: 4,
     textAlign: "center",
   },
+  // ข้อมูลสัตว์เลี้ยงที่รับมาจาก User
   infoValue: {
     fontSize: 18,
     fontWeight: "700",
     color: "#000",
     textAlign: "center",
   },
+  // ส่วนที่แสดงการเชื่อมต่อ
   infoConnect: {
-    width: "100%", // กว้างเต็มแถว
+    width: "100%",
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "#FAF7F0",
@@ -292,21 +293,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     marginBottom: 12,
   },
-
   connectIcon: {
     marginRight: 10,
-    marginTop: 2, // เล็กน้อยให้ตรงกับ baseline ตัวหนังสือ
+    marginTop: 2
   },
-
   connectText: {
     fontSize: 15,
     fontWeight: "600",
     color: "#000",
   },
-
   connectStatus: {
     fontSize: 13,
-    color: "green", // ให้แสดงว่า active
+    color: "green", // แสดงถึงการ active
     marginTop: 2,
     marginLeft: 12,
   },

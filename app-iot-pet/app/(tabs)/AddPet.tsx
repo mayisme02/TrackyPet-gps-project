@@ -17,8 +17,8 @@ interface Pet {
   age: string;
   height: string;
   weight: string;
-  photoURL?: string;           // ไม่บังคับ มีหรือไม่มีก็ได้
-  cloudinaryPublicId?: string; // ไม่บังคับ
+  photoURL?: string;           
+  cloudinaryPublicId?: string;
 }
 
 export default function AddPet() {
@@ -35,7 +35,7 @@ export default function AddPet() {
 
   async function ensureAuth() {
     if (!auth.currentUser) {
-      await signInAnonymously(auth); // ช่วง dev ใช้ anon ได้
+      await signInAnonymously(auth);
     }
   }
 
@@ -57,7 +57,7 @@ export default function AddPet() {
   const handleAddPet = async () => {
     setLoading(true);
     try {
-      // 1) อัปโหลดรูปไป Cloudinary (ถ้ามี)
+      // 1) Upload รูปภาพไปยัง Cloudinary (ถ้ามี)
       let photoURL: string | null = null;
       let cloudinaryPublicId: string | null = null;
 
@@ -72,11 +72,11 @@ export default function AddPet() {
         cloudinaryPublicId = public_id;
       }
 
-      // 2) ล็อกอินก่อนเขียน Firestore
+      // 2) Login ก่อนเขียน Firestore
       await ensureAuth();
       const uid = auth.currentUser!.uid;
 
-      // 3) สร้าง/อัปเดตเอกสาร users/{uid}
+      // 3) สร้างและอัปเดตเอกสาร users/{uid}
       await setDoc(
         doc(db, "users", uid),
         { lastActiveAt: serverTimestamp() },
@@ -98,7 +98,7 @@ export default function AddPet() {
 
       Alert.alert("เพิ่มข้อมูลสัตว์เลี้ยงเรียบร้อย!");
 
-      // 🔹 เปลี่ยนจาก router.back() เป็น router.replace ไปหน้า Pets โดยตรง
+      // เปลี่ยนจาก router.back() เป็น router.replace ไปหน้า Pets โดยตรง
       router.replace("/(tabs)/pet");
 
     } catch (err: any) {
@@ -109,7 +109,7 @@ export default function AddPet() {
     }
   };
 
-  // 
+  // โหลดรายชื่อสัตว์เลี้ยงของผู้ใช้ที่กำลังล็อกอิน จาก Firestore แล้วเก็บไว้ใน state ของ React
   const getPetList = async () => {
     if (!auth.currentUser) return; // กัน null
     const uid = auth.currentUser.uid;
@@ -128,19 +128,18 @@ export default function AddPet() {
     getPetList();
   }, []);
 
-
   return (
     <>
       <SafeAreaView style={styles.headerContainer}>
+        {/* กลับไปยังหน้า Pet */}
         <TouchableOpacity
           style={styles.backButton}
-          onPress={() => router.push("/(tabs)/pet")}
-        >
+          onPress={() => router.push("/(tabs)/pet")}>
           <Text style={styles.backButtonText}>กลับ</Text>
         </TouchableOpacity>
-
       </SafeAreaView>
 
+      {/* รับข้อมูลจาก User */}
       <View style={styles.container}>
         <Text style={styles.title}>เพิ่มข้อมูล</Text>
 

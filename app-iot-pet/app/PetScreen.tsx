@@ -1,7 +1,16 @@
 import React from "react";
-import { SafeAreaView, ScrollView, View, Text, Image, TouchableOpacity, StyleSheet } from "react-native";
+import {
+  SafeAreaView,
+  ScrollView,
+  View,
+  Text,
+  Image,
+  TouchableOpacity,
+  StyleSheet,
+} from "react-native";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
+import AntDesign from "@expo/vector-icons/AntDesign";
 
 type Pet = {
   id: string;
@@ -13,78 +22,110 @@ type Pet = {
   color: string;
   gender: string;
   photoURL?: string;
+  dob?: string;
 };
 
 export default function PetScreen() {
   const router = useRouter();
   const { pet } = useLocalSearchParams<{ pet: string }>();
-
   const petData: Pet | null = pet ? JSON.parse(pet) : null;
   if (!petData) return null;
 
   const handleEdit = () => {
     console.log("Edit pet info:", petData.id);
+    // router.push('/EditPetScreen'...) // ใส่ navigation ที่ต้องการ
   };
 
   const handleViewHistory = () => {
     console.log("View history of:", petData.id);
+    // router.push('/RouteHistory'...) // ใส่ navigation ที่ต้องการ
   };
 
   return (
     <>
-    <SafeAreaView style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <Ionicons name="arrow-back" size={26} color="black" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>ข้อมูลสัตว์เลี้ยง</Text>
-        <View style={{ width: 26}} />
-      </View>
+      <SafeAreaView style={styles.container}>
+        {/* Top yellow header */}
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+            <Ionicons name="arrow-back" size={26} color="black" />
+          </TouchableOpacity>
+
+          <Text style={styles.topHeaderTitle}>ข้อมูลสัตว์เลี้ยง</Text>
+
+          <View style={{ width: 26 }} />
+        </View>
       </SafeAreaView>
 
-      <ScrollView>
-        {/* Image */}
+      <ScrollView contentContainerStyle={{ paddingBottom: 30 }}>
+        {/* รูปสัตว์เลี้ยง */}
         {petData.photoURL ? (
           <Image source={{ uri: petData.photoURL }} style={styles.image} />
-        ) : null}
+        ) : (
+          <View style={styles.placeholderImage}>
+            <Text style={{ color: "#666" }}>{petData.name}</Text>
+          </View>
+        )}
 
-        {/* Pet Info */}
-        <View style={styles.card}>
-          <View style={styles.cardHeader}>
-            <View>
-              <Text style={styles.petName}>{petData.name}</Text>
-              <Text style={styles.petBreed}>{petData.breed}</Text>
+        {/* === White card: ข้อมูลสัตว์เลี้ยง === */}
+        <View style={styles.infoCard}>
+          <Text style={styles.petName}>
+            {petData.name} - <Text style={styles.petBreed}>{petData.breed}</Text>
+          </Text>
+
+          <View style={styles.infoGrid}>
+            <View style={[styles.infoBox]}>
+              <Text style={styles.infoLabel}>Age</Text>
+              <Text style={styles.infoValue}>{petData.age ? petData.age : "-"}</Text>
             </View>
-            <View style={styles.genderTag}>
-              <Ionicons
-                name={petData.gender === "female" ? "female" : "male"}
-                size={18}
-                color="#fff"
-              />
+
+            <View style={[styles.infoBox]}>
+              <Text style={styles.infoLabel}>Gender</Text>
+              <Text style={styles.infoValue}>{petData.gender || "-"}</Text>
+            </View>
+
+            <View style={[styles.infoBox]}>
+              <Text style={styles.infoLabel}>Weight</Text>
+              <Text style={styles.infoValue}>{petData.weight || "-"}</Text>
+            </View>
+
+            <View style={[styles.infoBox]}>
+              <Text style={styles.infoLabel}>Height</Text>
+              <Text style={styles.infoValue}>{petData.height || "-"}</Text>
             </View>
           </View>
+        </View>
 
-          {/* About Section */}
-          <View style={styles.aboutBox}>
-            <Text style={styles.aboutText}>
-              Age {"\n"}<Text style={styles.aboutValue}>{petData.age}</Text>
-            </Text>
-            <Text style={styles.aboutText}>
-              Weight {"\n"}<Text style={styles.aboutValue}>{petData.weight}</Text>
-            </Text>
-            <Text style={styles.aboutText}>
-              Height {"\n"}<Text style={styles.aboutValue}>{petData.height}</Text>
-            </Text>
-            <Text style={styles.aboutText}>
-              Color {"\n"}<Text style={styles.aboutValue}>{petData.color}</Text>
-            </Text>
-          </View>
+        {/* === Green section: ดูประวัติเส้นทาง / การเชื่อมต่อ / แก้ไข === */}
+        <View style={styles.greenSection}>
+          {/* การเชื่อมต่ออุปกรณ์ */}
+          <TouchableOpacity style={styles.greenRow}>
+            <View style={styles.greenIcon}>
+              <MaterialIcons name="devices" size={20} color="#483C32" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.infoText}>การเชื่อมต่ออุปกรณ์</Text>
+              <Text style={styles.connectStatus}>เชื่อมต่อแล้ว</Text>
+            </View>
 
-          {/* History */}
-          <TouchableOpacity style={styles.history} onPress={handleViewHistory}>
-            <MaterialIcons name="history" size={20} color="#333" />
-            <Text style={styles.historyText}>ดูประวัติเส้นทางย้อนหลัง</Text>
+            <Ionicons name="chevron-forward" size={20} color="#999" />
+          </TouchableOpacity>
+
+          {/* ประวัติเส้นทางของสัตว์เลี้ยง */}
+          <TouchableOpacity style={styles.greenRow} onPress={handleViewHistory}>
+            <View style={styles.greenIcon}>
+              <MaterialIcons name="history" size={20} color="#483C32" />
+            </View>
+            <Text style={styles.infoText}>ดูประวัติเส้นทางย้อนหลัง</Text>
+            <Ionicons name="chevron-forward" size={20} color="#999" style={{ marginLeft: "auto" }} />
+          </TouchableOpacity>
+
+          {/* แก้ไขข้อมูล */}
+          <TouchableOpacity style={styles.greenRow} onPress={handleEdit}>
+            <View style={styles.greenIcon}>
+              <AntDesign name="edit" size={20} color="#483C32" />
+            </View>
+            <Text style={styles.infoText}>แก้ไขข้อมูล</Text>
+            <Ionicons name="chevron-forward" size={20} color="#999" style={{ marginLeft: "auto" }} />
           </TouchableOpacity>
         </View>
       </ScrollView>
@@ -93,8 +134,8 @@ export default function PetScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { 
-    backgroundColor: "#f2bb14", 
+  container: {
+    backgroundColor: "#f2bb14",
     height: 120,
   },
   header: {
@@ -107,85 +148,167 @@ const styles = StyleSheet.create({
   backButton: {
     padding: 4,
   },
-  headerTitle: {
+  topHeaderTitle: {
     fontSize: 20,
-    fontWeight: "bold",
+    fontWeight: "700",
     color: "black",
     textAlign: "center",
     flex: 1,
   },
-  image: { 
-    width: "100%", 
-    height: 250,
+  image: {
+    width: "100%",
+    height: 220,
   },
-  card: { 
-    marginTop: -20, 
-    backgroundColor: "#fff", 
-    borderRadius: 20, 
-    padding: 16, 
-    marginHorizontal: 12, 
-    shadowColor: "#333", 
-    shadowOpacity: 0.2, 
-    shadowRadius: 8, 
-    elevation: 3
+  placeholderImage: {
+    width: "100%",
+    height: 220,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#F3F3F3",
   },
-  cardHeader: { 
-    flexDirection: "row", 
-    justifyContent: "space-between", 
-    alignItems: "center" 
+  /* White card */
+  infoCard: {
+    marginTop: -20,
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    marginHorizontal: 12,
+    paddingBottom: 6,
+    shadowColor: "#333",
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 3,
+    overflow: "hidden",
   },
-  petName: { 
-    fontSize: 26, 
-    fontWeight: "700", 
-    color: "#333" 
+  infoCardHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "#f0f0f0",
   },
-  petBreed: { 
-    fontSize: 16, 
-    color: "#555", 
-    marginTop: 7
+  infoCardTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#333",
   },
-  genderTag: { 
-    backgroundColor: "#EC51A9FF", 
-    borderRadius: 20, 
-    padding: 8 
+  infoRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderBottomWidth: 1,
   },
-  sectionTitle: { 
-    fontSize: 18, 
-    fontWeight: "600", 
-    marginTop: 20, 
-    marginBottom: 12 
+  label: {
+    fontSize: 15,
+    color: "#483C32",
   },
-  aboutBox: { 
-    flexDirection: "row", 
-    justifyContent: "space-between", 
-    marginBottom: 20
+  value: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: "#000",
   },
-  aboutText: { 
-    backgroundColor: "#F1BB5CFF", 
-    padding: 12, 
-    borderRadius: 12, 
-    textAlign: "center", 
-    width: 80, 
-    fontSize: 13, 
-    fontWeight: "600", 
-    color: "#333", 
-    marginTop: 20,
-    shadowColor: "#333", 
-    shadowOpacity: 0.1, 
-    shadowRadius: 6,
+  /* Green section (เมนูด้านล่าง) */
+  greenSection: {
+    marginTop: 15,
+    marginHorizontal: 12,
+    borderRadius: 12,
+    overflow: "hidden",
   },
-  aboutValue: { 
-    fontSize: 16, 
-    fontWeight: "700", 
-    color: "#000" 
+  greenRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    backgroundColor: "#E5E5E5FF",
+    borderBottomWidth: 1,
+    borderBottomColor: "#DFDFDFFF",
   },
-  history: { 
-    flexDirection: "row", 
-    alignItems: "center" 
+  greenIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 8,
+    backgroundColor: "#D1CFC9FF",
+    alignItems: "center",
+    justifyContent: "center",
   },
-  historyText: { 
-    marginLeft: 6, 
-    textDecorationLine: "underline", 
-    color: "#333" 
+  infoText: {
+    marginLeft: 12,
+    fontSize: 15,
+    fontWeight: "600",
+    color: "#483C32",
   },
+  petName: {
+    fontSize: 26,
+    fontWeight: "700",
+    color: "#333",
+    textAlign: "left",
+    marginTop: 15,
+    marginLeft: 5,
+    paddingHorizontal: 16,
+  },
+  petBreed: {
+    fontSize: 16,
+    color: "#666",
+    paddingHorizontal: 16,
+  },
+  infoGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "space-between",
+    padding: 20,
+  },
+  infoBox: {
+    width: "48%",
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    marginBottom: 12,
+    backgroundColor: "#FACE7F",
+    textAlign: "center",
+  },
+  infoLabel: {
+    fontSize: 14,
+    fontWeight: "500",
+    color: "#333",
+    marginBottom: 4,
+    textAlign: "center",
+  },
+  infoValue: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#000",
+    textAlign: "center",
+  },
+  infoConnect: {
+    width: "100%", // กว้างเต็มแถว
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FAF7F0",
+    borderRadius: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 12,
+    marginBottom: 12,
+  },
+
+  connectIcon: {
+    marginRight: 10,
+    marginTop: 2, // เล็กน้อยให้ตรงกับ baseline ตัวหนังสือ
+  },
+
+  connectText: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: "#000",
+  },
+
+  connectStatus: {
+    fontSize: 13,
+    color: "green", // ให้แสดงว่า active
+    marginTop: 2,
+    marginLeft: 12,
+  },
+
 });

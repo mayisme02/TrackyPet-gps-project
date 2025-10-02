@@ -15,7 +15,6 @@ interface Pet {
   breed: string;
   gender: string;
   age: string;
-  color: string;
   height: string;
   weight: string;
   photoURL?: string;           // ไม่บังคับ มีหรือไม่มีก็ได้
@@ -28,7 +27,6 @@ export default function AddPet() {
   const [breed, setBreed] = useState("");
   const [gender, setGender] = useState("");
   const [age, setAge] = useState("");
-  const [color, setColor] = useState("");
   const [height, setHeight] = useState("");
   const [weight, setWeight] = useState("");
   const [image, setImage] = useState<string | null>(null);
@@ -91,7 +89,6 @@ export default function AddPet() {
         breed,
         gender,
         age,
-        color,
         height,
         weight,
         photoURL,
@@ -161,10 +158,6 @@ export default function AddPet() {
           <View style={styles.inputGroup}>
             <Text style={styles.InputTitle}>อายุ</Text>
             <TextInput placeholder="Age" style={styles.inputSmall} value={age} onChangeText={setAge} />
-          </View>
-          <View style={styles.inputGroup}>
-            <Text style={styles.InputTitle}>สี</Text>
-            <TextInput placeholder="Color" style={styles.inputSmall} value={color} onChangeText={setColor} />
           </View>
         </View>
 
@@ -251,7 +244,11 @@ const styles = StyleSheet.create({
     height: 150
   },
   button: {
-    backgroundColor: "#885900ff", borderRadius: 12, paddingVertical: 15, alignItems: "center", marginTop: 15
+    backgroundColor: "#A16D28", 
+    borderRadius: 12, 
+    paddingVertical: 12, 
+    alignItems: "center", 
+    marginTop: 15
   },
   buttonText: {
     color: "#fff",

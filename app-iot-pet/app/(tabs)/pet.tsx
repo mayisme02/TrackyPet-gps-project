@@ -29,7 +29,6 @@ interface Pet {
   breed: string;
   gender: string;
   age: string;
-  color: string;
   height: string;
   weight: string;
   photoURL?: string;
@@ -164,7 +163,7 @@ export default function Pets() {
           renderItem={renderPetItem}
           renderHiddenItem={renderHiddenItem}
           keyExtractor={(item) => item.id}
-          rightOpenValue={-75} // ปัดซ้าย 75 px
+          rightOpenValue={-75}
           disableRightSwipe={true} // ห้ามปัดไปทางขวา
           contentContainerStyle={{ padding: 16 }}
         />
@@ -208,7 +207,7 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
   },
   addButton: {
-    backgroundColor: "#885900ff",
+    backgroundColor: "#A16D28",
     paddingVertical: 10,
     borderRadius: 8,
     margin: 20,

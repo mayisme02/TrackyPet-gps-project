@@ -14,7 +14,6 @@ export default function PetScreen() {
   const age = Array.isArray(params.age) ? params.age[0] : params.age || "";
   const weight = Array.isArray(params.weight) ? params.weight[0] : params.weight || "";
   const height = Array.isArray(params.height) ? params.height[0] : params.height || "";
-  const color = Array.isArray(params.color) ? params.color[0] : params.color || "";
   const gender = Array.isArray(params.gender) ? params.gender[0] : params.gender || "";
   const imageUri = Array.isArray(params.image) ? params.image[0] : params.image || "";
 
@@ -67,9 +66,6 @@ export default function PetScreen() {
           </Text>
           <Text style={styles.aboutText}>
             Height {"\n"}<Text style={styles.aboutValue}>{height}</Text>
-          </Text>
-          <Text style={styles.aboutText}>
-            Color {"\n"}<Text style={styles.aboutValue}>{color}</Text>
           </Text>
         </View>
 

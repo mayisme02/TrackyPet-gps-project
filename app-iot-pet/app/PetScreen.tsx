@@ -33,12 +33,12 @@ export default function PetScreen() {
 
   const handleEdit = () => {
     console.log("Edit pet info:", petData.id);
-    // router.push('/EditPetScreen'...) // ใส่ navigation ที่ต้องการ
+    // 
   };
 
   const handleViewHistory = () => {
     console.log("View history of:", petData.id);
-    // router.push('/RouteHistory'...) // ใส่ navigation ที่ต้องการ
+    // 
   };
 
   return (

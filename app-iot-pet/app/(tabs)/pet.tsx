@@ -58,6 +58,27 @@ export default function Pets() {
     return () => unsubscribe();
   }, []);
 
+  // ฟังก์ชันลบสัตว์เลี้ยง
+  const handleDelete = async (
+    rowMap: { [key: string]: any },
+    rowKey: string,
+    petId: string
+  ) => {
+    try {
+      if (!auth.currentUser) return;
+      const uid = auth.currentUser.uid;
+      await deleteDoc(doc(db, "users", uid, "pets", petId));
+      console.log("Pet deleted:", petId);
+
+      // ปิด row ที่เปิดอยู่
+      if (rowMap[rowKey]) {
+        rowMap[rowKey].closeRow();
+      }
+    } catch (error) {
+      console.error("Error deleting pet:", error);
+    }
+  };
+
   // ฟังก์ชันยืนยันก่อนลบ
   const confirmDelete = (
     rowMap: { [key: string]: any },
@@ -73,27 +94,6 @@ export default function Pets() {
         onPress: () => handleDelete(rowMap, rowKey, petId),
       },
     ]);
-  };
-
-  // ฟังก์ชันลบสัตว์เลี้ยง
-  const handleDelete = async (
-    rowMap: { [key: string]: any },
-    rowKey: string,
-    petId: string
-  ) => {
-    try {
-      if (!auth.currentUser) return;
-      const uid = auth.currentUser.uid;
-      await deleteDoc(doc(db, "users", uid, "pets", petId));
-      console.log("Pet deleted:", petId);
-
-      // ✅ ปิด row ที่เปิดอยู่
-      if (rowMap[rowKey]) {
-        rowMap[rowKey].closeRow();
-      }
-    } catch (error) {
-      console.error("Error deleting pet:", error);
-    }
   };
 
   // การ์ดสัตว์เลี้ยง
@@ -121,6 +121,7 @@ export default function Pets() {
       </View>
     </Pressable>
   );
+
   // การ์ดซ่อน (swipe to delete)
   const renderHiddenItem = (
     { item }: { item: Pet },
@@ -169,6 +170,7 @@ export default function Pets() {
         />
       )}
 
+      {/* ปุ่มเพิ่มสัตว์เลี้ยง */}
       <TouchableOpacity
         style={styles.addButton}
         onPress={() => router.push("/(tabs)/AddPet")}

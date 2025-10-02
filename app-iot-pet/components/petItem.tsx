@@ -34,7 +34,7 @@ const PetItem: React.FC<PetItemProps> = ({ title, onDelete, onPress }) => {
   return (
     <Swipeable
       renderRightActions={renderRightActions}
-      overshootRight={false} // กันไม่ให้ swipe เลยไปเกิน
+      overshootRight={false}
       enableTrackpadTwoFingerGesture
     >
       <View style={styles.cardWrapper}>
@@ -46,7 +46,6 @@ const PetItem: React.FC<PetItemProps> = ({ title, onDelete, onPress }) => {
     </Swipeable>
   );
 };
-
 export default PetItem;
 
 const styles = StyleSheet.create({
@@ -72,7 +71,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     marginVertical: 10,
     borderRadius: 10,
-    overflow: "hidden", // สำคัญ! ให้แดงไม่เกินมุมโค้ง
+    overflow: "hidden",
     width: 70,
     alignSelf: "center",
   },

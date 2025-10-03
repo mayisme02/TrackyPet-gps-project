@@ -45,7 +45,7 @@ export default function Profile() {
           text: "ออกจากระบบ",
           style: "destructive",
           onPress: () => {
-            router.replace("/auth/Login");
+            router.replace("/(auth)/Login");
           },
         },
       ]

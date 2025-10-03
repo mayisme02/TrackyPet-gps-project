@@ -56,9 +56,9 @@ const styles = StyleSheet.create({
   },
   container: {
     flexDirection: "row",
-    backgroundColor: "#D4D4D4",
+    backgroundColor: "#ABABABFF",
     alignItems: "center",
-    padding: 10,
+    padding: 12,
     borderRadius: 10,
   },
   title: {

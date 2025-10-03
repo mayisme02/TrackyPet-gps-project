@@ -234,8 +234,8 @@ const styles = StyleSheet.create({
   petCard: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#f9f9f9",
-    padding: 12,
+    backgroundColor: "#F3F3F3FF",
+    padding: 15,
     borderRadius: 12,
     marginBottom: 12,
   },
@@ -245,12 +245,13 @@ const styles = StyleSheet.create({
     borderRadius: 30,
   },
   petName: {
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: "bold",
   },
   petDetail: {
     fontSize: 14,
     color: "#666",
+    marginTop: 5,
   },
   hiddenContainer: {
     flex: 1,

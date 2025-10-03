@@ -105,7 +105,7 @@ export default function LoginScreen() {
   };
 
   const handleForgotPassword = () => {
-    router.push('/auth/Resetpassword');
+    router.push('/(auth)/Resetpassword');
   };
 
   return (
@@ -159,7 +159,7 @@ export default function LoginScreen() {
           </TouchableOpacity>
         </View>
 
-        <Link href="/auth/Register" asChild>
+        <Link href="/(auth)/Register" asChild>
           <TouchableOpacity>
             <Text style={styles.signupText}>
               ยังไม่มีบัญชีผู้ใช้? <Text style={styles.linkText}>Sign Up</Text>
@@ -172,17 +172,72 @@ export default function LoginScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff' },
-  scrollContainer: { flexGrow: 1, justifyContent: 'center', padding: 20 },
-  loginTitle: { fontSize: 28, fontWeight: 'bold', textAlign: 'center', marginBottom: 30, color: '#7D4E34' },
-  form: { marginBottom: 20 },
-  input: { backgroundColor: '#D4D4D4', borderRadius: 10, padding: 15, marginBottom: 15, fontSize: 16, borderWidth: 1, borderColor: '#e9ecef' },
-  inputDisabled: { backgroundColor: '#f1f1f1', color: '#999' },
-  error: { color: '#dc3545', fontSize: 14, marginBottom: 10, textAlign: 'center' },
-  forgotText: { textAlign: 'center', marginBottom: 15, fontSize: 14, color: '#666' },
-  linkText: { color: '#7D4E34', fontWeight: '600' },
-  loginButton: { backgroundColor: '#7D4E34', borderRadius: 10, padding: 15, alignItems: 'center', marginTop: 10 },
-  loginButtonText: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
-  buttonDisabled: { backgroundColor: '#ccc' },
-  signupText: { textAlign: 'center', marginBottom: 20, fontSize: 14, color: '#666' },
+  container: { flex: 1, 
+    backgroundColor: '#fff' 
+  },
+  scrollContainer: { 
+    flexGrow: 1, 
+    justifyContent: 'center', 
+    padding: 20
+  },
+  loginTitle: { 
+    fontSize: 28, 
+    fontWeight: 'bold', 
+    textAlign: 'center', 
+    marginBottom: 30, 
+    color: '#7D4E34' 
+  },
+  form: { 
+    marginBottom: 20 
+  },
+  input: { 
+    backgroundColor: '#D4D4D4', 
+    borderRadius: 10, 
+    padding: 15, 
+    marginBottom: 15, 
+    fontSize: 16, 
+    borderWidth: 1, 
+    borderColor: '#e9ecef' 
+  },
+  inputDisabled: { 
+    backgroundColor: '#f1f1f1', 
+    color: '#999' 
+  },
+  error: { 
+    color: '#dc3545', 
+    fontSize: 14,
+    marginBottom: 10, 
+    textAlign: 'center' 
+  },
+  forgotText: { 
+    textAlign: 'center', 
+    marginBottom: 15, 
+    fontSize: 14, 
+    color: '#666' 
+  },
+  linkText: { 
+    color: '#7D4E34', 
+    fontWeight: '600' 
+  },
+  loginButton: { 
+    backgroundColor: '#7D4E34', 
+    borderRadius: 10, 
+    padding: 15, 
+    alignItems: 'center', 
+    marginTop: 10 
+  },
+  loginButtonText: { 
+    color: '#fff', 
+    fontSize: 16, 
+    fontWeight: 'bold' 
+  },
+  buttonDisabled: { 
+    backgroundColor: '#ccc' 
+  },
+  signupText: { 
+    textAlign: 'center', 
+    marginBottom: 20, 
+    fontSize: 14, 
+    color: '#666' 
+  },
 });

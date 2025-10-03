@@ -1,5 +1,8 @@
 import React, { useEffect, useState } from "react";
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Image, SafeAreaView, ActivityIndicator, Alert } from "react-native";
+import { 
+  View, Text, TextInput, TouchableOpacity, StyleSheet, 
+  Image, SafeAreaView, ActivityIndicator, Alert 
+} from "react-native";
 import { useRouter } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import * as ImageManipulator from "expo-image-manipulator";
@@ -17,7 +20,7 @@ interface Pet {
   age: string;
   height: string;
   weight: string;
-  photoURL?: string;           
+  photoURL?: string;
   cloudinaryPublicId?: string;
 }
 
@@ -25,7 +28,8 @@ export default function AddPet() {
   const router = useRouter();
   const [petName, setPetName] = useState("");
   const [breed, setBreed] = useState("");
-  const [gender, setGender] = useState("");
+  const [dropdownVisible, setDropdownVisible] = useState(false);
+  const [gender, setGender] = useState<"เพศผู้" | "เพศเมีย">("เพศผู้");
   const [age, setAge] = useState("");
   const [height, setHeight] = useState("");
   const [weight, setWeight] = useState("");
@@ -57,7 +61,6 @@ export default function AddPet() {
   const handleAddPet = async () => {
     setLoading(true);
     try {
-      // 1) Upload รูปภาพไปยัง Cloudinary (ถ้ามี)
       let photoURL: string | null = null;
       let cloudinaryPublicId: string | null = null;
 
@@ -72,18 +75,15 @@ export default function AddPet() {
         cloudinaryPublicId = public_id;
       }
 
-      // 2) Login ก่อนเขียน Firestore
       await ensureAuth();
       const uid = auth.currentUser!.uid;
 
-      // 3) สร้างและอัปเดตเอกสาร users/{uid}
       await setDoc(
         doc(db, "users", uid),
         { lastActiveAt: serverTimestamp() },
         { merge: true }
       );
 
-      // 4) เพิ่ม doc ใต้ users/{uid}/pets
       await addDoc(collection(db, "users", uid, "pets"), {
         name: petName,
         breed,
@@ -97,8 +97,6 @@ export default function AddPet() {
       });
 
       Alert.alert("เพิ่มข้อมูลสัตว์เลี้ยงเรียบร้อย!");
-
-      // เปลี่ยนจาก router.back() เป็น router.replace ไปหน้า Pets โดยตรง
       router.replace("/(tabs)/Pet");
 
     } catch (err: any) {
@@ -109,16 +107,15 @@ export default function AddPet() {
     }
   };
 
-  // โหลดรายชื่อสัตว์เลี้ยงของผู้ใช้ที่กำลังล็อกอิน จาก Firestore แล้วเก็บไว้ใน state ของ React
   const getPetList = async () => {
-    if (!auth.currentUser) return; // กัน null
+    if (!auth.currentUser) return;
     const uid = auth.currentUser.uid;
 
     const querySnapshot = await getDocs(collection(db, "users", uid, "pets"));
 
     const pets = querySnapshot.docs.map((doc) => ({
       id: doc.id,
-      ...(doc.data() as Omit<Pet, "id">), // cast ให้ตรง type
+      ...(doc.data() as Omit<Pet, "id">),
     }));
 
     setPetList(pets);
@@ -131,7 +128,6 @@ export default function AddPet() {
   return (
     <>
       <SafeAreaView style={styles.headerContainer}>
-        {/* กลับไปยังหน้า Pet */}
         <TouchableOpacity
           style={styles.backButton}
           onPress={() => router.push("/(tabs)/Pet")}>
@@ -139,27 +135,95 @@ export default function AddPet() {
         </TouchableOpacity>
       </SafeAreaView>
 
-      {/* รับข้อมูลจาก User */}
       <View style={styles.container}>
         <Text style={styles.title}>เพิ่มข้อมูล</Text>
 
-        <Text style={styles.InputTitle}>ชื่อสัตว์เลี้ยง</Text>
-        <TextInput placeholder="Pet Name" style={styles.input} value={petName} onChangeText={setPetName} />
+        {/* เพิ่มรูปภาพ */}
+        <View style={styles.imagePickerWrapper}>
+  <TouchableOpacity style={[styles.inputImg, styles.imagePicker]} onPress={pickImage}>
+    {image ? (
+      <Image source={{ uri: image }} style={styles.inputImg} />
+    ) : (
+      <FontAwesome6 name="file-image" size={80} color={"lightgray"} />
+    )}
+  </TouchableOpacity>
+</View>
 
-        <Text style={styles.InputTitle}>สายพันธุ์</Text>
-        <TextInput placeholder="Breed Name" style={styles.input} value={breed} onChangeText={setBreed} />
+        {/* ชื่อสัตว์ */}
+        <View style={styles.nameTitle}>
+          <Text style={styles.InputTitle}>ชื่อสัตว์เลี้ยง</Text>
+          <TextInput placeholder="Pet Name" style={styles.input} value={petName} onChangeText={setPetName} />
+        </View>
 
+        {/* สายพันธุ์ */}
+        <View style={styles.nameTitle}>
+          <Text style={styles.InputTitle}>สายพันธุ์</Text>
+          <View style={styles.dropdownWrapper}>
+            <TouchableOpacity
+              style={styles.dropdownButton}
+              onPress={() => setDropdownVisible(!dropdownVisible)}
+            >
+              <Text style={styles.dropdownButtonText}>
+                {breed ? breed : "-- เลือกสายพันธุ์ --"}
+              </Text>
+            </TouchableOpacity>
+
+            {dropdownVisible && (
+              <View style={styles.dropdownList}>
+                {[
+                  { label: "สุนัขพันธุ์ชิสุ", value: "Shih Tzu" },
+                  { label: "สุนัขพันธุ์ปอมเมอเรเนียน", value: "Pomeranian" },
+                  { label: "สุนัขพันธุ์ลาบราดอร์", value: "Labrador" },
+                  { label: "แมวพันธุ์เปอร์เซีย", value: "Persian" },
+                  { label: "แมวพันธุ์สยาม", value: "Siamese" },
+                  { label: "สุนัขพันธุ์เฟรนช์บูลด็อก", value: "Bulldog" },
+                  { label: "แมวพันธุ์เมนคูน", value: "Maine Coon" },
+                  { label: "สุนัขพันธุ์โกลเด้น รีทรีฟเวอร์", value: "Golden Retriever" }
+                ].map((item) => (
+                  <TouchableOpacity 
+                    key={item.value} 
+                    onPress={() => { setBreed(item.label); setDropdownVisible(false); }}
+                  >
+                    <Text style={styles.dropdownItem}>{item.label}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+          </View>
+        </View>
+
+        {/* เพศ + อายุ */}
         <View style={styles.row}>
           <View style={styles.inputGroup}>
             <Text style={styles.InputTitle}>เพศ</Text>
-            <TextInput placeholder="Gender" style={styles.inputSmall} value={gender} onChangeText={setGender} />
+            <View style={styles.genderContainer}>
+              <TouchableOpacity
+                style={[styles.genderButton, gender === "เพศผู้" && styles.genderButtonSelected]}
+                onPress={() => setGender("เพศผู้")}
+              >
+                <Text style={[styles.genderText, gender === "เพศผู้" && styles.genderTextSelected]}>
+                  เพศผู้
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.genderButton, gender === "เพศเมีย" && styles.genderButtonSelected]}
+                onPress={() => setGender("เพศเมีย")}
+              >
+                <Text style={[styles.genderText, gender === "เพศเมีย" && styles.genderTextSelected]}>
+                  เพศเมีย
+                </Text>
+              </TouchableOpacity>
+            </View>
           </View>
+
           <View style={styles.inputGroup}>
             <Text style={styles.InputTitle}>อายุ</Text>
             <TextInput placeholder="Age" style={styles.inputSmall} value={age} onChangeText={setAge} />
           </View>
         </View>
 
+        {/* ส่วนสูง + น้ำหนัก */}
         <View style={styles.row}>
           <View style={styles.inputGroup}>
             <Text style={styles.InputTitle}>ส่วนสูง</Text>
@@ -171,15 +235,7 @@ export default function AddPet() {
           </View>
         </View>
 
-        <Text style={styles.InputTitle}>เพิ่มรูปภาพ</Text>
-        <TouchableOpacity style={[styles.inputSmall, styles.imagePicker]} onPress={pickImage}>
-          {image ? (
-            <Image source={{ uri: image }} style={{ width: 150, height: 150 }} />
-          ) : (
-            <FontAwesome6 name="file-image" size={80} color={"lightgray"} />
-          )}
-        </TouchableOpacity>
-
+        {/* ปุ่มเพิ่ม */}
         <TouchableOpacity
           style={[styles.button, loading && { opacity: 0.6 }]}
           onPress={handleAddPet}
@@ -236,17 +292,30 @@ const styles = StyleSheet.create({
     fontSize: 16,
     textAlign: "center"
   },
+  imagePickerWrapper: {
+    justifyContent: "center",
+    alignItems: "center",
+    marginVertical: 10,
+  },
   imagePicker: {
     justifyContent: "center",
     alignItems: "center",
-    marginTop: 5,
-    height: 150
+  },
+  inputImg: {
+    height: 230,
+    width: 230,
+    backgroundColor: "#eee",
+    borderRadius: 120,
+    padding: 12,
+    fontSize: 16,
+    textAlign: "center",
+    resizeMode: "cover",
   },
   button: {
-    backgroundColor: "#A16D28", 
-    borderRadius: 12, 
-    paddingVertical: 12, 
-    alignItems: "center", 
+    backgroundColor: "#A16D28",
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: "center",
     marginTop: 15
   },
   buttonText: {
@@ -257,10 +326,81 @@ const styles = StyleSheet.create({
   InputTitle: {
     fontSize: 14,
     fontWeight: "bold",
-    marginBottom: 10
+    marginBottom: 10,
   },
   inputGroup: {
     flex: 1,
     marginHorizontal: 5
+  },
+  genderContainer: {
+    flexDirection: "row",
+    borderRadius: 12,
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: "#ddd",
+  },
+  genderButton: {
+    flex: 1,
+    paddingVertical: 12,
+    alignItems: "center",
+    backgroundColor: "#fff",
+  },
+  genderButtonSelected: {
+    backgroundColor: "#FACF32FF",
+  },
+  genderText: {
+    fontSize: 14,
+    fontWeight: "500",
+    color: "#555",
+  },
+  genderTextSelected: {
+    color: "#000",
+    fontWeight: "600",
+  },
+  nameTitle: {
+    marginTop: 12
+  },
+  dropdownWrapper: {
+    marginTop: 5,
+    position: "relative",
+  },
+  dropdownButton: {
+    backgroundColor: "#fff",
+    borderWidth: 1,
+    borderColor: "#ddd",
+    borderRadius: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    justifyContent: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  dropdownButtonText: {
+    fontSize: 16,
+    color: "#333",
+  },
+  dropdownList: {
+    marginTop: 8,
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
+    elevation: 5,
+    paddingVertical: 8,
+    position: "absolute",
+    top: 55,
+    width: "100%",
+    zIndex: 10,
+  },
+  dropdownItem: {
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    fontSize: 16,
+    color: "#444",
   },
 });

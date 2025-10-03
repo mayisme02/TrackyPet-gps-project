@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import { Link, router } from 'expo-router';
 import { signInWithEmailAndPassword } from 'firebase/auth';
-import { auth, db } from '../firebase/firebase';
+import { auth, db } from '../../firebase/firebase';
 import { doc, getDoc } from 'firebase/firestore';
 
 export default function LoginScreen() {
@@ -105,7 +105,7 @@ export default function LoginScreen() {
   };
 
   const handleForgotPassword = () => {
-    router.push('./resetpassword');
+    router.push('/auth/Resetpassword');
   };
 
   return (
@@ -159,7 +159,7 @@ export default function LoginScreen() {
           </TouchableOpacity>
         </View>
 
-        <Link href="/Register" asChild>
+        <Link href="/auth/Register" asChild>
           <TouchableOpacity>
             <Text style={styles.signupText}>
               ยังไม่มีบัญชีผู้ใช้? <Text style={styles.linkText}>Sign Up</Text>

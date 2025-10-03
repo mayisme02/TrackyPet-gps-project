@@ -4,9 +4,9 @@ import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import * as ImageManipulator from "expo-image-manipulator";
-import { auth, db } from "../firebase/firebase";
+import { auth, db } from "../../firebase/firebase";
 import { doc, getDoc, updateDoc } from "firebase/firestore";
-import { uploadToCloudinary } from "./uploadToCloudinary";
+import { uploadToCloudinary } from "../(auth)/uploadToCloudinary";
 
 export default function EditProfile() {
   const [username, setUsername] = useState("");

@@ -5,7 +5,7 @@ import { Dimensions } from 'react-native';
 
 export default function WelcomeScreen() {
   const handleGetStarted = () => {
-    router.replace('/Login');
+    router.replace('/(auth)/Login');
   };
 
   return (

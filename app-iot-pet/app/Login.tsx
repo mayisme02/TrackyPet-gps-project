@@ -63,7 +63,7 @@ export default function LoginScreen() {
       if (snap.exists()) {
         const profile = snap.data();
         router.replace({
-          pathname: '/(tabs)/home',
+          pathname: '/(tabs)/Home',
           params: {
             username: profile.username ?? '',
             email: profile.email ?? '',

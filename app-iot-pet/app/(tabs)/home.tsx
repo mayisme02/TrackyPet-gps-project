@@ -5,7 +5,7 @@ import { router } from 'expo-router';
 import ParallaxScrollView from '@/components/ParallaxScrollView';
 
 const noti = () => {
-  router.push('./notification');
+  router.push('/Notification');
 };
 
 export default function HomeScreen() {

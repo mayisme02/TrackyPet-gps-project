@@ -8,7 +8,11 @@ export default function RootLayout() {
       <Stack.Screen name="Register" />
       <Stack.Screen name="(tabs)" />
       <Stack.Screen name="Resetpassword" />
-      <Stack.Screen name="PetScreen" />
+      <Stack.Screen name="PetProfile" />
+      <Stack.Screen name="Notification" />
+      <Stack.Screen name="EditProfile" />
+      <Stack.Screen name="EditPet" />
+      <Stack.Screen name="AddPet" />
     </Stack>
   );
 }

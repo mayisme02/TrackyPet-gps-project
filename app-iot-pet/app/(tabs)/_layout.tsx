@@ -27,45 +27,43 @@ export default function TabLayout() {
       }}
     >
       <Tabs.Screen
-        name="home"
+        name="Home"
         options={{
           title: 'หน้าหลัก',
           tabBarIcon: ({ color }: { color: string }) => <IconSymbol size={28} name="house.fill" color={color} />,
         }}
       />
       <Tabs.Screen
-        name="pet"
+        name="Pet"
         options={{
           title: 'สัตว์เลี้ยง',
           tabBarIcon: ({ color }: { color: string }) => <FontAwesome6 name="paw" size={24} color={color} />,
         }}
       />
       <Tabs.Screen
-        name="map2"
+        name="Map2"
         options={{
           title: 'แผนที่',
           tabBarIcon: ({ color }: { color: string }) => <FontAwesome6 name="map-pin" size={24} color={color} />,
         }}
       />
       <Tabs.Screen
-        name="devices"
+        name="Devices"
         options={{
           title: 'อุปกรณ์',
           tabBarIcon: ({ color }: { color: string }) => <MaterialIcons name="devices" size={24} color={color} />,
         }}
       />
       <Tabs.Screen
-        name="profile"
+        name="Profile"
         options={{
           title: 'บัญชีผู้ใช้',
           tabBarIcon: ({ color }: { color: string }) => <FontAwesome6 name="user-pen" size={24} color={color} />,
         }}
       />
       {/* ซ่อนจากแท็บ */}
-      <Tabs.Screen name="Editprofile" options={{ href: null }} />  
-      <Tabs.Screen name="notification" options={{ href: null }} /> 
-      <Tabs.Screen name="map" options={{ href: null }} />
-      <Tabs.Screen name="AddPet" options={{ href: null }} />
+      <Tabs.Screen name="Map" options={{ href: null }} />
     </Tabs>
+    
   );
 }

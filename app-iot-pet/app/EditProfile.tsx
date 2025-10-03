@@ -4,9 +4,9 @@ import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import * as ImageManipulator from "expo-image-manipulator";
-import { auth, db } from "../../firebase/firebase";
+import { auth, db } from "../firebase/firebase";
 import { doc, getDoc, updateDoc } from "firebase/firestore";
-import { uploadToCloudinary } from "../uploadToCloudinary";
+import { uploadToCloudinary } from "./uploadToCloudinary";
 
 export default function EditProfile() {
   const [username, setUsername] = useState("");
@@ -18,7 +18,7 @@ export default function EditProfile() {
   const [loading, setLoading] = useState(true);
   const currentImage = downloadUrl ?? localUri ?? null;
 
-  const handleBack = () => router.push("/(tabs)/profile");
+  const handleBack = () => router.push("/(tabs)/Profile");
 
 useEffect(() => {
     // ดึงข้อมูลจาก Firestore
@@ -101,7 +101,7 @@ useEffect(() => {
       });
 
       Alert.alert("สำเร็จ", "บันทึกโปรไฟล์เรียบร้อย", [
-        { text: "ตกลง", onPress: () => router.replace("/(tabs)/profile") },
+        { text: "ตกลง", onPress: () => router.replace("/(tabs)/Profile") },
       ]);
     } catch (e: any) {
       Alert.alert("ผิดพลาด", e?.message ?? "ไม่สามารถบันทึกได้");

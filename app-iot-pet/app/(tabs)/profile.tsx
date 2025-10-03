@@ -53,7 +53,7 @@ export default function Profile() {
   };
 
   const handleEditProfile = () => {
-    router.push("./Editprofile");
+    router.push("./EditProfile");
   };
 
   if (loading) {

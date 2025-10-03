@@ -4,10 +4,10 @@ import { useRouter } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import * as ImageManipulator from "expo-image-manipulator";
 import FontAwesome6 from "@expo/vector-icons/FontAwesome6";
-import { auth, db } from "../../firebase/firebase";
+import { auth, db } from "../firebase/firebase";
 import { signInAnonymously } from "firebase/auth";
 import { doc, setDoc, collection, addDoc, serverTimestamp, getDocs } from "firebase/firestore";
-import { uploadToCloudinary } from "../uploadToCloudinary";
+import { uploadToCloudinary } from "./uploadToCloudinary";
 
 interface Pet {
   id: string;
@@ -99,7 +99,7 @@ export default function AddPet() {
       Alert.alert("เพิ่มข้อมูลสัตว์เลี้ยงเรียบร้อย!");
 
       // เปลี่ยนจาก router.back() เป็น router.replace ไปหน้า Pets โดยตรง
-      router.replace("/(tabs)/pet");
+      router.replace("/(tabs)/Pet");
 
     } catch (err: any) {
       console.log("Firestore error:", err?.code, err?.message);
@@ -134,7 +134,7 @@ export default function AddPet() {
         {/* กลับไปยังหน้า Pet */}
         <TouchableOpacity
           style={styles.backButton}
-          onPress={() => router.push("/(tabs)/pet")}>
+          onPress={() => router.push("/(tabs)/Pet")}>
           <Text style={styles.backButtonText}>กลับ</Text>
         </TouchableOpacity>
       </SafeAreaView>

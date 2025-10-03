@@ -103,7 +103,7 @@ export default function Pets() {
       android_ripple={{ color: "transparent" }} // กัน ripple
       onPress={() =>
         router.push({
-          pathname: "/PetScreen",
+          pathname: "/PetProfile",
           params: { pet: JSON.stringify(item) },
         })
       }
@@ -173,7 +173,7 @@ export default function Pets() {
       {/* ปุ่มเพิ่มสัตว์เลี้ยง */}
       <TouchableOpacity
         style={styles.addButton}
-        onPress={() => router.push("/(tabs)/AddPet")}
+        onPress={() => router.push("/AddPet")}
       >
         <Text style={styles.addButtonText}>เพิ่ม</Text>
       </TouchableOpacity>

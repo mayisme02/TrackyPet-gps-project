@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import { router } from 'expo-router';
 import { sendPasswordResetEmail } from 'firebase/auth';
-import { auth } from '../firebase/firebase';
+import { auth } from '../../firebase/firebase';
 
 // Type definition สำหรับ Firebase Auth Error
 interface FirebaseAuthError extends Error {

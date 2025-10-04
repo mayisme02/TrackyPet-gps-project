@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import {View,Text,TextInput,TouchableOpacity,StyleSheet,Alert,KeyboardAvoidingView,Platform,ScrollView,
 } from 'react-native';
 import { router } from 'expo-router';
-import { auth, db } from '../firebase/firebase';
+import { auth, db } from '../../firebase/firebase';
 import { doc, setDoc } from 'firebase/firestore';
 import { createUserWithEmailAndPassword } from 'firebase/auth';
 

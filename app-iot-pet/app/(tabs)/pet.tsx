@@ -21,6 +21,7 @@ import {
   doc,
 } from "firebase/firestore";
 import { SwipeListView } from "react-native-swipe-list-view";
+import { Pressable } from "react-native";
 
 interface Pet {
   id: string;
@@ -28,7 +29,6 @@ interface Pet {
   breed: string;
   gender: string;
   age: string;
-  color: string;
   height: string;
   weight: string;
   photoURL?: string;
@@ -97,8 +97,18 @@ export default function Pets() {
   };
 
   // การ์ดสัตว์เลี้ยง
+
   const renderPetItem = ({ item }: { item: Pet }) => (
-    <View style={styles.petCard}>
+    <Pressable
+      style={styles.petCard}
+      android_ripple={{ color: "transparent" }} // กัน ripple
+      onPress={() =>
+        router.push({
+          pathname: "/(modals)/PetDetail",
+          params: { pet: JSON.stringify(item) },
+        })
+      }
+    >
       {item.photoURL ? (
         <Image source={{ uri: item.photoURL }} style={styles.petImage} />
       ) : (
@@ -110,8 +120,9 @@ export default function Pets() {
           {item.breed} • {item.age} ปี • {item.gender}
         </Text>
       </View>
-    </View>
+    </Pressable>
   );
+
 
   // การ์ดซ่อน (swipe to delete)
   const renderHiddenItem = (
@@ -163,7 +174,7 @@ export default function Pets() {
 
       <TouchableOpacity
         style={styles.addButton}
-        onPress={() => router.push("/(tabs)/AddPet")}
+        onPress={() => router.push("/(modals)/AddPet")}
       >
         <Text style={styles.addButtonText}>เพิ่ม</Text>
       </TouchableOpacity>

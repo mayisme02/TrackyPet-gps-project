@@ -32,7 +32,10 @@ export default function PetDetail() {
 
     const handleEdit = () => {
         console.log("Edit pet info:", petData.id);
-        // router.push('/EditPetScreen'...) // ใส่ navigation ที่ต้องการ
+        router.push({
+            pathname: "/EditPet",
+            params: { pet: JSON.stringify(petData) },
+        });
     };
 
     const handleViewHistory = () => {
@@ -216,7 +219,6 @@ const styles = StyleSheet.create({
         flexWrap: "wrap",
         justifyContent: "space-between",
         padding: 20,
-        marginBottom: 20
     },
     label: {
         fontSize: 15,

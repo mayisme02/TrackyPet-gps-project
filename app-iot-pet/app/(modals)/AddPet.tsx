@@ -64,7 +64,7 @@ export default function AddPet() {
     }
   };
 
-  // 💾 บันทึกสัตว์เลี้ยง
+  // บันทึกสัตว์เลี้ยง
   const handleAddPet = async () => {
     if (!petName || !breed) {
       Alert.alert("ผิดพลาด", "กรุณากรอกข้อมูลให้ครบ");
@@ -116,14 +116,18 @@ export default function AddPet() {
     <>
       {/* Header */}
       <SafeAreaView style={styles.headerContainer}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <Ionicons name="arrow-back" size={26} color="black" />
-        </TouchableOpacity>
+        <View style={styles.headerContent}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+            <Ionicons name="arrow-back" size={26} color="black" />
+          </TouchableOpacity>
+
+          <Text style={styles.topHeaderTitle}>เพิ่มสัตว์เลี้ยง</Text>
+        </View>
       </SafeAreaView>
+
 
       {/* Form */}
       <View style={styles.container}>
-        <Text style={styles.title}>เพิ่มข้อมูล</Text>
 
         {/* รูปสัตว์ */}
         <View style={styles.imagePickerWrapper}>
@@ -263,18 +267,32 @@ export default function AddPet() {
 }
 
 const styles = StyleSheet.create({
-  container: { 
-    flex: 1, 
-    padding: 20 
+  headerContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center", // ทำให้ Text อยู่กลาง
+    height: 60,
+    position: "relative",
+  },
+  backButton: {
+    position: "absolute",
+    left: 10,
+    padding: 8,
+  },
+  topHeaderTitle: {
+    fontSize: 20,
+    fontWeight: "700",
+    color: "black",
+    textAlign: "center",
+  },
+  container: {
+    padding: 20
   },
   headerContainer: {
     paddingHorizontal: 16,
     paddingTop: 18,
     backgroundColor: "#f2bb14",
-  },
-  backButton: { 
-    padding: 8, 
-    marginLeft: 10 
+    height: 120
   },
   title: {
     fontSize: 22,
@@ -282,9 +300,9 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     textAlign: "center",
   },
-  imagePickerWrapper: { 
-    alignItems: "center", 
-    marginBottom: 20 
+  imagePickerWrapper: {
+    alignItems: "center",
+    marginBottom: 20
   },
   inputImg: {
     height: 160,
@@ -295,13 +313,13 @@ const styles = StyleSheet.create({
     alignItems: "center",
     overflow: "hidden",
   },
-  nameTitle: { 
-    marginBottom: 16 
+  nameTitle: {
+    marginBottom: 16
   },
-  InputTitle: { 
-    fontSize: 16, 
-    fontWeight: "600", 
-    marginBottom: 6 
+  InputTitle: {
+    fontSize: 16,
+    fontWeight: "600",
+    marginBottom: 6
   },
   input: {
     height: 48,
@@ -336,23 +354,23 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: "#333",
   },
-  imageStyle: { 
-    width: 28, 
-    height: 28, 
-    borderRadius: 14 
+  imageStyle: {
+    width: 28,
+    height: 28,
+    borderRadius: 14
   },
-  placeholderStyle: { 
-    fontSize: 15, 
-    color: "#333" 
+  placeholderStyle: {
+    fontSize: 15,
+    color: "#333"
   },
-  selectedTextStyle: { 
-    fontSize: 15, 
-    marginLeft: 8, 
-    color: "#333" 
+  selectedTextStyle: {
+    fontSize: 15,
+    marginLeft: 8,
+    color: "#333"
   },
-  iconStyle: { 
-    width: 22, 
-    height: 22 
+  iconStyle: {
+    width: 22,
+    height: 22
   },
   // Layout & Gender
   infoGrid: {
@@ -398,7 +416,6 @@ const styles = StyleSheet.create({
     backgroundColor: "#885900ff",
     paddingVertical: 12,
     borderRadius: 12,
-    marginTop: 20,
     alignItems: "center",
   },
   addButtonText: {

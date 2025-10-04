@@ -45,7 +45,7 @@ export default function Profile() {
           text: "ออกจากระบบ",
           style: "destructive",
           onPress: () => {
-            router.replace("/Login");
+            router.replace("/(auth)/Login");
           },
         },
       ]
@@ -53,7 +53,7 @@ export default function Profile() {
   };
 
   const handleEditProfile = () => {
-    router.push("./Editprofile");
+    router.push("/(modals)/Editprofile");
   };
 
   if (loading) {

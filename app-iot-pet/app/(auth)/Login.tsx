@@ -113,8 +113,6 @@ return () => {
     router.push('./resetpassword');
   };
 
-  
-
   return (
     <KeyboardAvoidingView
       style={styles.container}

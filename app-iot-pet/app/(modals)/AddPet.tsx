@@ -45,7 +45,7 @@ export default function AddPet() {
   const [image, setImage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  // อัปโหลดรูป
+  // 📸 อัปโหลดรูป
   const pickImage = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
@@ -64,7 +64,7 @@ export default function AddPet() {
     }
   };
 
-  // บันทึกสัตว์เลี้ยง
+  // 💾 บันทึกสัตว์เลี้ยง
   const handleAddPet = async () => {
     if (!petName || !breed) {
       Alert.alert("ผิดพลาด", "กรุณากรอกข้อมูลให้ครบ");
@@ -156,14 +156,17 @@ export default function AddPet() {
             placeholderStyle={styles.placeholderStyle}
             imageStyle={styles.imageStyle}
             iconStyle={styles.iconStyle}
-            maxHeight={250}
+            containerStyle={styles.dropdownContainer}
+            itemTextStyle={styles.dropdownItemText}
+            itemContainerStyle={styles.dropdownItemContainer}
+            activeColor="#f8e4b5"
+            maxHeight={230}
             value={breed}
             data={breedData}
             valueField="value"
             labelField="lable"
             imageField="image"
             placeholder="เลือกสายพันธุ์"
-            searchPlaceholder="ค้นหา..."
             onChange={(e) => setBreed(e.value)}
           />
         </View>
@@ -207,7 +210,6 @@ export default function AddPet() {
                   เพศเมีย
                 </Text>
               </TouchableOpacity>
-
             </View>
           </View>
 
@@ -261,9 +263,12 @@ export default function AddPet() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 20 },
-  headerContainer: { 
-    paddingHorizontal: 16, 
+  container: { 
+    flex: 1, 
+    padding: 20 
+  },
+  headerContainer: {
+    paddingHorizontal: 16,
     paddingTop: 18,
     backgroundColor: "#f2bb14",
   },
@@ -271,11 +276,11 @@ const styles = StyleSheet.create({
     padding: 8, 
     marginLeft: 10 
   },
-  title: { 
-    fontSize: 22, 
-    fontWeight: "bold", 
-    marginBottom: 20, 
-    textAlign: "center" 
+  title: {
+    fontSize: 22,
+    fontWeight: "bold",
+    marginBottom: 20,
+    textAlign: "center",
   },
   imagePickerWrapper: { 
     alignItems: "center", 
@@ -303,14 +308,33 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     backgroundColor: "#F2F2F2FF",
     paddingHorizontal: 12,
-    borderWidth: 1, 
+    borderWidth: 1,
     borderColor: "#D3D3D3FF",
   },
+  // Dropdown Styling
   dropdown: {
     height: 50,
     backgroundColor: "#DEDEDEFF",
     borderRadius: 15,
     paddingHorizontal: 12,
+  },
+  dropdownContainer: {
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  dropdownItemContainer: {
+    borderBottomWidth: 0.5,
+    borderColor: "#eee",
+    paddingVertical: 4,
+  },
+  dropdownItemText: {
+    fontSize: 15,
+    color: "#333",
   },
   imageStyle: { 
     width: 28, 
@@ -330,7 +354,7 @@ const styles = StyleSheet.create({
     width: 22, 
     height: 22 
   },
-  // Grid layout
+  // Layout & Gender
   infoGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -341,15 +365,14 @@ const styles = StyleSheet.create({
     width: "48%",
     marginBottom: 12,
   },
-  // Gender styles
   genderBox: {
     flexDirection: "row",
     backgroundColor: "#F2F2F2",
     borderRadius: 10,
-    borderWidth: 1,
-    borderColor: "#D3D3D3",
     overflow: "hidden",
     height: 48,
+    borderWidth: 1,
+    borderColor: "#D3D3D3FF",
   },
   genderOption: {
     flex: 1,
@@ -370,6 +393,7 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
 
+  // Button
   addButton: {
     backgroundColor: "#885900ff",
     paddingVertical: 12,
@@ -377,9 +401,9 @@ const styles = StyleSheet.create({
     marginTop: 20,
     alignItems: "center",
   },
-  addButtonText: { 
-    color: "#fff", 
-    fontSize: 18, 
-    fontWeight: "600" 
+  addButtonText: {
+    color: "#fff",
+    fontSize: 18,
+    fontWeight: "600",
   },
 });

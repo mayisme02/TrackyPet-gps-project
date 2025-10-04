@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
-import { 
-  View, Text, TextInput, TouchableOpacity, StyleSheet, 
-  Image, SafeAreaView, ActivityIndicator, Alert 
+import {
+  View, Text, TextInput, TouchableOpacity, StyleSheet,
+  Image, SafeAreaView, ActivityIndicator, Alert
 } from "react-native";
 import { useRouter } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
@@ -11,6 +11,7 @@ import { auth, db } from "../../firebase/firebase";
 import { signInAnonymously } from "firebase/auth";
 import { doc, setDoc, collection, addDoc, serverTimestamp, getDocs } from "firebase/firestore";
 import { uploadToCloudinary } from "../../cloud/uploadToCloudinary";
+import { Ionicons } from "@expo/vector-icons";
 
 interface Pet {
   id: string;
@@ -128,10 +129,8 @@ export default function AddPet() {
   return (
     <>
       <SafeAreaView style={styles.headerContainer}>
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => router.push("/(tabs)/pet")}>
-          <Text style={styles.backButtonText}>กลับ</Text>
+        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+          <Ionicons name="arrow-back" size={26} color="black" />
         </TouchableOpacity>
       </SafeAreaView>
 
@@ -141,12 +140,13 @@ export default function AddPet() {
         {/* เพิ่มรูปภาพ */}
         <View style={styles.imagePickerWrapper}>
           <TouchableOpacity style={[styles.inputImg, styles.imagePicker]} onPress={pickImage}>
-          {image ? (
-            <Image source={{ uri: image }} />
-          ) : (
-            <FontAwesome6 name="file-image" size={80} color={"lightgray"} />
-          )}
-        </TouchableOpacity>
+            {image ? (
+              <Image source={{ uri: image }} style={styles.inputImg} />
+            ) : (
+              <FontAwesome6 name="file-image" size={80} color={"lightgray"} />
+            )}
+
+          </TouchableOpacity>
         </View>
 
         {/* ชื่อสัตว์ */}
@@ -180,8 +180,8 @@ export default function AddPet() {
                   { label: "แมวพันธุ์เมนคูน", value: "Maine Coon" },
                   { label: "สุนัขพันธุ์โกลเด้น รีทรีฟเวอร์", value: "Golden Retriever" }
                 ].map((item) => (
-                  <TouchableOpacity 
-                    key={item.value} 
+                  <TouchableOpacity
+                    key={item.value}
                     onPress={() => { setBreed(item.label); setDropdownVisible(false); }}
                   >
                     <Text style={styles.dropdownItem}>{item.label}</Text>
@@ -306,10 +306,9 @@ const styles = StyleSheet.create({
     width: 200,
     backgroundColor: "#eee",
     borderRadius: 100,
-    padding: 12,
-    fontSize: 16,
-    textAlign: "center",
-    resizeMode: "cover",
+    justifyContent: "center",
+    alignItems: "center",
+    overflow: "hidden",
   },
   button: {
     backgroundColor: "#A16D28",
@@ -346,7 +345,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff",
   },
   genderButtonSelected: {
-    backgroundColor: "#FACF32FF",
+    backgroundColor: "#F7CB54FF",
   },
   genderText: {
     fontSize: 14,

@@ -123,7 +123,6 @@ export default function Pets() {
     </Pressable>
   );
 
-
   // การ์ดซ่อน (swipe to delete)
   const renderHiddenItem = (
     { item }: { item: Pet },
@@ -191,7 +190,7 @@ const styles = StyleSheet.create({
   TextHeader: {
     fontSize: 22,
     fontWeight: "bold",
-    color: "#fff",
+    color: "black",
     textAlign: "center",
   },
   AddPetHeader: {

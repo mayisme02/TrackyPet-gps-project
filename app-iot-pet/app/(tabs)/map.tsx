@@ -18,7 +18,7 @@ const initialRegion = {
   longitudeDelta: 0.01,
 };
 
-const MapScreen = () => {
+export default function Maps() {
   const mapRef = useRef<MapView>(null);
   const { height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
@@ -186,8 +186,6 @@ const MapScreen = () => {
     </View>
   );
 }
-
-export default MapScreen;
 
 const styles = StyleSheet.create({
   container: { flex: 1 },

@@ -3,9 +3,9 @@ import { View, Text, StyleSheet, Image, TouchableOpacity } from 'react-native';
 import { router } from 'expo-router';
 import { Dimensions } from 'react-native';
 
-const WelcomeScreen = () =>{
+export default function WelcomeScreen() {
   const handleGetStarted = () => {
-    router.replace('/(auth)/Login');
+    router.replace('/Login');
   };
 
   return (
@@ -27,7 +27,6 @@ const WelcomeScreen = () =>{
     </View>
   );
 }
-export default WelcomeScreen;
 
 const { height, width } = Dimensions.get('window');
 const styles = StyleSheet.create({

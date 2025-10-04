@@ -7,7 +7,6 @@ import {
   TouchableOpacity,
   Image,
   Alert,
-  Pressable
 } from "react-native";
 import ParallaxScrollView from "@/components/ParallaxScrollView";
 import { useRouter } from "expo-router";
@@ -29,12 +28,13 @@ interface Pet {
   breed: string;
   gender: string;
   age: string;
+  color: string;
   height: string;
   weight: string;
   photoURL?: string;
 }
 
-const Pets = () =>{
+export default function Pets() {
   const router = useRouter();
   const [pets, setPets] = useState<Pet[]>([]);
 
@@ -58,27 +58,6 @@ const Pets = () =>{
     return () => unsubscribe();
   }, []);
 
-  // ฟังก์ชันลบสัตว์เลี้ยง
-  const handleDelete = async (
-    rowMap: { [key: string]: any },
-    rowKey: string,
-    petId: string
-  ) => {
-    try {
-      if (!auth.currentUser) return;
-      const uid = auth.currentUser.uid;
-      await deleteDoc(doc(db, "users", uid, "pets", petId));
-      console.log("Pet deleted:", petId);
-
-      // ปิด row ที่เปิดอยู่
-      if (rowMap[rowKey]) {
-        rowMap[rowKey].closeRow();
-      }
-    } catch (error) {
-      console.error("Error deleting pet:", error);
-    }
-  };
-
   // ฟังก์ชันยืนยันก่อนลบ
   const confirmDelete = (
     rowMap: { [key: string]: any },
@@ -96,18 +75,30 @@ const Pets = () =>{
     ]);
   };
 
+  // ฟังก์ชันลบสัตว์เลี้ยง
+  const handleDelete = async (
+    rowMap: { [key: string]: any },
+    rowKey: string,
+    petId: string
+  ) => {
+    try {
+      if (!auth.currentUser) return;
+      const uid = auth.currentUser.uid;
+      await deleteDoc(doc(db, "users", uid, "pets", petId));
+      console.log("Pet deleted:", petId);
+
+      // ✅ ปิด row ที่เปิดอยู่
+      if (rowMap[rowKey]) {
+        rowMap[rowKey].closeRow();
+      }
+    } catch (error) {
+      console.error("Error deleting pet:", error);
+    }
+  };
+
   // การ์ดสัตว์เลี้ยง
   const renderPetItem = ({ item }: { item: Pet }) => (
-    <Pressable
-      style={styles.petCard}
-      android_ripple={{ color: "transparent" }} // กัน ripple
-      onPress={() =>
-        router.push({
-          pathname: "/PetProfile",
-          params: { pet: JSON.stringify(item) },
-        })
-      }
-    >
+    <View style={styles.petCard}>
       {item.photoURL ? (
         <Image source={{ uri: item.photoURL }} style={styles.petImage} />
       ) : (
@@ -119,7 +110,7 @@ const Pets = () =>{
           {item.breed} • {item.age} ปี • {item.gender}
         </Text>
       </View>
-    </Pressable>
+    </View>
   );
 
   // การ์ดซ่อน (swipe to delete)
@@ -164,24 +155,21 @@ const Pets = () =>{
           renderItem={renderPetItem}
           renderHiddenItem={renderHiddenItem}
           keyExtractor={(item) => item.id}
-          rightOpenValue={-75}
+          rightOpenValue={-75} // ปัดซ้าย 75 px
           disableRightSwipe={true} // ห้ามปัดไปทางขวา
           contentContainerStyle={{ padding: 16 }}
         />
       )}
 
-      {/* ปุ่มเพิ่มสัตว์เลี้ยง */}
       <TouchableOpacity
         style={styles.addButton}
-        onPress={() => router.push("/AddPet")}
+        onPress={() => router.push("/(tabs)/AddPet")}
       >
         <Text style={styles.addButtonText}>เพิ่ม</Text>
       </TouchableOpacity>
     </ParallaxScrollView>
   );
 }
-
-export default Pets;
 
 const styles = StyleSheet.create({
   headerContainer: {
@@ -192,7 +180,7 @@ const styles = StyleSheet.create({
   TextHeader: {
     fontSize: 22,
     fontWeight: "bold",
-    color: "black",
+    color: "#fff",
     textAlign: "center",
   },
   AddPetHeader: {
@@ -211,7 +199,7 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
   },
   addButton: {
-    backgroundColor: "#A16D28",
+    backgroundColor: "#885900ff",
     paddingVertical: 10,
     borderRadius: 8,
     margin: 20,
@@ -236,8 +224,8 @@ const styles = StyleSheet.create({
   petCard: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#F3F3F3FF",
-    padding: 15,
+    backgroundColor: "#f9f9f9",
+    padding: 12,
     borderRadius: 12,
     marginBottom: 12,
   },
@@ -247,13 +235,12 @@ const styles = StyleSheet.create({
     borderRadius: 30,
   },
   petName: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: "bold",
   },
   petDetail: {
     fontSize: 14,
     color: "#666",
-    marginTop: 5,
   },
   hiddenContainer: {
     flex: 1,

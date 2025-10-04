@@ -8,7 +8,7 @@ export type ThemedTextProps = TextProps & {
   type?: 'default' | 'title' | 'defaultSemiBold' | 'subtitle' | 'link';
 };
 
-export default function ThemedText({
+export function ThemedText({
   style,
   lightColor, 
   darkColor,

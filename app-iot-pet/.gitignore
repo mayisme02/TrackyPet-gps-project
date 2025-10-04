@@ -40,7 +40,3 @@ app-example
 
 .env
 node_modules
-# Expo
-.expo
-dist/
-web-build/

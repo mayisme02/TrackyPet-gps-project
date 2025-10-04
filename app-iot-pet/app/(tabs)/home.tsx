@@ -5,10 +5,10 @@ import { router } from 'expo-router';
 import ParallaxScrollView from '@/components/ParallaxScrollView';
 
 const noti = () => {
-  router.push('/Notification');
+  router.push('./notification');
 };
 
-const HomeScreen = () =>{
+export default function HomeScreen() {
   return (
     <ParallaxScrollView
       headerBackgroundColor={{ light: '#f2bb14', dark: '#f2bb14' }}
@@ -21,11 +21,10 @@ const HomeScreen = () =>{
         </SafeAreaView>
       }
     >
+      {/* เนื้อหาใน body ของ HomeScreen ใส่ตรงนี้ */}
     </ParallaxScrollView>
   );
 }
-
-export default HomeScreen;
 
 const styles = StyleSheet.create({
   headerContainer: {
@@ -36,7 +35,7 @@ const styles = StyleSheet.create({
   headerText: {
     fontSize: 22,
     fontWeight: 'bold',
-    color: "black",
+    color: '#fff',
     marginLeft: 20,
   },
   noti: {

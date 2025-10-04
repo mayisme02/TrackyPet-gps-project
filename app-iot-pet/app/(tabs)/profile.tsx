@@ -8,7 +8,7 @@ import { useLocalSearchParams } from "expo-router";
 import ParallaxScrollView from "@/components/ParallaxScrollView";
 import { Alert } from "react-native";
 
-const Profile = () =>{
+export default function Profile() {
   const [profile, setProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const { username, email, telephone, avatarUrl } = useLocalSearchParams<{
@@ -45,7 +45,7 @@ const Profile = () =>{
           text: "ออกจากระบบ",
           style: "destructive",
           onPress: () => {
-            router.replace("/(auth)/Login");
+            router.replace("/Login");
           },
         },
       ]
@@ -53,7 +53,7 @@ const Profile = () =>{
   };
 
   const handleEditProfile = () => {
-    router.push("/EditProfile");
+    router.push("./Editprofile");
   };
 
   if (loading) {
@@ -115,8 +115,6 @@ const Profile = () =>{
   );
 }
 
-export default Profile;
-
 const styles = StyleSheet.create({
   headerContainer: {
     height: 175,
@@ -126,7 +124,7 @@ const styles = StyleSheet.create({
   headerText: {
     fontSize: 22,
     fontWeight: "bold",
-    color: "black"
+    color: "#fff"
   },
   profileImage: {
     width: "90%",

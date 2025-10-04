@@ -31,7 +31,7 @@ const initialRegion: Region = {
   longitudeDelta: 0.01,
 };
 
-const Map2 = () => {
+export default function Map2() {
   const mapRef = useRef<MapView>(null);
   const { height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
@@ -352,7 +352,6 @@ const Map2 = () => {
     </View>
   );
 }
-export default Map2;
 
 const styles = StyleSheet.create({
   container: { flex: 1 },

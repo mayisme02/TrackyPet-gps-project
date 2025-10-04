@@ -3,7 +3,7 @@ import React from 'react';
 import { View, Text, SafeAreaView, StyleSheet, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
-export default function notification() {
+const Notification = () => {
     const router = useRouter();
     const handleBack = () => {
         router.push('/(tabs)/Home');
@@ -19,6 +19,7 @@ export default function notification() {
         </SafeAreaView>
     )
 }
+export default Notification;
 
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: '#fff' },

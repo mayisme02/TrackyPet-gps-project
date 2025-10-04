@@ -34,7 +34,7 @@ interface Pet {
   photoURL?: string;
 }
 
-export default function Pets() {
+const Pets = () =>{
   const router = useRouter();
   const [pets, setPets] = useState<Pet[]>([]);
 
@@ -180,6 +180,8 @@ export default function Pets() {
     </ParallaxScrollView>
   );
 }
+
+export default Pets;
 
 const styles = StyleSheet.create({
   headerContainer: {

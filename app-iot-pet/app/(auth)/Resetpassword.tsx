@@ -25,7 +25,7 @@ function isFirebaseAuthError(error: unknown): error is FirebaseAuthError {
   return typeof error === 'object' && error !== null && 'code' in error;
 }
 
-export default function resetpasswordScreen() {
+const ResetpasswordScreen = () => {
   const [email, setEmail] = useState('');
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
@@ -158,6 +158,7 @@ export default function resetpasswordScreen() {
     </KeyboardAvoidingView>
   );
 }
+export default ResetpasswordScreen;
 
 const styles = StyleSheet.create({
   container: {

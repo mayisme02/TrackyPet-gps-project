@@ -2,7 +2,7 @@ import React from 'react';
 import { Text, StyleSheet, SafeAreaView, View } from 'react-native';
 import ParallaxScrollView from '@/components/ParallaxScrollView';
 
-export default function Devices() {
+const Devices = () => {
   return (
     <>
         <ParallaxScrollView
@@ -16,6 +16,7 @@ export default function Devices() {
     </>
   );
 } 
+export default Devices;
 
 const styles = StyleSheet.create({
   headerContainer: { 

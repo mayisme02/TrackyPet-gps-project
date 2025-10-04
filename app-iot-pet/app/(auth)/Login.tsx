@@ -16,7 +16,7 @@ import { signInWithEmailAndPassword } from 'firebase/auth';
 import { auth, db } from '../../firebase/firebase';
 import { doc, getDoc } from 'firebase/firestore';
 
-export default function LoginScreen() {
+const LoginScreen = () =>  {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
@@ -170,6 +170,7 @@ export default function LoginScreen() {
     </KeyboardAvoidingView>
   );
 }
+export default LoginScreen;
 
 const styles = StyleSheet.create({
   container: { flex: 1, 

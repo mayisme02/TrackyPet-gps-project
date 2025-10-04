@@ -8,7 +8,7 @@ const noti = () => {
   router.push('/Notification');
 };
 
-export default function HomeScreen() {
+const HomeScreen = () =>{
   return (
     <ParallaxScrollView
       headerBackgroundColor={{ light: '#f2bb14', dark: '#f2bb14' }}
@@ -21,10 +21,11 @@ export default function HomeScreen() {
         </SafeAreaView>
       }
     >
-      {/* เนื้อหาใน body ของ HomeScreen ใส่ตรงนี้ */}
     </ParallaxScrollView>
   );
 }
+
+export default HomeScreen;
 
 const styles = StyleSheet.create({
   headerContainer: {

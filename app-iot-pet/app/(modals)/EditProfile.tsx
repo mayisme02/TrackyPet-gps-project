@@ -6,9 +6,9 @@ import * as ImagePicker from "expo-image-picker";
 import * as ImageManipulator from "expo-image-manipulator";
 import { auth, db } from "../../firebase/firebase";
 import { doc, getDoc, updateDoc } from "firebase/firestore";
-import { uploadToCloudinary } from "../(auth)/uploadToCloudinary";
+import { uploadToCloudinary } from "../../utils/uploadToCloudinary";
 
-export default function EditProfile() {
+const EditProfile = () => {
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
@@ -194,6 +194,7 @@ useEffect(() => {
     </SafeAreaView>
   );
 }
+export default EditProfile;
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#fff" },

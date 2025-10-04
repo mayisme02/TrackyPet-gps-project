@@ -8,7 +8,7 @@ import { useLocalSearchParams } from "expo-router";
 import ParallaxScrollView from "@/components/ParallaxScrollView";
 import { Alert } from "react-native";
 
-export default function Profile() {
+const Profile = () =>{
   const [profile, setProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const { username, email, telephone, avatarUrl } = useLocalSearchParams<{
@@ -53,7 +53,7 @@ export default function Profile() {
   };
 
   const handleEditProfile = () => {
-    router.push("./EditProfile");
+    router.push("/EditProfile");
   };
 
   if (loading) {
@@ -114,6 +114,8 @@ export default function Profile() {
     </ParallaxScrollView>
   );
 }
+
+export default Profile;
 
 const styles = StyleSheet.create({
   headerContainer: {

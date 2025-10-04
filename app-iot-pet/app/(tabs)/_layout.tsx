@@ -2,17 +2,16 @@ import { Tabs } from 'expo-router';
 import React from 'react';
 import { Platform } from 'react-native';
 import FontAwesome6 from '@expo/vector-icons/FontAwesome6';
-import { HapticTab } from '@/components/HapticTab';
+import  HapticTab  from '@/components/HapticTab';
 import { IconSymbol } from '@/components/ui/IconSymbol';
 import TabBarBackground from '@/components/ui/TabBarBackground';
 import { Colors } from '@/assets/constants/Colors';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
-import type { BottomTabBarProps } from '@react-navigation/bottom-tabs'; // ✅
+
 
 export default function TabLayout() {
   const colorScheme = useColorScheme();
-  
   return (
     <Tabs
       screenOptions={{

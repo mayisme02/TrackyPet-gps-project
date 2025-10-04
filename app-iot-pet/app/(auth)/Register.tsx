@@ -16,12 +16,17 @@ type Pet = {
   photoURL?: string;
 };
 
-export default function PetScreen() {
+const Register = () => {
   const router = useRouter();
   const { pet } = useLocalSearchParams<{ pet: string }>();
 
   const petData: Pet | null = pet ? JSON.parse(pet) : null;
-  if (!petData) return null;
+  if (!petData)
+  return (
+    <SafeAreaView>
+      <Text>Loading...</Text>
+    </SafeAreaView>
+  );
 
   const handleViewHistory = () => {
     console.log("View history of:", petData.id);
@@ -87,6 +92,7 @@ export default function PetScreen() {
     </ParallaxScrollView>
   );
 }
+export default Register;
 
 const styles = StyleSheet.create({
   headerContainer: {

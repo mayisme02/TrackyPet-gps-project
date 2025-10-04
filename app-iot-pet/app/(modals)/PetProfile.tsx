@@ -25,7 +25,7 @@ type Pet = {
   dob?: string;
 };
 
-export default function PetScreen() {
+const  PetProfile = () => {
   const router = useRouter();
   const { pet } = useLocalSearchParams<{ pet: string }>();
   const petData: Pet | null = pet ? JSON.parse(pet) : null;
@@ -129,6 +129,8 @@ export default function PetScreen() {
     </>
   );
 }
+
+export default PetProfile;
 
 const styles = StyleSheet.create({
   // ส่วนของ Header

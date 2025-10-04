@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
-import { 
-  View, Text, TextInput, TouchableOpacity, StyleSheet, 
-  Image, SafeAreaView, ActivityIndicator, Alert 
+import {
+  View, Text, TextInput, TouchableOpacity, StyleSheet,
+  Image, SafeAreaView, ActivityIndicator, Alert
 } from "react-native";
 import { useRouter } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
@@ -10,7 +10,7 @@ import FontAwesome6 from "@expo/vector-icons/FontAwesome6";
 import { auth, db } from "../../firebase/firebase";
 import { signInAnonymously } from "firebase/auth";
 import { doc, setDoc, collection, addDoc, serverTimestamp, getDocs } from "firebase/firestore";
-import { uploadToCloudinary } from "../(auth)/uploadToCloudinary";
+import { uploadToCloudinary } from "../../utils/uploadToCloudinary";
 
 interface Pet {
   id: string;
@@ -24,7 +24,7 @@ interface Pet {
   cloudinaryPublicId?: string;
 }
 
-export default function AddPet() {
+const AddPet = () => {
   const router = useRouter();
   const [petName, setPetName] = useState("");
   const [breed, setBreed] = useState("");
@@ -140,14 +140,14 @@ export default function AddPet() {
 
         {/* เพิ่มรูปภาพ */}
         <View style={styles.imagePickerWrapper}>
-  <TouchableOpacity style={[styles.inputImg, styles.imagePicker]} onPress={pickImage}>
-    {image ? (
-      <Image source={{ uri: image }} style={styles.inputImg} />
-    ) : (
-      <FontAwesome6 name="file-image" size={80} color={"lightgray"} />
-    )}
-  </TouchableOpacity>
-</View>
+          <TouchableOpacity style={[styles.inputImg, styles.imagePicker]} onPress={pickImage}>
+            {image ? (
+              <Image source={{ uri: image }} style={styles.inputImg} />
+            ) : (
+              <FontAwesome6 name="file-image" size={80} color={"lightgray"} />
+            )}
+          </TouchableOpacity>
+        </View>
 
         {/* ชื่อสัตว์ */}
         <View style={styles.nameTitle}>
@@ -180,8 +180,8 @@ export default function AddPet() {
                   { label: "แมวพันธุ์เมนคูน", value: "Maine Coon" },
                   { label: "สุนัขพันธุ์โกลเด้น รีทรีฟเวอร์", value: "Golden Retriever" }
                 ].map((item) => (
-                  <TouchableOpacity 
-                    key={item.value} 
+                  <TouchableOpacity
+                    key={item.value}
                     onPress={() => { setBreed(item.label); setDropdownVisible(false); }}
                   >
                     <Text style={styles.dropdownItem}>{item.label}</Text>
@@ -247,6 +247,8 @@ export default function AddPet() {
     </>
   );
 }
+
+export default AddPet;
 
 const styles = StyleSheet.create({
   headerContainer: {

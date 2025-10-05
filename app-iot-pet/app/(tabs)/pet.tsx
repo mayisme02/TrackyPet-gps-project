@@ -142,7 +142,7 @@ export default function Pets() {
       {/* Header เหมือนในภาพ */}
       <SafeAreaView style={styles.safeArea}>
         <View style={styles.header}>
-          <Text style={styles.headerTitle}>บัญชีผู้ใช้</Text>
+          <Text style={styles.headerTitle}>สัตว์เลี้ยง</Text>
           <TouchableOpacity
             style={styles.addButtonHeader}
             onPress={() => router.push("/(modals)/AddPet")}

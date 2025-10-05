@@ -232,10 +232,10 @@ const styles = StyleSheet.create({
     infoBox: {
         width: "48%",
         borderRadius: 12,
-        paddingVertical: 12,
+        paddingVertical: 14,
         paddingHorizontal: 10,
         marginBottom: 12,
-        backgroundColor: "#F7CB54FF",
+        backgroundColor: "#e7c8a0",
         textAlign: "center",
     },
     infoLabel: {

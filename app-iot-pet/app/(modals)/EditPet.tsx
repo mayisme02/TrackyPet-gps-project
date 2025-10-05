@@ -17,23 +17,13 @@ import * as ImageManipulator from "expo-image-manipulator";
 import { Ionicons } from "@expo/vector-icons";
 import { SelectCountry } from "react-native-element-dropdown";
 import { breedData } from "../../assets/constants/breedData";
-
-type Pet = {
-    id: string;
-    name: string;
-    breed: string;
-    age: string;
-    weight: string;
-    height: string;
-    gender: string;
-    photoURL?: string;
-    dob?: string;
-};
+import { doc, updateDoc } from "firebase/firestore";
+import { auth, db } from "../../firebase/firebase";
 
 export default function EditPet() {
     const router = useRouter();
     const { pet } = useLocalSearchParams<{ pet: string }>();
-    const petData: Pet | null = pet ? JSON.parse(pet) : null;
+    const petData = pet ? JSON.parse(pet) : null;
     if (!petData) return null;
 
     const [name, setName] = useState(petData.name);
@@ -41,10 +31,11 @@ export default function EditPet() {
     const [age, setAge] = useState(petData.age);
     const [weight, setWeight] = useState(petData.weight);
     const [height, setHeight] = useState(petData.height);
-    const [gender, setGender] = useState<"เพศผู้" | "เพศเมีย">(petData.gender as "เพศผู้" | "เพศเมีย");
+    const [gender, setGender] = useState(petData.gender);
     const [photo, setPhoto] = useState(petData.photoURL || "");
     const [loading, setLoading] = useState(false);
 
+    // เลือกรูป
     const pickImage = async () => {
         const result = await ImagePicker.launchImageLibraryAsync({
             mediaTypes: ImagePicker.MediaTypeOptions.Images,
@@ -63,12 +54,37 @@ export default function EditPet() {
         }
     };
 
+    // บันทึกข้อมูล
     const handleSave = async () => {
         setLoading(true);
         try {
-            Alert.alert("บันทึกสำเร็จ", "ข้อมูลสัตว์เลี้ยงถูกอัปเดตแล้ว");
-            router.back();
+            const user = auth.currentUser;
+            if (!user) {
+                Alert.alert("กรุณาเข้าสู่ระบบก่อน");
+                return;
+            }
+
+            const updatedPet = {
+                ...petData,
+                name,
+                breed,
+                age,
+                weight,
+                height,
+                gender,
+                photoURL: photo,
+            };
+
+            const petRef = doc(db, "users", user.uid, "pets", petData.id);
+            await updateDoc(petRef, updatedPet);
+
+            router.replace({
+                pathname: "/(modals)/PetDetail",
+                params: { pet: JSON.stringify(updatedPet) 
+            },
+        });
         } catch (error) {
+            console.error("เกิดข้อผิดพลาดในการบันทึก:", error);
             Alert.alert("เกิดข้อผิดพลาด", "ไม่สามารถบันทึกข้อมูลได้");
         } finally {
             setLoading(false);
@@ -77,18 +93,17 @@ export default function EditPet() {
 
     return (
         <>
-            {/* Header */}
             <SafeAreaView style={styles.headerContainer}>
                 <View style={styles.headerContent}>
                     <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
                         <Ionicons name="arrow-back" size={26} color="black" />
                     </TouchableOpacity>
-                    <Text style={styles.topHeaderTitle}>แก้ไขข้อมูลสัตว์เลี้ยง</Text>
+                    <Text style={styles.topHeaderTitle}>แก้ไขข้อมูล</Text>
                 </View>
             </SafeAreaView>
 
-            <ScrollView contentContainerStyle={{ paddingBottom: 20 }}>
-                {/* รูปสัตว์เลี้ยง */}
+            <ScrollView contentContainerStyle={{ paddingBottom: 30 }}>
+                {/* รูปภาพ */}
                 <TouchableOpacity onPress={pickImage} style={styles.imageContainer}>
                     {photo ? (
                         <Image source={{ uri: photo }} style={styles.image} />
@@ -99,21 +114,15 @@ export default function EditPet() {
                     )}
                 </TouchableOpacity>
 
-                {/* ฟอร์ม */}
                 <View style={styles.form}>
                     {/* ชื่อ */}
-                    <View style={{ marginBottom: 15 }}>
+                    <View style={styles.formGroup}>
                         <Text style={styles.label}>ชื่อ</Text>
-                        <TextInput
-                            value={name}
-                            onChangeText={setName}
-                            style={styles.input}
-                            placeholder="ชื่อสัตว์เลี้ยง"
-                        />
+                        <TextInput value={name} onChangeText={setName} style={styles.input} />
                     </View>
 
-                    {/* Dropdown เลือกสายพันธุ์ */}
-                    <View style={{ marginBottom: 15 }}>
+                    {/* สายพันธุ์ */}
+                    <View style={styles.formGroup}>
                         <Text style={styles.label}>สายพันธุ์</Text>
                         <SelectCountry
                             style={styles.dropdown}
@@ -126,10 +135,10 @@ export default function EditPet() {
                             itemContainerStyle={styles.dropdownItemContainer}
                             activeColor="#f8e4b5"
                             maxHeight={230}
-                            value={breed} // แสดงค่าเดิม
+                            value={breed}
                             data={breedData}
                             valueField="value"
-                            labelField="label"
+                            labelField="lable"
                             imageField="image"
                             placeholder="เลือกสายพันธุ์"
                             onChange={(item) => setBreed(item.value)}
@@ -186,19 +195,6 @@ export default function EditPet() {
                                 onChangeText={setAge}
                                 keyboardType="numeric"
                                 style={styles.input}
-                                placeholder="อายุ"
-                            />
-                        </View>
-
-                        {/* ส่วนสูง */}
-                        <View style={styles.gridItem}>
-                            <Text style={styles.InputTitle}>ส่วนสูง (ซม.)</Text>
-                            <TextInput
-                                value={height}
-                                onChangeText={setHeight}
-                                keyboardType="numeric"
-                                style={styles.input}
-                                placeholder="ส่วนสูง"
                             />
                         </View>
 
@@ -210,17 +206,23 @@ export default function EditPet() {
                                 onChangeText={setWeight}
                                 keyboardType="numeric"
                                 style={styles.input}
-                                placeholder="น้ำหนัก"
+                            />
+                        </View>
+
+                        {/* ส่วนสูง */}
+                        <View style={styles.gridItem}>
+                            <Text style={styles.InputTitle}>ส่วนสูง (ซม.)</Text>
+                            <TextInput
+                                value={height}
+                                onChangeText={setHeight}
+                                keyboardType="numeric"
+                                style={styles.input}
                             />
                         </View>
                     </View>
 
                     {/* ปุ่มบันทึก */}
-                    <TouchableOpacity
-                        style={styles.saveButton}
-                        onPress={handleSave}
-                        disabled={loading}
-                    >
+                    <TouchableOpacity style={styles.saveButton} onPress={handleSave} disabled={loading}>
                         {loading ? (
                             <ActivityIndicator color="#fff" />
                         ) : (
@@ -255,7 +257,6 @@ const styles = StyleSheet.create({
         fontSize: 20,
         fontWeight: "700",
         color: "black",
-        textAlign: "center",
     },
     imageContainer: {
         alignItems: "center",
@@ -278,39 +279,31 @@ const styles = StyleSheet.create({
         paddingHorizontal: 20,
         marginTop: 20,
     },
+    formGroup: {
+        marginBottom: 16,
+    },
     label: {
         fontSize: 14,
         color: "#333",
         fontWeight: "600",
-        marginBottom: 5,
+        marginBottom: 6,
     },
     input: {
         borderWidth: 1,
         borderColor: "#ccc",
         borderRadius: 8,
-        padding: 13,
-        marginBottom: 0,
+        padding: 12,
         fontSize: 16,
         backgroundColor: "#F2F2F2",
     },
-    row: {
-        flexDirection: "row",
-        justifyContent: "space-between",
-        marginBottom: 15,
-    },
-    col: {
-        flex: 1,
-        marginHorizontal: 5,
-    },
-    // Dropdown
     dropdown: {
         height: 50,
-        backgroundColor: "#DEDEDE",
+        backgroundColor: "#DEDEDEFF",
         borderRadius: 15,
         paddingHorizontal: 12,
     },
     dropdownContainer: {
-        backgroundColor: "#fff", // สีพื้นหลัง dropdown
+        backgroundColor: "#fff",
         borderRadius: 12,
         shadowColor: "#000",
         shadowOffset: { width: 0, height: 3 },
@@ -319,15 +312,13 @@ const styles = StyleSheet.create({
         elevation: 3,
     },
     dropdownItemContainer: {
-        backgroundColor: "#fff", // พื้นหลังแต่ละตัวเลือก
         borderBottomWidth: 0.5,
         borderColor: "#eee",
-        paddingVertical: 10,
-        paddingHorizontal: 12,
+        paddingVertical: 4,
     },
     dropdownItemText: {
         fontSize: 15,
-        color: "#333", // ตัวหนังสือมองเห็นชัด
+        color: "#333",
     },
     imageStyle: {
         width: 28,
@@ -351,11 +342,11 @@ const styles = StyleSheet.create({
         flexDirection: "row",
         flexWrap: "wrap",
         justifyContent: "space-between",
-        marginBottom: 16,
+        marginBottom: 20,
     },
     gridItem: {
         width: "48%",
-        marginBottom: 12,
+        marginBottom: 14,
     },
     genderBox: {
         flexDirection: "row",
@@ -373,7 +364,7 @@ const styles = StyleSheet.create({
         justifyContent: "center",
     },
     genderOptionSelected: {
-        backgroundColor: "#F5B120",
+        backgroundColor: "#f2bb14",
     },
     genderLabel: {
         fontSize: 14,
@@ -386,7 +377,7 @@ const styles = StyleSheet.create({
     },
     saveButton: {
         backgroundColor: "#885900ff",
-        paddingVertical: 14,
+        paddingVertical: 12,
         borderRadius: 10,
         alignItems: "center",
     },

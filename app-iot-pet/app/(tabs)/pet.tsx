@@ -7,10 +7,11 @@ import {
   TouchableOpacity,
   Image,
   Alert,
+  Pressable,
 } from "react-native";
-import ParallaxScrollView from "@/components/ParallaxScrollView";
 import { useRouter } from "expo-router";
 import FontAwesome6 from "@expo/vector-icons/FontAwesome6";
+import { MaterialIcons } from "@expo/vector-icons";
 import { auth, db } from "../../firebase/firebase";
 import {
   onSnapshot,
@@ -21,7 +22,6 @@ import {
   doc,
 } from "firebase/firestore";
 import { SwipeListView } from "react-native-swipe-list-view";
-import { Pressable } from "react-native";
 
 interface Pet {
   id: string;
@@ -87,7 +87,7 @@ export default function Pets() {
       await deleteDoc(doc(db, "users", uid, "pets", petId));
       console.log("Pet deleted:", petId);
 
-      // ✅ ปิด row ที่เปิดอยู่
+      // ปิด row ที่เปิดอยู่
       if (rowMap[rowKey]) {
         rowMap[rowKey].closeRow();
       }
@@ -97,11 +97,10 @@ export default function Pets() {
   };
 
   // การ์ดสัตว์เลี้ยง
-
   const renderPetItem = ({ item }: { item: Pet }) => (
     <Pressable
       style={styles.petCard}
-      android_ripple={{ color: "transparent" }} // กัน ripple
+      android_ripple={{ color: "transparent" }}
       onPress={() =>
         router.push({
           pathname: "/(modals)/PetDetail",
@@ -112,7 +111,7 @@ export default function Pets() {
       {item.photoURL ? (
         <Image source={{ uri: item.photoURL }} style={styles.petImage} />
       ) : (
-        <FontAwesome6 name="dog" size={50} color={"gray"} />
+        <MaterialIcons name="pets" size={40} color="gray" />
       )}
       <View style={{ flex: 1, marginLeft: 12 }}>
         <Text style={styles.petName}>{item.name}</Text>
@@ -139,14 +138,21 @@ export default function Pets() {
   );
 
   return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: "#f2bb14", dark: "#f2bb14" }}
-      headerImage={
-        <SafeAreaView style={styles.headerContainer}>
-          <Text style={styles.TextHeader}>สัตว์เลี้ยง</Text>
-        </SafeAreaView>
-      }
-    >
+    <>
+      {/* Header เหมือนในภาพ */}
+      <SafeAreaView style={styles.safeArea}>
+        <View style={styles.header}>
+          <Text style={styles.headerTitle}>บัญชีผู้ใช้</Text>
+          <TouchableOpacity
+            style={styles.addButtonHeader}
+            onPress={() => router.push("/(modals)/AddPet")}
+          >
+            <MaterialIcons name="add" size={28} color="#000" />
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+
+      {/* เนื้อหา */}
       <View style={styles.AddPetHeader}>
         <Text style={styles.AddPetHeaderText}>สัตว์เลี้ยงของคุณ</Text>
         <Text style={styles.noOfItem}>{pets.length}</Text>
@@ -165,33 +171,34 @@ export default function Pets() {
           renderItem={renderPetItem}
           renderHiddenItem={renderHiddenItem}
           keyExtractor={(item) => item.id}
-          rightOpenValue={-75} // ปัดซ้าย 75 px
-          disableRightSwipe={true} // ห้ามปัดไปทางขวา
+          rightOpenValue={-75}
+          disableRightSwipe={true}
           contentContainerStyle={{ padding: 16 }}
         />
       )}
-
-      <TouchableOpacity
-        style={styles.addButton}
-        onPress={() => router.push("/(modals)/AddPet")}
-      >
-        <Text style={styles.addButtonText}>เพิ่ม</Text>
-      </TouchableOpacity>
-    </ParallaxScrollView>
+    </>
   );
 }
 
 const styles = StyleSheet.create({
-  headerContainer: {
-    height: 175,
-    justifyContent: "center",
-    alignItems: "center",
+  safeArea: {
+    backgroundColor: "#f2bb14",
   },
-  TextHeader: {
-    fontSize: 22,
-    fontWeight: "bold",
-    color: "black",
-    textAlign: "center",
+  header: {
+    backgroundColor: "#f2bb14",
+    paddingVertical: 16,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  headerTitle: {
+    fontSize: 20,
+    fontWeight: "700",
+  },
+  addButtonHeader: {
+    position: "absolute",
+    right: 16,
+    top: "110%",
+    transform: [{ translateY: -14 }],
   },
   AddPetHeader: {
     marginTop: 20,
@@ -205,19 +212,6 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
   },
   noOfItem: {
-    fontSize: 18,
-    fontWeight: "bold",
-  },
-  addButton: {
-    backgroundColor: "#885900ff",
-    paddingVertical: 10,
-    borderRadius: 8,
-    margin: 20,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  addButtonText: {
-    color: "#fff",
     fontSize: 18,
     fontWeight: "bold",
   },

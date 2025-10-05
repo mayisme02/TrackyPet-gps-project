@@ -14,25 +14,13 @@ import { useRouter } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import * as ImageManipulator from "expo-image-manipulator";
 import FontAwesome6 from "@expo/vector-icons/FontAwesome6";
+import { Ionicons } from "@expo/vector-icons";
 import { auth, db } from "../../firebase/firebase";
 import { signInAnonymously } from "firebase/auth";
 import { collection, addDoc, serverTimestamp } from "firebase/firestore";
 import { uploadToCloudinary } from "../../cloud/uploadToCloudinary";
-import { Ionicons } from "@expo/vector-icons";
 import { SelectCountry } from "react-native-element-dropdown";
 import { breedData } from "../../assets/constants/breedData";
-
-interface Pet {
-  id: string;
-  name: string;
-  breed: string;
-  gender: string;
-  age: string;
-  height: string;
-  weight: string;
-  photoURL?: string;
-  cloudinaryPublicId?: string;
-}
 
 export default function AddPet() {
   const router = useRouter();
@@ -45,7 +33,7 @@ export default function AddPet() {
   const [image, setImage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  // 📸 อัปโหลดรูป
+  // 📸 เลือกรูปจากคลัง
   const pickImage = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
@@ -64,7 +52,7 @@ export default function AddPet() {
     }
   };
 
-  // บันทึกสัตว์เลี้ยง
+  // 💾 เพิ่มสัตว์เลี้ยง
   const handleAddPet = async () => {
     if (!petName || !breed) {
       Alert.alert("ผิดพลาด", "กรุณากรอกข้อมูลให้ครบ");
@@ -120,15 +108,12 @@ export default function AddPet() {
           <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
             <Ionicons name="arrow-back" size={26} color="black" />
           </TouchableOpacity>
-
           <Text style={styles.topHeaderTitle}>เพิ่มสัตว์เลี้ยง</Text>
         </View>
       </SafeAreaView>
 
-
-      {/* Form */}
+      {/* Body */}
       <View style={styles.container}>
-
         {/* รูปสัตว์ */}
         <View style={styles.imagePickerWrapper}>
           <TouchableOpacity style={styles.inputImg} onPress={pickImage}>
@@ -151,7 +136,7 @@ export default function AddPet() {
           />
         </View>
 
-        {/* Dropdown เลือกสายพันธุ์ */}
+        {/* สายพันธุ์ */}
         <View style={styles.nameTitle}>
           <Text style={styles.InputTitle}>สายพันธุ์</Text>
           <SelectCountry
@@ -159,7 +144,6 @@ export default function AddPet() {
             selectedTextStyle={styles.selectedTextStyle}
             placeholderStyle={styles.placeholderStyle}
             imageStyle={styles.imageStyle}
-            iconStyle={styles.iconStyle}
             containerStyle={styles.dropdownContainer}
             itemTextStyle={styles.dropdownItemText}
             itemContainerStyle={styles.dropdownItemContainer}
@@ -172,6 +156,14 @@ export default function AddPet() {
             imageField="image"
             placeholder="เลือกสายพันธุ์"
             onChange={(e) => setBreed(e.value)}
+            renderRightIcon={() => (
+              <Ionicons
+                name="chevron-down"
+                size={22}
+                color="#555"
+                style={{ marginRight: 6 }}
+              />
+            )}
           />
         </View>
 
@@ -254,7 +246,11 @@ export default function AddPet() {
         </View>
 
         {/* ปุ่มบันทึก */}
-        <TouchableOpacity style={styles.addButton} onPress={handleAddPet} disabled={loading}>
+        <TouchableOpacity
+          style={styles.addButton}
+          onPress={handleAddPet}
+          disabled={loading}
+        >
           {loading ? (
             <ActivityIndicator color="#fff" />
           ) : (
@@ -267,10 +263,16 @@ export default function AddPet() {
 }
 
 const styles = StyleSheet.create({
+  headerContainer: {
+    paddingHorizontal: 16,
+    paddingTop: 18,
+    backgroundColor: "#f2bb14",
+    height: 120,
+  },
   headerContent: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center", // ทำให้ Text อยู่กลาง
+    justifyContent: "center",
     height: 60,
     position: "relative",
   },
@@ -283,26 +285,13 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: "700",
     color: "black",
-    textAlign: "center",
   },
   container: {
-    padding: 20
-  },
-  headerContainer: {
-    paddingHorizontal: 16,
-    paddingTop: 18,
-    backgroundColor: "#f2bb14",
-    height: 120
-  },
-  title: {
-    fontSize: 22,
-    fontWeight: "bold",
-    marginBottom: 20,
-    textAlign: "center",
+    padding: 20,
   },
   imagePickerWrapper: {
     alignItems: "center",
-    marginBottom: 20
+    marginBottom: 20,
   },
   inputImg: {
     height: 160,
@@ -314,12 +303,12 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   nameTitle: {
-    marginBottom: 16
+    marginBottom: 16,
   },
   InputTitle: {
     fontSize: 16,
     fontWeight: "600",
-    marginBottom: 6
+    marginBottom: 6,
   },
   input: {
     height: 48,
@@ -329,26 +318,31 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#D3D3D3FF",
   },
-  // Dropdown Styling
   dropdown: {
     height: 50,
     backgroundColor: "#DEDEDEFF",
     borderRadius: 15,
     paddingHorizontal: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  placeholderStyle: {
+    fontSize: 15,
+    color: "#555",
+  },
+  selectedTextStyle: {
+    fontSize: 15,
+    color: "#333",
   },
   dropdownContainer: {
     backgroundColor: "#fff",
     borderRadius: 12,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
     elevation: 3,
   },
   dropdownItemContainer: {
     borderBottomWidth: 0.5,
     borderColor: "#eee",
-    paddingVertical: 4,
   },
   dropdownItemText: {
     fontSize: 15,
@@ -357,22 +351,8 @@ const styles = StyleSheet.create({
   imageStyle: {
     width: 28,
     height: 28,
-    borderRadius: 14
+    borderRadius: 14,
   },
-  placeholderStyle: {
-    fontSize: 15,
-    color: "#333"
-  },
-  selectedTextStyle: {
-    fontSize: 15,
-    marginLeft: 8,
-    color: "#333"
-  },
-  iconStyle: {
-    width: 22,
-    height: 22
-  },
-  // Layout & Gender
   infoGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -394,12 +374,11 @@ const styles = StyleSheet.create({
   },
   genderOption: {
     flex: 1,
-    paddingVertical: 12,
     alignItems: "center",
     justifyContent: "center",
   },
   genderOptionSelected: {
-    backgroundColor: "#F5B120FF",
+    backgroundColor: "#f2bb14",
   },
   genderLabel: {
     fontSize: 14,
@@ -410,8 +389,6 @@ const styles = StyleSheet.create({
     color: "#333",
     fontWeight: "600",
   },
-
-  // Button
   addButton: {
     backgroundColor: "#885900ff",
     paddingVertical: 12,

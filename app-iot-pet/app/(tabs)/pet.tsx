@@ -163,7 +163,7 @@ export default function Pets() {
 
       <TouchableOpacity
         style={styles.addButton}
-        onPress={() => router.push("/(tabs)/AddPet")}
+        onPress={() => router.push("/(modals)/AddPet")}
       >
         <Text style={styles.addButtonText}>เพิ่ม</Text>
       </TouchableOpacity>

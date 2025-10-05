@@ -18,7 +18,9 @@ import { Ionicons } from "@expo/vector-icons";
 import { auth, db } from "../../firebase/firebase";
 import { signInAnonymously } from "firebase/auth";
 import { collection, addDoc, serverTimestamp } from "firebase/firestore";
+import { uploadToCloudinary } from "../../cloud/uploadToCloudinary";
 import { SelectCountry } from "react-native-element-dropdown";
+import { breedData } from "../../assets/constants/breedData";
 
 export default function AddPet() {
   const router = useRouter();

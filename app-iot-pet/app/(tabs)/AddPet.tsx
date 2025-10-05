@@ -7,7 +7,7 @@ import FontAwesome6 from "@expo/vector-icons/FontAwesome6";
 import { auth, db } from "../../firebase/firebase";
 import { signInAnonymously } from "firebase/auth";
 import { doc, setDoc, collection, addDoc, serverTimestamp, getDocs } from "firebase/firestore";
-import { uploadToCloudinary } from "../uploadToCloudinary";
+import { uploadToCloudinary } from "../../cloud/uploadToCloudinary";
 
 interface Pet {
   id: string;

@@ -161,7 +161,7 @@ export default function AddPet() {
                 name="chevron-down"
                 size={22}
                 color="#555"
-                style={{ marginRight: 6 }}
+                style={{ marginRight: 10 }}
               />
             )}
           />
@@ -323,9 +323,6 @@ const styles = StyleSheet.create({
     backgroundColor: "#DEDEDEFF",
     borderRadius: 15,
     paddingHorizontal: 12,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
   },
   placeholderStyle: {
     fontSize: 15,
@@ -334,15 +331,21 @@ const styles = StyleSheet.create({
   selectedTextStyle: {
     fontSize: 15,
     color: "#333",
+    marginLeft: 5
   },
   dropdownContainer: {
     backgroundColor: "#fff",
     borderRadius: 12,
     elevation: 3,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
   },
   dropdownItemContainer: {
     borderBottomWidth: 0.5,
     borderColor: "#eee",
+    paddingVertical: 4, // เพิ่ม padding บน-ล่าง
   },
   dropdownItemText: {
     fontSize: 15,
@@ -352,6 +355,7 @@ const styles = StyleSheet.create({
     width: 28,
     height: 28,
     borderRadius: 14,
+    marginLeft: 5
   },
   infoGrid: {
     flexDirection: "row",

@@ -59,10 +59,8 @@ export default function TabLayout() {
           tabBarIcon: ({ color }) => <FontAwesome6 name="user-pen" size={24} color={color} />,
         }}
       />
-      {/* <Tabs.Screen name="Editprofile" options={{ href: null }} />  {/*  ซ่อนจากแท็บ */} 
-      {/* <Tabs.Screen name="notification" options={{ href: null }} />  */} 
+      {/*  ซ่อนจากแท็บ */} 
       <Tabs.Screen name="map" options={{ href: null }} />
-      {/* <Tabs.Screen name="AddPet" options={{ href: null }} /> */}
     </Tabs>
   );
 }

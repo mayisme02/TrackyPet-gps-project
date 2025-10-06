@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   Image,
   ActivityIndicator,
+  ScrollView,
 } from "react-native";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { router } from "expo-router";
@@ -19,7 +20,7 @@ import {
   query,
   orderBy,
 } from "firebase/firestore";
-import Feather from '@expo/vector-icons/Feather';
+import Feather from "@expo/vector-icons/Feather";
 
 // ---- interface ของ Pet ----
 interface Pet {
@@ -102,7 +103,6 @@ export default function HomeScreen() {
                 <Ionicons name="person-circle-outline" size={50} color="#fff" />
               </View>
             )}
-
             <Text style={styles.headerText}>สวัสดี! {name}</Text>
           </View>
 
@@ -113,21 +113,21 @@ export default function HomeScreen() {
         </SafeAreaView>
       }
     >
-
       {/* --- หัวข้อสัตว์เลี้ยงของฉัน --- */}
       <View style={styles.petHeader}>
         <Text style={styles.panelTitle}>สัตว์เลี้ยงของฉัน</Text>
-        <View style={styles.iconCircle}>
-          <Feather name="chevrons-right" size={24} color="white" />
-        </View>
       </View>
 
       {/* --- Container แสดงสัตว์เลี้ยง --- */}
       <View style={styles.petContainer}>
         <View style={styles.petBorder}>
-          <View style={styles.petImgList}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.petImgList}
+          >
             {pets.length > 0 ? (
-              pets.slice(0, 3).map((pet) => (
+              pets.map((pet, index) => (
                 <TouchableOpacity
                   key={pet.id}
                   onPress={() =>
@@ -137,7 +137,10 @@ export default function HomeScreen() {
                     })
                   }
                   activeOpacity={0.8}
-                  style={styles.petBox}
+                  style={[
+                    styles.petBox,
+                    index === 0 && { marginLeft: 10 }, // การ์ดแรกขยับเข้ามานิดนึง
+                  ]}
                 >
                   {pet.photoURL ? (
                     <Image
@@ -155,7 +158,7 @@ export default function HomeScreen() {
             ) : (
               <Text style={styles.noPetText}>ยังไม่มีสัตว์เลี้ยง</Text>
             )}
-          </View>
+          </ScrollView>
         </View>
       </View>
     </ParallaxScrollView>
@@ -207,18 +210,16 @@ const styles = StyleSheet.create({
   // --- หัวข้อสัตว์เลี้ยง ---
   petHeader: {
     flexDirection: "row",
-    justifyContent: "space-between", // ทำให้หัวข้อชิดซ้าย ไอคอนชิดขวา
+    justifyContent: "space-between",
     alignItems: "center",
-    marginHorizontal: 24, // ให้ตรงกับ margin ของ panelTitle
+    marginHorizontal: 24,
     marginVertical: 12,
   },
   panelTitle: {
     fontSize: 18,
     fontWeight: "700",
     color: "#333",
-    // ลบ marginHorizontal, marginVertical ออกเพราะย้ายไป petHeader
   },
-
   // --- Container สัตว์เลี้ยง ---
   petContainer: {
     backgroundColor: "#fff",
@@ -226,14 +227,10 @@ const styles = StyleSheet.create({
     marginHorizontal: 20,
     padding: 16,
     marginBottom: 20,
-
-    // เงาสำหรับ iOS
     shadowColor: "#333",
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 6,
-
-    // เงาสำหรับ Android
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
     elevation: 6,
   },
   petBorder: {
@@ -242,12 +239,12 @@ const styles = StyleSheet.create({
   },
   petImgList: {
     flexDirection: "row",
-    justifyContent: "space-between",
-    width: "100%",
+    alignItems: "center",
+    paddingRight: 5, // ให้การ์ดสุดท้ายโผล่มาทางขวา
   },
   petBox: {
     alignItems: "center",
-    flex: 1,
+    marginRight: 16, // ระยะห่างระหว่างการ์ด
   },
   petImage: {
     width: 90,
@@ -256,10 +253,10 @@ const styles = StyleSheet.create({
     backgroundColor: "#eee",
   },
   petPlaceholder: {
-    width: 80,
-    height: 80,
+    width: 90,
+    height: 90,
     borderRadius: 20,
-    backgroundColor: "#f2bb14",
+    backgroundColor: "#D3D3D3FF",
     justifyContent: "center",
     alignItems: "center",
   },
@@ -273,12 +270,5 @@ const styles = StyleSheet.create({
     color: "#aaa",
     fontSize: 16,
   },
-  iconCircle: {
-    width: 30,              // ขนาดวงกลม
-    height: 30,
-    borderRadius: 18,       // ครึ่งหนึ่งของ width/height เพื่อให้เป็นวงกลม
-    backgroundColor: "#f2bb14", // สีพื้นหลัง
-    justifyContent: "center",
-    alignItems: "center",
-  },
+
 });

@@ -6,7 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 export default function notification() {
     const router = useRouter();
     const handleBack = () => {
-        router.push('./home');
+        router.push('/(tabs)/home');
     }
     return (
         <SafeAreaView style={styles.container}>

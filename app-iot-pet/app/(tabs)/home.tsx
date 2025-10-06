@@ -179,7 +179,7 @@ const styles = StyleSheet.create({
   headerContent: {
     flexDirection: "row",
     alignItems: "center",
-    marginLeft: 14,
+    marginLeft: 16,
   },
   headerText: {
     fontSize: 20,

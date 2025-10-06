@@ -33,7 +33,7 @@ export default function AddPet() {
   const [image, setImage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  // 📸 เลือกรูปจากคลัง
+  // เลือกรูปจากคลัง
   const pickImage = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
@@ -52,7 +52,7 @@ export default function AddPet() {
     }
   };
 
-  // 💾 เพิ่มสัตว์เลี้ยง
+  // เพิ่มสัตว์เลี้ยง
   const handleAddPet = async () => {
     if (!petName || !breed) {
       Alert.alert("ผิดพลาด", "กรุณากรอกข้อมูลให้ครบ");

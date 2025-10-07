@@ -111,10 +111,10 @@ export default function LoginScreen() {
         <View style={styles.overlay} />
 
         <ScrollView contentContainerStyle={styles.scrollContainer}>
-          <Text style={styles.appTitle}>Pet  IoT</Text>
           <View style={styles.form}>
             {/* Email input */}
             <View style={{ marginBottom: 20 }}>
+              <Text style={styles.appTitle}>Pet Tracker</Text>
               <View style={styles.inputWithIcon}>
                 <Feather name="mail" size={20} color="gray" style={styles.icon} />
                 <TextInput
@@ -198,7 +198,7 @@ const styles = StyleSheet.create({
   },
   overlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(202, 133, 63, 0.25)',
+    backgroundColor: 'rgba(202, 133, 63, 0.2)',
   },
   scrollContainer: {
     flexGrow: 1,
@@ -207,29 +207,26 @@ const styles = StyleSheet.create({
     marginTop: '90%',
   },
   form: {
-    backgroundColor: 'rgba(240,240,240,0.9)',
+    backgroundColor: '#ffffff',
     borderRadius: 16,
-    paddingVertical: 30,
+    paddingTop: 30,
+    paddingBottom: 40,
     paddingHorizontal: 20,
-    marginHorizontal: 10,
   },
   appTitle: {
-    fontSize: 36,
+    fontSize: 32,
     fontWeight: '800',
     textAlign: 'center',
-    color: 'rgba(255,255,255,0.7)',
-    textShadowColor: 'rgba(0,0,0,0.2)',
-    textShadowOffset: { width: 1, height: 1 },
-    textShadowRadius: 9,
-    marginBottom: 15,
+    color: '#885900ff',
+    marginBottom: 30,
   },
   inputWithIcon: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.8)',
+    backgroundColor: 'rgba(255,255,255,0.6)',
     borderRadius: 10,
     paddingHorizontal: 10,
-    borderColor: 'rgba(255,255,255,0.4)',
+    borderColor: 'lightgray',
     borderWidth: 1,
   },
   icon: {
@@ -258,7 +255,7 @@ const styles = StyleSheet.create({
     color: 'gray',
   },
   linkText: {
-    color: '#FFCC00FF',
+    color: '#181817FF',
     fontWeight: '800',
   },
   linkText2: {
@@ -269,9 +266,9 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 25,
     fontSize: 16,
-    color: 'rgba(255,255,255,0.9)',
+    color: 'white',
     fontWeight: '800',
-    textShadowColor: 'rgba(0,0,0,0.2)',
+    textShadowColor: 'rgba(0,0,0,0.1)',
     textShadowOffset: { width: 1, height: 1 },
     textShadowRadius: 4,
   },

@@ -8,6 +8,7 @@ import TabBarBackground from '@/components/ui/TabBarBackground';
 import { Colors } from '@/assets/constants/Colors';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
+import { FontAwesome5 } from '@expo/vector-icons';
 export default function TabLayout() {
   const colorScheme = useColorScheme();
   return (
@@ -42,7 +43,8 @@ export default function TabLayout() {
         name="map2"
         options={{
           title: 'แผนที่',
-          tabBarIcon: ({ color }) => <FontAwesome6 name="map-pin" size={24} color={color} />,
+          tabBarIcon: ({ color }) => <FontAwesome5 name="map-marked-alt" size={24} color={color} />,
+    
         }}
       />
       <Tabs.Screen

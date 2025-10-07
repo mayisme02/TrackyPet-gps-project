@@ -1,13 +1,27 @@
 import React, { useState, useEffect } from 'react';
-import { View,Text,TextInput,TouchableOpacity, StyleSheet, Alert, KeyboardAvoidingView, Platform, ScrollView, ActivityIndicator} from 'react-native';
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  StyleSheet,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  ActivityIndicator,
+  ImageBackground,
+} from 'react-native';
 import { Link, router } from 'expo-router';
-import { signInWithEmailAndPassword, onAuthStateChanged } from 'firebase/auth';
-import { auth,db } from '../../firebase/firebase';
+import { signInWithEmailAndPassword } from 'firebase/auth';
+import { auth, db } from '../../firebase/firebase';
 import { doc, getDoc } from "firebase/firestore";
+import { Feather } from '@expo/vector-icons'; // สำหรับไอคอน
 
 export default function LoginScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [showForgotLink, setShowForgotLink] = useState(false);
   const [isCooldown, setIsCooldown] = useState(false);
@@ -16,13 +30,13 @@ export default function LoginScreen() {
 
   useEffect(() => {
     let timer: number;
-if (isCooldown && cooldownTime > 0) {
-  timer = setTimeout(() => setCooldownTime(cooldownTime - 1), 1000);
-} else if (cooldownTime === 0) {
-  setIsCooldown(false);
-  setErrorMessage('');
-}
-return () => {
+    if (isCooldown && cooldownTime > 0) {
+      timer = setTimeout(() => setCooldownTime(cooldownTime - 1), 1000);
+    } else if (cooldownTime === 0) {
+      setIsCooldown(false);
+      setErrorMessage('');
+    }
+    return () => {
       if (timer) clearTimeout(timer);
     };
   }, [isCooldown, cooldownTime]);
@@ -41,76 +55,43 @@ return () => {
       setErrorMessage('กรุณาใส่รหัสผ่าน');
       return;
     }
-    
 
     setIsLoading(true);
     try {
-    const userCred = await signInWithEmailAndPassword(auth, email.trim(), password);
-    const user = userCred.user;
+      const userCred = await signInWithEmailAndPassword(auth, email.trim(), password);
+      const user = userCred.user;
 
-    // ดึงข้อมูลจาก Firestore
-    const snap = await getDoc(doc(db, "users", user.uid));
-    if (snap.exists()) {
-      const profile = snap.data();
-
-      // ส่งข้อมูลไป Profile
-      router.replace({
-        pathname: "/(tabs)/profile",
-        params: {
-          username: profile.username,
-          email: profile.email,
-          telephone: profile.telephone,
-          avatarUrl: profile.avatarUrl ?? "",
-        },
-      });
-    } else {
-      Alert.alert("ไม่พบข้อมูลผู้ใช้ในฐานข้อมูล");
-    }
-  } catch (error: any) {
-    console.error("Login error:", error);
-    if (error.code === "auth/wrong-password") {
-      setErrorMessage("รหัสผ่านไม่ถูกต้อง");
-    } else if (error.code === "auth/user-not-found") {
-      setErrorMessage("ไม่พบบัญชีผู้ใช้นี้");
-    } else {
-      setErrorMessage("เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง");
-    }
-  } finally {
-    setIsLoading(false);
-  }
-    try {
-      await signInWithEmailAndPassword(auth, email.trim(), password);
-      setErrorMessage('');
-      setShowForgotLink(false);
-      router.replace('/(tabs)/home');
-    } catch (error: any) {
-      console.error('Login error:', error);
-      if (error.code === 'auth/wrong-password') {
-        setErrorMessage('รหัสผ่านไม่ถูกต้อง');
-        setShowForgotLink(true);
-      } else if (error.code === 'auth/user-not-found') {
-        setErrorMessage('ไม่พบบัญชีผู้ใช้นี้');
-      } else if (error.code === 'auth/too-many-requests') {
-        setErrorMessage('กรุณารอ 30 วินาที แล้วลองใหม่');
-        setIsCooldown(true);
-        setCooldownTime(30);
-        setShowForgotLink(true);
-      } else if (error.code === 'auth/invalid-email') {
-        setErrorMessage('อีเมลไม่ถูกต้อง');
+      const snap = await getDoc(doc(db, "users", user.uid));
+      if (snap.exists()) {
+        const profile = snap.data();
+        router.replace({
+          pathname: "/(tabs)/home",
+          params: {
+            username: profile.username,
+            email: profile.email,
+            telephone: profile.telephone,
+            avatarUrl: profile.avatarUrl ?? "",
+          },
+        });
       } else {
-        setErrorMessage('เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง');
+        Alert.alert("ไม่พบข้อมูลผู้ใช้ในฐานข้อมูล");
+      }
+    } catch (error: any) {
+      console.error("Login error:", error);
+      if (error.code === "auth/wrong-password") {
+        setErrorMessage("รหัสผ่านไม่ถูกต้อง");
+      } else if (error.code === "auth/user-not-found") {
+        setErrorMessage("ไม่พบบัญชีผู้ใช้นี้");
+      } else {
+        setErrorMessage("เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง");
       }
     } finally {
       setIsLoading(false);
     }
-    await signInWithEmailAndPassword(auth, email.trim(), password);
-    setErrorMessage('');
-    setShowForgotLink(false);
-    router.replace('/(tabs)/home');
   };
 
   const handleForgotPassword = () => {
-    router.push('./resetpassword');
+    router.push('/(auth)/Resetpassword');
   };
 
   return (
@@ -118,26 +99,51 @@ return () => {
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
-      <ScrollView contentContainerStyle={styles.scrollContainer}>
-          <Text style={styles.loginTitle}>เข้าสู่ระบบ</Text>
+      <ImageBackground
+        source={require('../../assets/images/petcover.jpg')}
+        style={styles.backgroundImage}
+        resizeMode="cover"
+      >
+        <View style={styles.overlay} />
+
+        <ScrollView contentContainerStyle={styles.scrollContainer}>
+          <Text style={styles.appTitle}>Pet  IoT</Text>
           <View style={styles.form}>
-            <TextInput
-              style={[styles.input, isCooldown && styles.inputDisabled]}
-              placeholder="Email Address"
-              value={email}
-              onChangeText={setEmail}
-              keyboardType="email-address"
-              autoCapitalize="none"
-              editable={!isCooldown}
-            />
-            <TextInput
-              style={[styles.input, isCooldown && styles.inputDisabled]}
-              placeholder="Password"
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry
-              editable={!isCooldown}
-            />
+            {/* Email input with icon */}
+            <View style={{ marginBottom: 20 }}>
+              <View style={styles.inputWithIcon}>
+                <Feather name="mail" size={20} color="gray" style={styles.icon} />
+                <TextInput
+                  style={styles.textInputWithIcon}
+                  placeholder="Email Address"
+                  placeholderTextColor="gray"
+                  value={email}
+                  onChangeText={setEmail}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  editable={!isCooldown}
+                />
+              </View>
+            </View> 
+
+            {/* Password input with icon and eye */}
+            <View style={{ marginBottom: 20 }}>
+              <View style={styles.inputWithIcon}>
+                <Feather name="lock" size={20} color="gray" style={styles.icon} />
+                <TextInput
+                  style={styles.textInputWithIcon}
+                  placeholder="Password"
+                  placeholderTextColor="gray"
+                  value={password}
+                  onChangeText={setPassword}
+                  secureTextEntry={!showPassword}
+                  editable={!isCooldown}
+                />
+                <TouchableOpacity onPress={() => setShowPassword(prev => !prev)} style={styles.eyeButton}>
+                  <Feather name={showPassword ? 'eye' : 'eye-off'} size={20} color="gray" />
+                </TouchableOpacity>
+              </View>
+            </View>
 
             {errorMessage ? <Text style={styles.error}>{errorMessage}</Text> : null}
 
@@ -158,119 +164,80 @@ return () => {
                 <ActivityIndicator color="#fff" />
               ) : (
                 <Text style={styles.loginButtonText}>
-                  {isCooldown ? `กรุณารอสักครู่ (${cooldownTime} วินาที)` : 'LOGIN'}
+                  {isCooldown ? `กรุณารอสักครู่ (${cooldownTime} วินาที)` : 'เข้าสู่ระบบ'}
                 </Text>
               )}
             </TouchableOpacity>
           </View>
 
-          <Link href="/Register" asChild>
+          <Link href="/(auth)/Register" asChild>
             <TouchableOpacity>
               <Text style={styles.signupText}>
                 ยังไม่มีบัญชีผู้ใช้? <Text style={styles.linkText}>Sign Up</Text>
               </Text>
             </TouchableOpacity>
           </Link>
-      </ScrollView>
+        </ScrollView>
+      </ImageBackground>
     </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#fff',
+  container: { flex: 1 },
+  backgroundImage: { flex: 1, justifyContent: 'center' },
+  overlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(202, 133, 63, 0.25)' },
+  scrollContainer: { flexGrow: 1, justifyContent: 'center', padding: 20, 
+    marginTop: "90%",
   },
-  scrollContainer: {
-    flexGrow: 1,
-    justifyContent: 'center',
-    padding: 20,
-  },
-  
-  backButton: {
-    alignSelf: 'flex-start',
-    marginBottom: 20,
-    padding: 10,
-  },
-  backButtonText: {
-    fontSize: 16,
-    color: '#7D4E34',
-    fontWeight: '600',
-  },
-  loginTitle: {
-    fontSize: 28,
-    fontWeight: 'bold',
+  appTitle: {
+    fontSize: 36,
+    fontWeight: 800,
     textAlign: 'center',
-    marginBottom: 30,
-    color: '#7D4E34',
-  },
-  form: {
-    marginBottom: 20,
-  },
-  input: {
-    backgroundColor: '#D4D4D4',
-    borderRadius: 10,
-    padding: 15,
+    color: 'rgba(255,255,255,0.7)',
+    textShadowColor: 'rgba(0,0,0,0.2)',
+    textShadowOffset: { width: 1, height: 1 },
+    textShadowRadius: 9,
     marginBottom: 15,
-    fontSize: 16,
-    borderWidth: 1,
-    borderColor: '#e9ecef',
   },
-  inputDisabled: {
-    backgroundColor: '#f1f1f1',
-    color: '#999',
+  form: { 
+    borderRadius: 16, 
+    paddingVertical: 30,
+    paddingHorizontal: 20,
+    marginHorizontal: 10,
+    backgroundColor: 'rgba(240,240,240,0.9)',
   },
-  error: {
-    color: '#dc3545',
-    fontSize: 14,
-    marginBottom: 10,
-    textAlign: 'center',
-  },
-  forgotText: {
-    textAlign: 'center',
-    marginBottom: 15,
-    fontSize: 14,
-    color: '#666',
-  },
-  linkText: {
-    color: '#7D4E34',
-    fontWeight: '600',
-  },
-  loginButton: {
-    backgroundColor: '#7D4E34',
-    borderRadius: 10,
-    padding: 15,
-    alignItems: 'center',
-    marginTop: 10,
-  },
-  loginButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  buttonDisabled: {
-    backgroundColor: '#ccc',
-  },
-  signupText: {
-    textAlign: 'center',
-    marginBottom: 20,
-    fontSize: 14,
-    color: '#666',
-  },
-  divider: {
+  inputWithIcon: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 20,
+    backgroundColor: 'rgba(255,255,255,0.8)',
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    borderColor: "rgba(255,255,255,0.4)",
+    borderWidth: 1
   },
-  dividerLine: {
+  icon: { marginRight: 10 },
+    textInputWithIcon: {
     flex: 1,
-    height: 1,
-    backgroundColor: '#e9ecef',
+    paddingVertical: 15,
+    fontSize: 16,
+    color: 'gray',
   },
-  dividerText: {
-    marginHorizontal: 15,
-    fontSize: 14,
-    color: '#666',
+  eyeButton: { paddingHorizontal: 10, paddingVertical: 15 },
+  error: { color: '#ffcccc', fontSize: 14, marginBottom: 10, textAlign: 'center' },
+  forgotText: { textAlign: 'center', marginBottom: 20, fontSize: 14, color: '#eee' },
+  linkText: { color: '#FFC955FF', fontWeight: '800' },
+  loginButton: { backgroundColor: '#885900ff', borderRadius: 10, padding: 15, alignItems: 'center', marginTop: 10 },
+  loginButtonText: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
+  buttonDisabled: { backgroundColor: '#ccc' },
+  signupText: {
+    textAlign: 'center',
+    marginTop: 25,
+    fontSize: 16,
+    color: 'rgba(255,255,255,0.9)',
+    fontWeight: 800,
+    textShadowColor: 'rgba(0,0,0,0.2)',
+    textShadowOffset: { width: 1, height: 1 },
+    textShadowRadius: 9,
   },
-
 });

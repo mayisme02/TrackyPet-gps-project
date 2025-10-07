@@ -144,35 +144,35 @@ export default function Map2() {
     setModalVisible(false);
   };
 
-  const searchLocation = async () => {
-    if (!searchText.trim()) {
-      Alert.alert("กรุณากรอกสถานที่");
-      return;
-    }
-    try {
-      const res = await axios.get("https://maps.googleapis.com/maps/api/geocode/json", {
-        params: { address: searchText, key: GOOGLE_API_KEY, language: "th" },
-      });
-      if (res.data.status === "OK") {
-        setFollowDevice(false);
-        const { lat, lng } = res.data.results[0].geometry.location;
-        const center = { latitude: lat, longitude: lng };
-        setGeofenceCenter(center);
-        moveCamera(lat, lng);
-      } else {
-        Alert.alert("ไม่พบสถานที่", `ไม่พบผลลัพธ์สำหรับ "${searchText}"`);
-      }
-    } catch (e) {
-      console.error(e);
-      Alert.alert("เกิดข้อผิดพลาด", "ไม่สามารถค้นหาสถานที่ได้");
-    }
-  };
+  // const searchLocation = async () => {
+  //   if (!searchText.trim()) {
+  //     Alert.alert("กรุณากรอกสถานที่");
+  //     return;
+  //   }
+  //   try {
+  //     const res = await axios.get("https://maps.googleapis.com/maps/api/geocode/json", {
+  //       params: { address: searchText, key: GOOGLE_API_KEY, language: "th" },
+  //     });
+  //     if (res.data.status === "OK") {
+  //       setFollowDevice(false);
+  //       const { lat, lng } = res.data.results[0].geometry.location;
+  //       const center = { latitude: lat, longitude: lng };
+  //       setGeofenceCenter(center);
+  //       moveCamera(lat, lng);
+  //     } else {
+  //       Alert.alert("ไม่พบสถานที่", `ไม่พบผลลัพธ์สำหรับ "${searchText}"`);
+  //     }
+  //   } catch (e) {
+  //     console.error(e);
+  //     Alert.alert("เกิดข้อผิดพลาด", "ไม่สามารถค้นหาสถานที่ได้");
+  //   }
+  // };
 
   // UI 
   return (
     <View style={styles.container}>
       {/* แถบค้นหา */}
-      <View style={styles.searchContainer}>
+      {/* <View style={styles.searchContainer}>
         <TextInput
           placeholder="ค้นหาสถานที่..."
           value={searchText}
@@ -185,7 +185,7 @@ export default function Map2() {
         <TouchableOpacity onPress={searchLocation} style={styles.searchButton}>
           <Text>ค้นหา</Text>
         </TouchableOpacity>
-      </View>
+      </View> */}
 
       {/* แผนที่ */}
       <MapView
@@ -272,7 +272,7 @@ export default function Map2() {
       </View>
 
       {/* แผงควบคุมวงกลม */}
-      <View style={[styles.bottomPanel, { bottom: insets.bottom + 16 }]}>
+      <View style={[styles.bottomPanel, { bottom: insets.bottom + 70}]}>
         <Text style={styles.panelTitle}>กำหนดพื้นที่ให้สัตว์เลี้ยง</Text>
         <Text style={{ marginTop: 4 }}>
           รัศมี:{" "}
@@ -281,17 +281,17 @@ export default function Map2() {
         <Slider
           style={{ width: "100%", marginTop: 6 }}
           minimumValue={0.1}  // 100 เมตร
-          maximumValue={500}  // 500 กม.
-          step={0.1}
+          maximumValue={10}  // 500 กม.
+          step={0.05}
           value={radiusKm}
           onValueChange={setRadiusKm}
-          minimumTrackTintColor="#f2bb14"
+          minimumTrackTintColor="#b87300"
           maximumTrackTintColor="#ddd"
           thumbTintColor="#b87300"
         />
         <View style={{ flexDirection: "row", justifyContent: "space-between", width: "100%" }}>
-          <Text>0.1KM</Text>
-          <Text>500KM</Text>
+          <Text>0.1 กม.</Text>
+          <Text>10 กม.</Text>
         </View>
 
         <View style={styles.panelButtons}>
@@ -354,8 +354,9 @@ export default function Map2() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-
+  container: { 
+    flex: 1 
+  },
   searchContainer: {
     position: "absolute",
     top: 60,
@@ -396,8 +397,10 @@ const styles = StyleSheet.create({
     backgroundColor: "white",
     borderRadius: 8,
   },
-  calloutTitle: { fontWeight: "700", marginBottom: 2 },
-
+  calloutTitle: { 
+    fontWeight: "700", 
+    marginBottom: 2 
+  },
   zoomControls: {
     position: "absolute",
     right: 16,
@@ -412,15 +415,22 @@ const styles = StyleSheet.create({
     elevation: 6,
     marginBottom: 8,
   },
-  zoomText: { fontSize: 24, fontWeight: "bold", color: "#333" },
+  zoomText: { 
+    fontSize: 24, 
+    fontWeight: "bold", 
+    color: "#333" 
+  },
   followBtn: {
     paddingVertical: 10,
     paddingHorizontal: 12,
     borderRadius: 10,
   },
-  followOn: { backgroundColor: "#28a745" },
-  followOff: { backgroundColor: "#6c757d" },
-
+  followOn: { 
+    backgroundColor: "#28a745" 
+  },
+  followOff: { 
+    backgroundColor: "#6c757d" 
+  },
   bottomPanel: {
     position: "absolute",
     left: 16,
@@ -434,7 +444,10 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     shadowOffset: { width: 0, height: 4 },
   },
-  panelTitle: { fontSize: 16, fontWeight: "700" },
+  panelTitle: { 
+    fontSize: 16, 
+    fontWeight: "700" 
+  },
   panelButtons: {
     marginTop: 10,
     width: "100%",
@@ -448,8 +461,10 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     alignItems: "center",
   },
-  btnText: { color: "#fff", fontWeight: "bold" },
-
+  btnText: { 
+    color: "#fff", 
+    fontWeight: "bold" 
+  },
   modalContainer: {
     flex: 1,
     justifyContent: "center",
@@ -457,7 +472,7 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(0,0,0,0.5)",
   },
   modalContent: {
-    backgroundColor: "rgba(255,255,255,0.95)",
+    backgroundColor: "#28a745",
     padding: 24,
     borderRadius: 16,
     alignItems: "center",
@@ -465,6 +480,14 @@ const styles = StyleSheet.create({
     width: "80%",
     maxWidth: 360,
   },
-  modalTitle: { fontSize: 18, fontWeight: "bold", marginBottom: 8 },
-  buttonRow: { flexDirection: "row", gap: 10, marginTop: 6 },
+  modalTitle: { 
+    fontSize: 18, 
+    fontWeight: "bold", 
+    marginBottom: 8 
+  },
+  buttonRow: { 
+    flexDirection: "row", 
+    gap: 10, 
+    marginTop: 6 
+  },
 });

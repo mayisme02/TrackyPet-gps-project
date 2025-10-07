@@ -20,7 +20,6 @@ import {
   query,
   orderBy,
 } from "firebase/firestore";
-import Feather from "@expo/vector-icons/Feather";
 
 // ---- interface ของ Pet ----
 interface Pet {
@@ -89,6 +88,9 @@ export default function HomeScreen() {
   // ไปหน้าแจ้งเตือน
   const handleNoti = () => router.push("/(modals)/notification");
 
+  // ไปหน้าบัญชีผู้ใช้
+  const handleProfile = () => router.push("/(tabs)/profile");
+
   return (
     <ParallaxScrollView
       headerBackgroundColor={{ light: "#f2bb14", dark: "#f2bb14" }}
@@ -97,12 +99,15 @@ export default function HomeScreen() {
           <View style={styles.headerContent}>
             {/* รูปโปรไฟล์ */}
             {avatar ? (
-              <Image source={{ uri: avatar }} style={styles.profileImage} />
+              <TouchableOpacity onPress={handleProfile}>
+                <Image source={{ uri: avatar }} style={styles.profileImage} />
+              </TouchableOpacity>
             ) : (
               <View style={styles.imagePlaceholder}>
                 <Ionicons name="person-circle-outline" size={50} color="#fff" />
               </View>
             )}
+
             <Text style={styles.headerText}>สวัสดี! {name}</Text>
           </View>
 
@@ -113,11 +118,6 @@ export default function HomeScreen() {
         </SafeAreaView>
       }
     >
-      {/* --- หัวข้อสัตว์เลี้ยงของฉัน --- */}
-      <View style={styles.petHeader}>
-        <Text style={styles.panelTitle}>สัตว์เลี้ยงของฉัน</Text>
-      </View>
-
       {/* --- Container แสดงสัตว์เลี้ยง --- */}
       <View style={styles.petContainer}>
         <View style={styles.petBorder}>
@@ -182,10 +182,10 @@ const styles = StyleSheet.create({
     marginLeft: 16,
   },
   headerText: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: "bold",
     marginLeft: 12,
-    color: "#fff",
+    color: "black",
   },
   notiButton: {
     position: "absolute",
@@ -194,8 +194,8 @@ const styles = StyleSheet.create({
     marginTop: -12,
   },
   profileImage: {
-    width: 45,
-    height: 45,
+    width: 40,
+    height: 40,
     borderRadius: 30,
     backgroundColor: "#eee",
   },
@@ -207,24 +207,12 @@ const styles = StyleSheet.create({
     alignItems: "center",
     backgroundColor: "rgba(255,255,255,0.2)",
   },
-  // --- หัวข้อสัตว์เลี้ยง ---
-  petHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginHorizontal: 24,
-    marginVertical: 12,
-  },
-  panelTitle: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: "#333",
-  },
   // --- Container สัตว์เลี้ยง ---
   petContainer: {
     backgroundColor: "#fff",
     borderRadius: 24,
     marginHorizontal: 20,
+    marginVertical: 20,
     padding: 16,
     marginBottom: 20,
     shadowColor: "#333",

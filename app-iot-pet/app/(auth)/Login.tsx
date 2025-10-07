@@ -152,7 +152,7 @@ export default function LoginScreen() {
             {/* Forgot password link อยู่ใต้ password ตลอด */}
             <TouchableOpacity onPress={handleForgotPassword}>
               <Text style={styles.forgotText}>
-                ลืมรหัสผ่าน? <Text style={styles.linkText2}>เปลี่ยนรหัสผ่าน</Text>
+                ลืมรหัสผ่าน? <Text style={styles.linkText}>เปลี่ยนรหัสผ่าน</Text>
               </Text>
             </TouchableOpacity>
 
@@ -173,16 +173,16 @@ export default function LoginScreen() {
                 </Text>
               )}
             </TouchableOpacity>
-          </View>
-
-          {/* Register Link */}
+            {/* Register Link */}
           <Link href="/(auth)/Register" asChild>
             <TouchableOpacity>
               <Text style={styles.signupText}>
-                ยังไม่มีบัญชีผู้ใช้? <Text style={styles.linkText}>ลงทะเบียน</Text>
+                ยังไม่มีบัญชีผู้ใช้? <Text style={styles.linkText}>สมัครสมาชิก</Text>
               </Text>
             </TouchableOpacity>
           </Link>
+          </View>
+
         </ScrollView>
       </ImageBackground>
     </KeyboardAvoidingView>
@@ -204,7 +204,7 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     justifyContent: 'center',
     padding: 20,
-    marginTop: '90%',
+    marginTop: '80%',
   },
   form: {
     backgroundColor: '#ffffff',
@@ -251,14 +251,10 @@ const styles = StyleSheet.create({
   forgotText: {
     textAlign: 'center',
     marginBottom: 20,
-    fontSize: 14,
+    fontSize: 16,
     color: 'gray',
   },
   linkText: {
-    color: '#181817FF',
-    fontWeight: '800',
-  },
-  linkText2: {
     color: '#885900ff',
     fontWeight: '800',
   },
@@ -266,11 +262,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 25,
     fontSize: 16,
-    color: 'white',
-    fontWeight: '800',
-    textShadowColor: 'rgba(0,0,0,0.1)',
-    textShadowOffset: { width: 1, height: 1 },
-    textShadowRadius: 4,
+    color: 'gray',
   },
   loginButton: {
     backgroundColor: '#885900ff',

@@ -10,22 +10,22 @@ import {
   Platform,
   ScrollView,
   ActivityIndicator,
+  ImageBackground,
 } from 'react-native';
 import { router } from 'expo-router';
 import { sendPasswordResetEmail } from 'firebase/auth';
 import { auth } from '../../firebase/firebase';
+import { Feather } from '@expo/vector-icons';
 
-// Type definition สำหรับ Firebase Auth Error
 interface FirebaseAuthError extends Error {
   code: string;
 }
 
-// Type guard function เพื่อตรวจสอบว่าเป็น Firebase Auth Error หรือไม่
 function isFirebaseAuthError(error: unknown): error is FirebaseAuthError {
   return typeof error === 'object' && error !== null && 'code' in error;
 }
 
-export default function resetpasswordScreen() {
+export default function ResetPasswordScreen() {
   const [email, setEmail] = useState('');
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
@@ -40,7 +40,6 @@ export default function resetpasswordScreen() {
       return;
     }
 
-    // ตรวจสอบรูปแบบอีเมล
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email.trim())) {
       setError('รูปแบบอีเมลไม่ถูกต้อง');
@@ -53,24 +52,16 @@ export default function resetpasswordScreen() {
       await sendPasswordResetEmail(auth, email.trim().toLowerCase());
       setMessage('ส่งลิงก์รีเซ็ตรหัสผ่านไปที่อีเมลแล้ว');
       setEmail('');
-      
-      // แสดง Alert แทน message เพื่อให้เด่นชัดขึ้น
+
       Alert.alert(
         'สำเร็จ',
         'ส่งลิงก์รีเซ็ตรหัสผ่านไปที่อีเมลแล้ว กรุณาตรวจสอบอีเมลของคุณ',
-        [
-          {
-            text: 'ตกลง',
-            onPress: () => router.back(),
-          }
-        ]
+        [{ text: 'ตกลง', onPress: () => router.back() }]
       );
     } catch (err) {
       console.error('Reset password error:', err);
-      
       let errorMessage = 'เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง';
-      
-      // ใช้ type guard function ในการตรวจสอบ
+
       if (isFirebaseAuthError(err)) {
         switch (err.code) {
           case 'auth/user-not-found':
@@ -85,13 +76,11 @@ export default function resetpasswordScreen() {
           case 'auth/network-request-failed':
             errorMessage = 'ปัญหาเครือข่าย กรุณาตรวจสอบการเชื่อมต่ออินเทอร์เน็ต';
             break;
-          default:
-            errorMessage = `เกิดข้อผิดพลาด: ${err.message}`;
         }
       } else if (err instanceof Error) {
         errorMessage = err.message;
       }
-      
+
       setError(errorMessage);
     } finally {
       setIsLoading(false);
@@ -103,38 +92,37 @@ export default function resetpasswordScreen() {
   };
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+    <ImageBackground
+      source={require('../../assets/images/homecover.jpg')} // ใส่ path รูปหมาของคุณ
+      style={styles.background}
+      resizeMode="cover"
     >
-      <ScrollView contentContainerStyle={styles.scrollContainer}>
+      <KeyboardAvoidingView
+        style={styles.container}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+        <ScrollView contentContainerStyle={styles.scrollContainer}>
           <Text style={styles.title}>รีเซ็ตรหัสผ่าน</Text>
           <Text style={styles.subtitle}>
             กรอกอีเมลของคุณเพื่อรับลิงก์รีเซ็ตรหัสผ่าน
           </Text>
 
           <View style={styles.form}>
-            <View style={styles.inputGroup}>
-              <Text style={styles.icon}></Text>
+            <View style={styles.inputWithIcon}>
+              <Feather name="mail" size={20} color="gray" style={styles.icon} />
               <TextInput
                 style={styles.input}
-                placeholder="Email Address"
+                placeholder="อีเมล"
                 value={email}
                 onChangeText={setEmail}
                 keyboardType="email-address"
                 autoCapitalize="none"
-                autoCorrect={false}
                 editable={!isLoading}
               />
             </View>
 
-            {error ? (
-              <Text style={styles.errorText}>{error}</Text>
-            ) : null}
-
-            {message ? (
-              <Text style={styles.successText}>{message}</Text>
-            ) : null}
+            {error ? <Text style={styles.error}>{error}</Text> : null}
+            {message ? <Text style={styles.success}>{message}</Text> : null}
 
             <TouchableOpacity
               style={[styles.btnReset, isLoading && styles.buttonDisabled]}
@@ -154,15 +142,19 @@ export default function resetpasswordScreen() {
               กลับไปหน้า <Text style={styles.backLink}>เข้าสู่ระบบ</Text>
             </Text>
           </TouchableOpacity>
-      </ScrollView>
-    </KeyboardAvoidingView>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </ImageBackground>
   );
 }
 
 const styles = StyleSheet.create({
+  background: {
+    flex: 1,
+  },
   container: {
     flex: 1,
-    backgroundColor: '#ffffffff',
+    backgroundColor: 'rgba(255,255,255,0.5)',
   },
   scrollContainer: {
     flexGrow: 1,
@@ -171,10 +163,10 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 28,
-    fontWeight: 'bold',
+    fontWeight: '800',
     textAlign: 'center',
+    color: '#885900ff',
     marginBottom: 10,
-    color: '#333',
   },
   subtitle: {
     fontSize: 16,
@@ -186,42 +178,36 @@ const styles = StyleSheet.create({
   form: {
     marginBottom: 20,
   },
-  inputGroup: {
+  inputWithIcon: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#D4D4D4',
-    borderRadius: 10,
-    marginBottom: 15,
+    backgroundColor: '#F5F5F5',
+    borderRadius: 12,
+    paddingHorizontal: 15,
     borderWidth: 1,
-    borderColor: '#e9ecef',
+    borderColor: '#E0E0E0',
+    marginBottom: 15,
   },
   icon: {
-    fontSize: 20,
-    padding: 15,
+    marginRight: 10,
   },
   input: {
     flex: 1,
     fontSize: 16,
-    paddingVertical: 15,
-    paddingRight: 15,
+    paddingVertical: 14,
     color: '#333',
   },
-  errorText: {
-    color: '#dc3545',
+  error: {
+    color: '#C50000FF',
     fontSize: 14,
     textAlign: 'center',
-    marginBottom: 15,
-    backgroundColor: '#f8d7da',
-    padding: 10,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#f5c6cb',
+    marginBottom: 10,
   },
-  successText: {
+  success: {
     color: '#155724',
     fontSize: 14,
     textAlign: 'center',
-    marginBottom: 15,
+    marginBottom: 10,
     backgroundColor: '#d4edda',
     padding: 10,
     borderRadius: 8,
@@ -229,16 +215,16 @@ const styles = StyleSheet.create({
     borderColor: '#c3e6cb',
   },
   btnReset: {
-    backgroundColor: '#7D4E34',
-    borderRadius: 10,
-    padding: 15,
+    backgroundColor: '#885900ff',
+    borderRadius: 12,
+    paddingVertical: 15,
     alignItems: 'center',
     marginTop: 10,
   },
   btnText: {
     color: '#fff',
-    fontSize: 16,
-    fontWeight: 'bold',
+    fontSize: 18,
+    fontWeight: '700',
   },
   buttonDisabled: {
     backgroundColor: '#ccc',
@@ -250,8 +236,7 @@ const styles = StyleSheet.create({
   },
   backLink: {
     fontSize: 16,
-    color: '#000000ff',
-    fontWeight: '600',
-    textAlign: 'center',
+    color: '#885900ff',
+    fontWeight: '700',
   },
 });

@@ -21,7 +21,7 @@ export default function notification() {
 }
 
 const styles = StyleSheet.create({
-    container: { flex: 1, backgroundColor: '#fff' },
+    container: { flex: 1, backgroundColor: '#FFB800' },
     header: {
         backgroundColor: '#FFB800',
         height: 100,

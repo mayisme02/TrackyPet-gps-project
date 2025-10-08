@@ -1,27 +1,40 @@
 import React, { useEffect, useRef, useState } from "react";
-import {Alert,Modal,StyleSheet,Text,TextInput,TouchableOpacity,View,useWindowDimensions,} from "react-native";
-import MapView, {Callout, Circle,MapPressEvent,Marker,Region,} from "react-native-maps";
+import {
+  Alert,
+  Modal,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+  useWindowDimensions,
+} from "react-native";
+import MapView, {
+  Callout,
+  Circle,
+  MapPressEvent,
+  Marker,
+  Region,
+} from "react-native-maps";
 import * as Location from "expo-location";
-import axios from "axios";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Slider from "@react-native-community/slider";
 import { rtdb } from "../../firebase/firebase";
 import { ref as dbRef, onValue } from "firebase/database";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-const DEVICE_ID = 'DEVICE-01';
-const PAW_ICON = require('../../assets/images/pow.png');
+const DEVICE_ID = "DEVICE-01";
+const PAW_ICON = require("../../assets/images/pow.png");
 
 type Latest =
   | {
-      lat: number;
-      lng: number;
-      sats?: number;
-      hdop?: number;
-      utc?: string;
-      ict?: string;
-      th?: string;
-      tsMs?: number;
-    }
+    lat: number;
+    lng: number;
+    sats?: number;
+    hdop?: number;
+    utc?: string;
+    ict?: string;
+    th?: string;
+    tsMs?: number;
+  }
   | null;
 
 const initialRegion: Region = {
@@ -43,14 +56,11 @@ export default function Map2() {
   const [latest, setLatest] = useState<Latest>(null);
   const [latestThaiTime, setLatestThaiTime] = useState<string>("-");
 
-  // — วงกลม (ศูนย์กลาง + รัศมี)
   const [geofenceCenter, setGeofenceCenter] = useState<{ latitude: number; longitude: number } | null>(null);
-  const [radiusKm, setRadiusKm] = useState<number>(1); // เริ่มที่ 1 กม.
+  const [radiusKm, setRadiusKm] = useState<number>(1);
 
   const [modalVisible, setModalVisible] = useState(false);
   const [pendingCoord, setPendingCoord] = useState<{ latitude: number; longitude: number } | null>(null);
-  const [searchText, setSearchText] = useState("");
-  const GOOGLE_API_KEY = "AIzaSyCSFB11ZL46SmsP15p9MSVnu6KkUhZPN40";
 
   const toThaiTime = (utc?: string) => {
     try {
@@ -76,7 +86,6 @@ export default function Map2() {
     mapRef.current?.animateToRegion(newRegion, 800);
   };
 
-  // ระยะทาง (เมตร)
   const distanceMeters = (a: { latitude: number; longitude: number }, b: { latitude: number; longitude: number }) => {
     const R = 6371000;
     const dLat = ((b.latitude - a.latitude) * Math.PI) / 180;
@@ -94,7 +103,6 @@ export default function Map2() {
       ? distanceMeters(devicePos, geofenceCenter) <= radiusKm * 1000
       : null;
 
-  // ตำแหน่งอุปกรณ์ 
   useEffect(() => {
     const r = dbRef(rtdb, `devices/${DEVICE_ID}/latest`);
     const off = onValue(r, (snap) => {
@@ -112,7 +120,6 @@ export default function Map2() {
     return () => off();
   }, [zoomLevel, followDevice]);
 
-  // Map interactions 
   const handleMapPress = (e: MapPressEvent) => {
     setFollowDevice(false);
     const { coordinate } = e.nativeEvent;
@@ -144,50 +151,8 @@ export default function Map2() {
     setModalVisible(false);
   };
 
-  // const searchLocation = async () => {
-  //   if (!searchText.trim()) {
-  //     Alert.alert("กรุณากรอกสถานที่");
-  //     return;
-  //   }
-  //   try {
-  //     const res = await axios.get("https://maps.googleapis.com/maps/api/geocode/json", {
-  //       params: { address: searchText, key: GOOGLE_API_KEY, language: "th" },
-  //     });
-  //     if (res.data.status === "OK") {
-  //       setFollowDevice(false);
-  //       const { lat, lng } = res.data.results[0].geometry.location;
-  //       const center = { latitude: lat, longitude: lng };
-  //       setGeofenceCenter(center);
-  //       moveCamera(lat, lng);
-  //     } else {
-  //       Alert.alert("ไม่พบสถานที่", `ไม่พบผลลัพธ์สำหรับ "${searchText}"`);
-  //     }
-  //   } catch (e) {
-  //     console.error(e);
-  //     Alert.alert("เกิดข้อผิดพลาด", "ไม่สามารถค้นหาสถานที่ได้");
-  //   }
-  // };
-
-  // UI 
   return (
     <View style={styles.container}>
-      {/* แถบค้นหา */}
-      {/* <View style={styles.searchContainer}>
-        <TextInput
-          placeholder="ค้นหาสถานที่..."
-          value={searchText}
-          onChangeText={setSearchText}
-          style={styles.searchInput}
-          onSubmitEditing={searchLocation}
-          returnKeyType="search"
-          placeholderTextColor="#888"
-        />
-        <TouchableOpacity onPress={searchLocation} style={styles.searchButton}>
-          <Text>ค้นหา</Text>
-        </TouchableOpacity>
-      </View> */}
-
-      {/* แผนที่ */}
       <MapView
         ref={mapRef}
         style={StyleSheet.absoluteFill}
@@ -196,22 +161,19 @@ export default function Map2() {
         showsMyLocationButton
         onPress={handleMapPress}
       >
-        {/* Geofence */}
         {geofenceCenter && (
           <>
             <Circle
               center={geofenceCenter}
-              radius={radiusKm * 1000} // km -> m
-              strokeColor={inGeofence === false ? "rgba(220,0,0,0.9)" : "rgba(0,122,255,0.9)"}
+              radius={radiusKm * 1000}
+              strokeColor={inGeofence === false ? "rgba(220,0,0,0.9)" : "rgba(0,200,0,0.9)"}
               strokeWidth={2}
-              fillColor={inGeofence === false ? "rgba(220,0,0,0.15)" : "rgba(0,122,255,0.15)"}
+              fillColor={inGeofence === false ? "rgba(220,0,0,0.15)" : "rgba(0,200,0,0.15)"}
             />
-            {/* หมุดhome*/}
             <Marker coordinate={geofenceCenter} pinColor="#d00" />
           </>
         )}
 
-        {/* หมุดอุปกรณ์ */}
         {devicePos && (
           <Marker
             key="device"
@@ -222,39 +184,62 @@ export default function Map2() {
           >
             <Callout>
               <View style={styles.calloutBox}>
-                <Text style={styles.calloutTitle}>อุปกรณ์</Text>
-                {!!latestThaiTime && <Text>เวลาไทย: {latestThaiTime}</Text>}
+                <View style={styles.calloutHeader}>
+                  <Text style={styles.calloutTitle}>อุปกรณ์</Text>
+                  <View style={[styles.calloutBadge, inGeofence ? styles.inArea : styles.outArea]}>
+                    <Text style={styles.calloutBadgeText}>
+                      {inGeofence ? "ในพื้นที่" : "นอกพื้นที่"}
+                    </Text>
+                  </View>
+                </View>
+
+                {!!latestThaiTime && (
+                  <Text style={styles.calloutText}>🕒 เวลาไทย: {latestThaiTime}</Text>
+                )}
+
                 {latest && (
                   <>
-                    <Text>Lat: {latest.lat?.toFixed?.(6)}</Text>
-                    <Text>Lng: {latest.lng?.toFixed?.(6)}</Text>
-                    {latest.sats != null && <Text>Sats: {latest.sats}</Text>}
-                    {latest.hdop != null && <Text>HDOP: {latest.hdop}</Text>}
+                    <Text style={styles.calloutText}>Lat: {latest.lat?.toFixed?.(6)}</Text>
+                    <Text style={styles.calloutText}>Lng: {latest.lng?.toFixed?.(6)}</Text>
+                    {latest.sats != null && <Text style={styles.calloutText}>ดาวเทียม: {latest.sats}</Text>}
+                    {latest.hdop != null && <Text style={styles.calloutText}>ความแม่นยำ: {latest.hdop}</Text>}
                   </>
                 )}
+
                 {geofenceCenter && devicePos && (
-                  <>
-                    <Text>
-                      ห่างจากศูนย์กลาง:{" "}
+                  <Text style={styles.calloutText}>
+                    📍 ห่างจากศูนย์กลาง:{" "}
+                    <Text style={{ fontWeight: "bold" }}>
                       {Math.round(distanceMeters(devicePos, geofenceCenter))} ม.
                     </Text>
-                    <Text style={{ color: inGeofence ? "#28a745" : "#d00", fontWeight: "700" }}>
-                      {inGeofence ? "อยู่ในพื้นที่" : "ออกนอกพื้นที่"}
-                    </Text>
-                  </>
+                  </Text>
                 )}
               </View>
             </Callout>
+
           </Marker>
         )}
       </MapView>
 
-      {/* ติดตามอุปกรณ์ */}
       <View style={styles.zoomControls}>
-        <TouchableOpacity style={styles.zoomButton} onPress={() => { const z = Math.max(zoomLevel / 2, 0.001); setZoomLevel(z); moveCamera(region.latitude, region.longitude, z); }}>
+        <TouchableOpacity
+          style={styles.zoomButton}
+          onPress={() => {
+            const z = Math.max(zoomLevel / 2, 0.001);
+            setZoomLevel(z);
+            moveCamera(region.latitude, region.longitude, z);
+          }}
+        >
           <Text style={styles.zoomText}>+</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.zoomButton} onPress={() => { const z = Math.min(zoomLevel * 2, 1); setZoomLevel(z); moveCamera(region.latitude, region.longitude, z); }}>
+        <TouchableOpacity
+          style={styles.zoomButton}
+          onPress={() => {
+            const z = Math.min(zoomLevel * 2, 1);
+            setZoomLevel(z);
+            moveCamera(region.latitude, region.longitude, z);
+          }}
+        >
           <Text style={styles.zoomText}>-</Text>
         </TouchableOpacity>
         <TouchableOpacity
@@ -271,23 +256,21 @@ export default function Map2() {
         </TouchableOpacity>
       </View>
 
-      {/* แผงควบคุมวงกลม */}
-      <View style={[styles.bottomPanel, { bottom: insets.bottom + 70}]}>
+      <View style={[styles.bottomPanel, { bottom: insets.bottom + 70 }]}>
         <Text style={styles.panelTitle}>กำหนดพื้นที่ให้สัตว์เลี้ยง</Text>
         <Text style={{ marginTop: 4 }}>
-          รัศมี:{" "}
-          {radiusKm >= 1 ? `${radiusKm.toFixed(1)} กม.` : `${Math.round(radiusKm * 1000)} ม.`}
+          รัศมี: {radiusKm >= 1 ? `${radiusKm.toFixed(1)} กม.` : `${Math.round(radiusKm * 1000)} ม.`}
         </Text>
         <Slider
           style={{ width: "100%", marginTop: 6 }}
-          minimumValue={0.1}  // 100 เมตร
-          maximumValue={10}  // 500 กม.
+          minimumValue={0.1}
+          maximumValue={10}
           step={0.05}
           value={radiusKm}
           onValueChange={setRadiusKm}
-          minimumTrackTintColor="#b87300"
+          minimumTrackTintColor="#885900ff"
           maximumTrackTintColor="#ddd"
-          thumbTintColor="#b87300"
+          thumbTintColor="#885900ff"
         />
         <View style={{ flexDirection: "row", justifyContent: "space-between", width: "100%" }}>
           <Text>0.1 กม.</Text>
@@ -296,7 +279,7 @@ export default function Map2() {
 
         <View style={styles.panelButtons}>
           <TouchableOpacity
-            style={[styles.actionBtn, { backgroundColor: "#28a745" }]}
+            style={[styles.actionBtn]}
             onPress={() => {
               if (!geofenceCenter) {
                 Alert.alert("ยังไม่ได้เลือกจุด", "แตะแผนที่เพื่อเลือกจุดศูนย์กลางก่อน");
@@ -307,19 +290,12 @@ export default function Map2() {
           >
             <Text style={styles.btnText}>ตั้งค่า</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={[styles.actionBtn, { backgroundColor: "#6c757d" }]} onPress={clearGeofence}>
+          <TouchableOpacity style={[styles.actionBtn]} onPress={clearGeofence}>
             <Text style={styles.btnText}>ล้างพื้นที่</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.actionBtn, { backgroundColor: "#007bff" }]}
-            onPress={getCurrentLocation}
-          >
-            <Text style={styles.btnText}>ใช้ตำแหน่งฉัน</Text>
           </TouchableOpacity>
         </View>
       </View>
 
-      {/* ยืนยันตำแหน่ง */}
       <Modal animationType="slide" transparent visible={modalVisible}>
         <View style={styles.modalContainer}>
           <View style={styles.modalContent}>
@@ -330,15 +306,15 @@ export default function Map2() {
               </Text>
             )}
             <View style={styles.buttonRow}>
-              <TouchableOpacity style={[styles.actionBtn, { backgroundColor: "#007bff" }]} onPress={confirmPlaceHere}>
+              <TouchableOpacity style={styles.actionBtn1} onPress={confirmPlaceHere}>
                 <Text style={styles.btnText}>ใช้จุดนี้</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={[styles.actionBtn, { backgroundColor: "#28a745" }]} onPress={getCurrentLocation}>
+              <TouchableOpacity style={styles.actionBtn2} onPress={getCurrentLocation}>
                 <Text style={styles.btnText}>ใช้ตำแหน่งฉัน</Text>
               </TouchableOpacity>
             </View>
             <TouchableOpacity
-              style={[styles.actionBtn, { backgroundColor: "#6c757d", marginTop: 10 }]}
+              style={styles.actionBtn3}
               onPress={() => {
                 setModalVisible(false);
                 setPendingCoord(null);
@@ -354,59 +330,83 @@ export default function Map2() {
 }
 
 const styles = StyleSheet.create({
-  container: { 
-    flex: 1 
-  },
-  searchContainer: {
-    position: "absolute",
-    top: 60,
-    left: 16,
-    right: 16,
-    flexDirection: "row",
-    zIndex: 10,
-    backgroundColor: "white",
-    borderRadius: 20,
-    elevation: 6,
-    shadowColor: "#000",
-    shadowOpacity: 0.2,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 4 },
-  },
-  searchInput: {
+  container: {
     flex: 1,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    fontSize: 16,
-    borderTopLeftRadius: 20,
-    borderBottomLeftRadius: 20,
-    backgroundColor: "#f5f5f5",
-    color: "#333",
-  },
-  searchButton: {
-    backgroundColor: "#f2bb14",
-    paddingHorizontal: 20,
-    justifyContent: "center",
-    borderTopRightRadius: 20,
-    borderBottomRightRadius: 20,
   },
 
+  // --- Callout Styling ---
   calloutBox: {
-    minWidth: 180,
+    minWidth: 200,
     maxWidth: 260,
-    padding: 8,
-    backgroundColor: "white",
-    borderRadius: 8,
+    backgroundColor: "rgba(255,255,255,0.95)",
+    borderRadius: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    shadowColor: "#000",
+    shadowOpacity: 0.2,
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowRadius: 4,
+    elevation: 4,
   },
-  calloutTitle: { 
-    fontWeight: "700", 
-    marginBottom: 2 
+
+  calloutTitle: {
+    fontWeight: "700",
+    fontSize: 18,
+    color: "#5c4033",
+    marginBottom: 6,
   },
+
+  calloutHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 6,
+  },
+
+  calloutBadge: {
+    borderRadius: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    marginBottom: 6,
+    alignSelf: "flex-start",
+  },
+
+  inArea: {
+    backgroundColor: "rgba(0,200,0,0.2)",
+  },
+
+  outArea: {
+    backgroundColor: "rgba(220,0,0,0.2)",
+  },
+
+  calloutBadgeText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#000",
+  },
+
+  calloutText: {
+    fontSize: 14,
+    color: "#333",
+    marginBottom: 4,
+  },
+
+  statusText: {
+    marginTop: 6,
+    fontWeight: "700",
+    textAlign: "center",
+  },
+
   zoomControls: {
     position: "absolute",
+    bottom: 300,
     right: 16,
-    bottom: 280,
-    alignItems: "center",
+    alignItems: "flex-end",
   },
+
   zoomButton: {
     backgroundColor: "rgba(255,255,255,0.9)",
     paddingHorizontal: 12,
@@ -415,22 +415,27 @@ const styles = StyleSheet.create({
     elevation: 6,
     marginBottom: 8,
   },
-  zoomText: { 
-    fontSize: 24, 
-    fontWeight: "bold", 
-    color: "#333" 
+
+  zoomText: {
+    fontSize: 24,
+    fontWeight: "bold",
+    color: "#333",
   },
+
   followBtn: {
     paddingVertical: 10,
     paddingHorizontal: 12,
     borderRadius: 10,
   },
-  followOn: { 
-    backgroundColor: "#28a745" 
+
+  followOn: {
+    backgroundColor: "#6c757d",
   },
-  followOff: { 
-    backgroundColor: "#6c757d" 
+
+  followOff: {
+    backgroundColor: "#007bff",
   },
+
   bottomPanel: {
     position: "absolute",
     left: 16,
@@ -442,12 +447,17 @@ const styles = StyleSheet.create({
     shadowColor: "#000",
     shadowOpacity: 0.2,
     shadowRadius: 10,
-    shadowOffset: { width: 0, height: 4 },
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
   },
-  panelTitle: { 
-    fontSize: 16, 
-    fontWeight: "700" 
+
+  panelTitle: {
+    fontSize: 16,
+    fontWeight: "700",
   },
+
   panelButtons: {
     marginTop: 10,
     width: "100%",
@@ -455,24 +465,30 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     gap: 8,
   },
+
   actionBtn: {
     paddingVertical: 10,
     paddingHorizontal: 14,
     borderRadius: 8,
+    width: "48%",
     alignItems: "center",
+    backgroundColor: "#f2bb14",
   },
-  btnText: { 
-    color: "#fff", 
-    fontWeight: "bold" 
+
+  btnText: {
+    color: "#fff",
+    fontWeight: "bold",
   },
+
   modalContainer: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
     backgroundColor: "rgba(0,0,0,0.5)",
   },
+
   modalContent: {
-    backgroundColor: "#28a745",
+    backgroundColor: "rgba(255,255,255,0.7)",
     padding: 24,
     borderRadius: 16,
     alignItems: "center",
@@ -480,14 +496,39 @@ const styles = StyleSheet.create({
     width: "80%",
     maxWidth: 360,
   },
-  modalTitle: { 
-    fontSize: 18, 
-    fontWeight: "bold", 
-    marginBottom: 8 
+
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: "bold",
+    marginBottom: 8,
   },
-  buttonRow: { 
-    flexDirection: "row", 
-    gap: 10, 
-    marginTop: 6 
+
+  actionBtn1: {
+    backgroundColor: "#007bff",
+    paddingHorizontal: 30,
+    paddingVertical: 10,
+    borderRadius: 5,
+  },
+
+  actionBtn2: {
+    backgroundColor: "#28a745",
+    paddingHorizontal: 30,
+    paddingVertical: 10,
+    borderRadius: 5,
+  },
+
+  actionBtn3: {
+    backgroundColor: "#6c757d",
+    marginTop: 10,
+    paddingHorizontal: 107,
+    paddingVertical: 10,
+    borderRadius: 5,
+  },
+
+  buttonRow: {
+    flexDirection: "row",
+    gap: 10,
+    marginTop: 6,
+    paddingHorizontal: 50,
   },
 });

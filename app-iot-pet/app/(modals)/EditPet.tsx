@@ -80,9 +80,8 @@ export default function EditPet() {
 
             router.replace({
                 pathname: "/(modals)/PetDetail",
-                params: { pet: JSON.stringify(updatedPet) 
-            },
-        });
+                params: { pet: JSON.stringify(updatedPet) },
+            });
         } catch (error) {
             console.error("เกิดข้อผิดพลาดในการบันทึก:", error);
             Alert.alert("เกิดข้อผิดพลาด", "ไม่สามารถบันทึกข้อมูลได้");
@@ -103,16 +102,22 @@ export default function EditPet() {
             </SafeAreaView>
 
             <ScrollView contentContainerStyle={{ paddingBottom: 30 }}>
-                {/* รูปภาพ */}
-                <TouchableOpacity onPress={pickImage} style={styles.imageContainer}>
-                    {photo ? (
-                        <Image source={{ uri: photo }} style={styles.image} />
-                    ) : (
-                        <View style={styles.placeholderImage}>
-                            <Text style={{ color: "#777" }}>เลือกรูปภาพ</Text>
+                {/* ✅ ส่วนรูปภาพพร้อมไอคอนแก้ไข */}
+                <View style={styles.imageWrapper}>
+                    <TouchableOpacity onPress={pickImage} style={styles.imageContainer}>
+                        {photo ? (
+                            <Image source={{ uri: photo }} style={styles.image} />
+                        ) : (
+                            <View style={styles.placeholderImage}>
+                                <Text style={{ color: "#777" }}>เลือกรูปภาพ</Text>
+                            </View>
+                        )}
+                        {/* ไอคอนแก้ไข */}
+                        <View style={styles.editIconContainer}>
+                            <Ionicons name="pencil" size={20} color="gray" />
                         </View>
-                    )}
-                </TouchableOpacity>
+                    </TouchableOpacity>
+                </View>
 
                 <View style={styles.form}>
                     {/* ชื่อ */}
@@ -258,22 +263,36 @@ const styles = StyleSheet.create({
         fontWeight: "700",
         color: "black",
     },
-    imageContainer: {
+    imageWrapper: {
         alignItems: "center",
-        marginTop: 20,
+        marginTop: 30,
+    },
+    imageContainer: {
+        position: "relative",
+        alignItems: "center",
+        justifyContent: "center",
     },
     image: {
-        width: 200,
-        height: 200,
+        width: 130,
+        height: 130,
         borderRadius: 100,
     },
     placeholderImage: {
-        width: 200,
-        height: 200,
+        width: 130,
+        height: 130,
         borderRadius: 100,
         backgroundColor: "#EAEAEA",
         alignItems: "center",
         justifyContent: "center",
+    },
+    editIconContainer: {
+        position: "absolute",
+        bottom: 0,
+        right: 0,
+        backgroundColor: "#DDDDDDFF",
+        borderRadius: 20,
+        padding: 6,
+        elevation: 5,
     },
     form: {
         paddingHorizontal: 20,

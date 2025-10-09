@@ -1,5 +1,17 @@
 import React, { useEffect, useState } from "react";
-import {View, Text, SafeAreaView, StyleSheet, TouchableOpacity, Image,ActivityIndicator, Alert, TextInput, ScrollView} from "react-native";
+import {
+  View,
+  Text,
+  SafeAreaView,
+  StyleSheet,
+  TouchableOpacity,
+  Image,
+  ActivityIndicator,
+  Alert,
+  TextInput,
+  ScrollView,
+  StatusBar,
+} from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
@@ -20,8 +32,7 @@ export default function EditProfile() {
 
   const handleBack = () => router.push("/(tabs)/profile");
 
-useEffect(() => {
-    // ดึงข้อมูลจาก Firestore
+  useEffect(() => {
     const fetchProfile = async () => {
       try {
         const user = auth.currentUser;
@@ -53,7 +64,7 @@ useEffect(() => {
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsEditing: true,
-      aspect: [16, 9],
+      aspect: [1, 1],
       quality: 1,
     });
     if (!result.canceled) {
@@ -68,7 +79,7 @@ useEffect(() => {
       setUploading(true);
       const manipulated = await ImageManipulator.manipulateAsync(
         localUri,
-        [{ resize: { width: 1280 } }],
+        [{ resize: { width: 800 } }],
         { compress: 0.8, format: ImageManipulator.SaveFormat.JPEG }
       );
       const { secure_url } = await uploadToCloudinary(manipulated.uri);
@@ -110,66 +121,60 @@ useEffect(() => {
 
   if (loading) {
     return (
-      <SafeAreaView style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
-        <ActivityIndicator />
+      <SafeAreaView style={styles.center}>
+        <ActivityIndicator size="large" />
       </SafeAreaView>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.backBtn} onPress={handleBack}>
-          <Ionicons name="chevron-back" size={24} color="#fff" />
+    <View style={styles.container}>
+      <StatusBar backgroundColor="#f2bb14" barStyle="dark-content" />
+      
+      <View style={styles.headerContainer}>
+        <TouchableOpacity onPress={handleBack} style={styles.backButton}>
+          <Ionicons name="arrow-back" size={26} color="black" />
         </TouchableOpacity>
-        <Text style={styles.headerText}>แก้ไขโปรไฟล์</Text>
+        <Text style={styles.topHeaderTitle}>แก้ไขโปรไฟล์</Text>
       </View>
 
-      <ScrollView contentContainerStyle={styles.body}>
-        <View style={styles.imageWrapper}>
-          {currentImage ? (
-            <Image source={{ uri: currentImage }} style={styles.profileImage} />
-          ) : (
-            <View style={[styles.profileImage, styles.imagePlaceholder]}>
-              <Ionicons name="person-circle-outline" size={120} color="#bbb" />
+      {/* Body */}
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.body}>
+        <View style={styles.profileSection}>
+          <TouchableOpacity onPress={pickImage}>
+            {currentImage ? (
+              <Image source={{ uri: currentImage }} style={styles.profileImage} />
+            ) : (
+              <View style={styles.imagePlaceholder}>
+                <Ionicons name="person" size={60} color="#bbb" />
+              </View>
+            )}
+            <View style={styles.editIcon}>
+              <Ionicons name="create-outline" size={18} color="#4a3b2d" />
             </View>
-          )}
-          <TouchableOpacity style={styles.editIcon} onPress={pickImage}>
-            <Ionicons name="create-outline" size={20} color="#333" />
           </TouchableOpacity>
+          <Text style={styles.username}>{username}</Text>
         </View>
 
-        <View style={styles.infoCard}>
-          <Text style={styles.infoName}>{username}</Text>
-          <View style={styles.infoRow}>
-            <Ionicons name="mail-outline" size={16} color="#111" />
-            <Text style={styles.infoText}>{email}</Text>
-          </View>
-          <View style={styles.infoRow}>
-            <Ionicons name="call-outline" size={16} color="#111" />
-            <Text style={styles.infoText}>{phone}</Text>
-          </View>
-        </View>
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>ข้อมูลผู้ใช้</Text>
 
-        <View style={styles.form}>
-          <Text style={styles.formTitle}>แก้ไขโปรไฟล์</Text>
           <TextInput
             style={styles.input}
-            placeholder="Username"
+            placeholder="ชื่อผู้ใช้"
             value={username}
             onChangeText={setUsername}
           />
           <TextInput
             style={styles.input}
-            placeholder="Email Address"
+            placeholder="อีเมล"
             value={email}
             onChangeText={setEmail}
             keyboardType="email-address"
-            autoCapitalize="none"
           />
           <TextInput
             style={styles.input}
-            placeholder="Telephone Number"
+            placeholder="เบอร์โทรศัพท์"
             value={phone}
             onChangeText={setPhone}
             keyboardType="phone-pad"
@@ -177,9 +182,9 @@ useEffect(() => {
         </View>
 
         {uploading && (
-          <View style={{ alignItems: "center", gap: 6, marginTop: 6 }}>
+          <View style={{ alignItems: "center", marginVertical: 10 }}>
             <ActivityIndicator />
-            <Text>กำลังอัปโหลด…</Text>
+            <Text style={{ fontSize: 13, color: "#666", marginTop: 4 }}>กำลังอัปโหลดรูปภาพ…</Text>
           </View>
         )}
 
@@ -188,80 +193,107 @@ useEffect(() => {
           onPress={handleSave}
           disabled={uploading}
         >
-          <Text style={styles.saveBtnText}>บันทึก</Text>
+          <Text style={styles.saveBtnText}>บันทึกการเปลี่ยนแปลง</Text>
         </TouchableOpacity>
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#fff" },
-  header: {
-    backgroundColor: "#FFB800",
-    height: 80,
+  center: { flex: 1, justifyContent: "center", alignItems: "center" },
+  container: { flex: 1, backgroundColor: "#F9F9FB" },
+
+  headerContainer: {
+    backgroundColor: "#f2bb14",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    height: 120,
+    paddingHorizontal: 16,
+    elevation: 3,
+    paddingTop: 50,
+  },
+  backButton: {
+    position: "absolute",
+    left: 10,
+    padding: 8,
+    top: 50,
+    paddingTop: 25
+  },
+  topHeaderTitle: {
+    fontSize: 20,
+    fontWeight: "700",
+    color: "black",
+  },
+
+  body: { padding: 20 },
+  profileSection: { 
+    alignItems: "center", 
+    marginBottom: 16,
+    marginTop: 20
+  },
+  profileImage: { 
+    width: 130, 
+    height: 130, 
+    borderRadius: 80, 
+    backgroundColor: "#eee" 
+  },
+  imagePlaceholder: {
+    width: 130, 
+    height: 130, 
+    borderRadius: 80,
+    backgroundColor: "#eee",
     justifyContent: "center",
     alignItems: "center",
   },
-  headerText: { fontSize: 18, fontWeight: "bold", color: "#fff" },
-  backBtn: { position: "absolute", left: 16, top: 30, padding: 8 },
-  body: { padding: 16 },
-
-  imageWrapper: {
-    position: "relative",
-    width: "100%",
-    height: 190,
-    borderRadius: 14,
-    overflow: "hidden",
-    backgroundColor: "#eee",
-    marginBottom: 16,
-  },
-  profileImage: { width: "100%", height: "100%" },
-  imagePlaceholder: { justifyContent: "center", alignItems: "center" },
   editIcon: {
     position: "absolute",
-    right: 10,
-    bottom: 10,
+    right: -4,
+    bottom: -4,
     backgroundColor: "#fff",
-    borderRadius: 16,
+    borderRadius: 14,
     padding: 6,
     elevation: 3,
   },
-
-  infoCard: {
+  username: { 
+    fontSize: 20, 
+    fontWeight: "600", 
+    marginTop: 10, 
+    color: "#333" 
+  },
+  card: {
     backgroundColor: "#fff",
-    borderRadius: 14,
-    padding: 16,
-    marginBottom: 18,
+    borderRadius: 20,
+    padding: 20,
+    marginTop: 10,
     shadowColor: "#000",
-    shadowOpacity: 0.06,
+    shadowOpacity: 0.05,
     shadowOffset: { width: 0, height: 2 },
-    shadowRadius: 4,
     elevation: 2,
   },
-  infoName: { fontSize: 18, fontWeight: "bold", marginBottom: 10 },
-  infoRow: { flexDirection: "row", alignItems: "center", marginBottom: 6 },
-  infoText: { marginLeft: 8, fontSize: 14, color: "#111" },
-
-  form: { marginBottom: 14 },
-  formTitle: { fontWeight: "bold", marginBottom: 10, color: "#111" },
+  cardTitle: { fontWeight: "600", fontSize: 16, color: "#4a3b2d", marginBottom: 10 },
   input: {
+    backgroundColor: "#F6F7F9",
     borderWidth: 1,
-    borderColor: "#D2D5DA",
+    borderColor: "#F1F1F1FF",
     borderRadius: 10,
     paddingHorizontal: 14,
-    paddingVertical: 12,
+    paddingVertical: 14,
     marginBottom: 10,
     fontSize: 14,
-    backgroundColor: "#F6F7F9",
+    color: "#111",
   },
-
   saveBtn: {
-    backgroundColor: "#FFB800",
-    paddingVertical: 14,
+    backgroundColor: "#885900ff",
     borderRadius: 10,
+    paddingVertical: 14,
     alignItems: "center",
-    marginTop: 8,
+    marginTop: 20,
+    shadowColor: "#000",
+    shadowOpacity: 0.1,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 3,
   },
   saveBtnText: { color: "#fff", fontWeight: "bold", fontSize: 16 },
 });

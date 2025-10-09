@@ -226,7 +226,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.6)',
     borderRadius: 10,
     paddingHorizontal: 10,
-    borderColor: 'lightgray',
+    borderColor: '#EFEFEFFF',
     borderWidth: 1,
   },
   icon: {

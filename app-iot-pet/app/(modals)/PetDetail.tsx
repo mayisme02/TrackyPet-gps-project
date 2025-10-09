@@ -44,7 +44,7 @@ export default function PetDetail() {
 
     const handleEdit = () => {
         router.push({
-            pathname: "/EditPet",
+            pathname: "/(modals)/EditPet",
             params: { pet: JSON.stringify(petData) },
         });
     };

@@ -119,6 +119,9 @@ export default function HomeScreen() {
       }
     >
       {/* --- Container แสดงสัตว์เลี้ยง --- */}
+      <View style={styles.mainTitleContainer}>
+        <Text style={styles.mainTitle}>สัตว์เลี้ยงของคุณ</Text>
+      </View>
       <View style={styles.petContainer}>
         <View style={styles.petBorder}>
           <ScrollView
@@ -182,7 +185,7 @@ const styles = StyleSheet.create({
     marginLeft: 16,
   },
   headerText: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: "bold",
     marginLeft: 12,
     color: "black",
@@ -212,7 +215,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff",
     borderRadius: 24,
     marginHorizontal: 20,
-    marginVertical: 20,
+    marginTop: 10,
     padding: 16,
     marginBottom: 20,
     shadowColor: "#333",
@@ -257,6 +260,16 @@ const styles = StyleSheet.create({
   noPetText: {
     color: "#aaa",
     fontSize: 16,
+  },
+  mainTitleContainer: {
+    marginTop: 20,
+    alignItems: "flex-start",
+    marginHorizontal: 20,
+  },
+  mainTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#333",
   },
 
 });

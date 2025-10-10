@@ -2,7 +2,7 @@ import React from 'react';
 import { Text, StyleSheet, SafeAreaView, View } from 'react-native';
 import ParallaxScrollView from '@/components/ParallaxScrollView';
 
-export default function Devices() {
+export default function devices() {
   return (
     <>
         <ParallaxScrollView

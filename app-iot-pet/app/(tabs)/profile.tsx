@@ -16,7 +16,7 @@ import { auth, db } from "../../firebase/firebase";
 import { doc, onSnapshot } from "firebase/firestore";
 import ParallaxScrollView from "@/components/ParallaxScrollView";
 
-export default function Profile() {
+export default function profile() {
   const [profile, setProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 

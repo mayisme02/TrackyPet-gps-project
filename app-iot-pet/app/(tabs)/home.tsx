@@ -1,14 +1,5 @@
 import React, { useEffect, useState } from "react";
-import {
-  Text,
-  StyleSheet,
-  SafeAreaView,
-  View,
-  TouchableOpacity,
-  Image,
-  ActivityIndicator,
-  ScrollView,
-} from "react-native";
+import {Text, StyleSheet,SafeAreaView,View,TouchableOpacity,Image,ActivityIndicator,ScrollView,} from "react-native";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import ParallaxScrollView from "@/components/ParallaxScrollView";
@@ -33,7 +24,7 @@ interface Pet {
   photoURL?: string;
 }
 
-export default function HomeScreen() {
+export default function home() {
   const [profile, setProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [pets, setPets] = useState<Pet[]>([]);

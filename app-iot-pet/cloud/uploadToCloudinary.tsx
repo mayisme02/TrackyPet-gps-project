@@ -21,7 +21,7 @@ export async function uploadToCloudinary(localUri: string): Promise<CloudinaryUp
   });
   const json = await res.json();
   if (!res.ok) {
-    throw new Error(json?.error?.message || 'Cloudinary upload failed');
+    throw new Error(json?.error?.message || 'Upload failed');
   }
   return {
     secure_url: json.secure_url,

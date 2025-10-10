@@ -23,6 +23,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 const DEVICE_ID = "DEVICE-01";
 const PAW_ICON = require("../../assets/images/pow.png");
+const Home_ICON = require("../../assets/images/home.png");
 
 type Latest =
   | {
@@ -170,7 +171,12 @@ export default function Map2() {
               strokeWidth={2}
               fillColor={inGeofence === false ? "rgba(220,0,0,0.15)" : "rgba(0,200,0,0.15)"}
             />
-            <Marker coordinate={geofenceCenter} pinColor="#d00" />
+            <Marker
+                coordinate={geofenceCenter}
+                image={Home_ICON}             
+                anchor={{ x: 0.5, y: 1 }}       
+                tracksViewChanges={false}       
+    />
           </>
         )}
 

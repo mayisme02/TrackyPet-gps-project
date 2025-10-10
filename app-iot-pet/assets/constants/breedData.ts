@@ -25,4 +25,14 @@ export const breedData = [
     lable: "บีเกิ้ล",
     image: { uri: "https://media.istockphoto.com/id/962855368/th/รูปถ่าย/บีเกิ้ลอายุ-5-ปีนั่งอยู่หน้าพื้นหลังสีขาว.jpg?s=612x612&w=0&k=20&c=P7SH1YGViXsCt7RdOwuL9WWEXninssUxMTktGH-azFQ=" },
   },
+  {
+    value: "บิชอง ฟริเซ่",
+    lable: "บิชอง ฟริเซ่",
+    image: { uri: "https://www.purina.co.th/sites/default/files/2025-07/BREED%2520Hero_0016_bichon_frise%20%281%29.jpg" },
+  },
+  {
+    value: "ปอมเมอเรเนียน",
+    lable: "ปอมเมอเรเนียน",
+    image: { uri: "https://www.purina.co.th/sites/default/files/2025-07/BREED%2520Hero_0095_pomeranian.jpg" },
+  },
 ];

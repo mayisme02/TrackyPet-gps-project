@@ -191,7 +191,6 @@ const styles = StyleSheet.create({
   headerContainer: {
     height: 120,
     justifyContent: "center",
-    paddingHorizontal: 16,
     backgroundColor: "#f2bb14",
   },
   headerContent: {
@@ -201,10 +200,10 @@ const styles = StyleSheet.create({
   },
   headerText: {
     fontSize: 20,
-    fontWeight: "bold",       // ไม่มีรูปโปรไฟล์เลยไม่ต้องเว้น
+    fontWeight: "bold",       
     color: "black",
-    top: 10,
-     marginTop: 10,   
+    top: 27,
+ 
   },
   notiButton: {
     position: "absolute",

@@ -251,18 +251,21 @@ const styles = StyleSheet.create({
         flexDirection: "row",
         alignItems: "center",
         justifyContent: "center",
-        height: 120,
+        height: 91,
         position: "relative",
     },
     backButton: {
+        padding: 4,
         position: "absolute",
-        left: 10,
-        padding: 8,
+        left: 16,
+        top: "60%",
     },
     topHeaderTitle: {
         fontSize: 20,
-        fontWeight: "700",
+        fontWeight: "bold",       
         color: "black",
+        top: 27,
+
     },
     imageWrapper: {
         alignItems: "center",

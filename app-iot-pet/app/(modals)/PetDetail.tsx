@@ -225,7 +225,10 @@ const styles = StyleSheet.create({
         marginTop: 10,
     },
     backButton: {
-        padding: 4,
+        position: "absolute",
+        left: 10,
+        padding: 8,
+        top: "60%",
     },
     topHeaderTitle: {
         fontSize: 20,
@@ -233,6 +236,7 @@ const styles = StyleSheet.create({
         color: "black",
         textAlign: "center",
         flex: 1,
+        top: 27,
     },
     image: {
         width: "100%",

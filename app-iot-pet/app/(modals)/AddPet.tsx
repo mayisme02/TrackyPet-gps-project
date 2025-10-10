@@ -264,26 +264,29 @@ export default function AddPet() {
 
 const styles = StyleSheet.create({
   headerContainer: {
-    paddingHorizontal: 16,
-    paddingTop: 18,
-    backgroundColor: "#f2bb14",
+        backgroundColor: "#f2bb14",
+        height: 120,
+        justifyContent: "center",
+        paddingHorizontal: 16,
   },
   headerContent: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    height: 60,
+    height: 91,
     position: "relative",
   },
   backButton: {
     position: "absolute",
     left: 10,
     padding: 8,
+    top: "60%",
   },
   topHeaderTitle: {
     fontSize: 20,
     fontWeight: "700",
     color: "black",
+    top: 27,
   },
   container: {
     padding: 20,

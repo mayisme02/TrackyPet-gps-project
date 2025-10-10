@@ -25,9 +25,7 @@ const styles = StyleSheet.create({
   },
   TextHeader: {
     fontSize: 20,
-    fontWeight: "bold",       // ไม่มีรูปโปรไฟล์เลยไม่ต้องเว้น
+    fontWeight: "bold",   
     color: "black",
-    top: 10,
-     marginTop: 10, 
   },
 });

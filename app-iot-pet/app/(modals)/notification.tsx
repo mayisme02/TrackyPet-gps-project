@@ -129,9 +129,9 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-  backBtn: { position: 'absolute', left: 16, top: 50 },
-  clearBtn: { position: 'absolute', right: 16, top: 50 },
-  headerText: { fontSize: 18, fontWeight: 'bold', color: 'white' },
+  backBtn: { padding: 4, position: 'absolute', left: 16, top: 70 },
+  clearBtn: { padding: 4,position: 'absolute', right: 16, top: 70 },
+  headerText: { fontSize: 20, fontWeight: 'bold', color: 'black',top: 27 },
 
   body: { flex: 1 },
 

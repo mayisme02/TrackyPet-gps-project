@@ -244,13 +244,14 @@ const styles = StyleSheet.create({
     headerContainer: {
         paddingHorizontal: 16,
         paddingTop: 18,
+        paddingBottom: 12,
         backgroundColor: "#f2bb14",
     },
     headerContent: {
         flexDirection: "row",
         alignItems: "center",
         justifyContent: "center",
-        height: 60,
+        height: 120,
         position: "relative",
     },
     backButton: {

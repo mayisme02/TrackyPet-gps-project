@@ -222,11 +222,11 @@ const styles = StyleSheet.create({
   petImgList: {
     flexDirection: "row",
     alignItems: "center",
-    paddingRight: 5, // ให้การ์ดสุดท้ายโผล่มาทางขวา
+    paddingRight: 5, 
   },
   petBox: {
     alignItems: "center",
-    marginRight: 16, // ระยะห่างระหว่างการ์ด
+    marginRight: 16, 
   },
   petImage: {
     width: 90,

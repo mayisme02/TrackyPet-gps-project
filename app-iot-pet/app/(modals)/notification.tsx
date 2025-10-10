@@ -124,10 +124,10 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#fff' },
 
   header: {
-    backgroundColor: '#FFB800',
-    height: 100,
-    justifyContent: 'center',
-    alignItems: 'center',
+    height: 120,
+    backgroundColor: '#f2bb14',
+    justifyContent: "center",
+    alignItems: "center",
   },
   backBtn: { position: 'absolute', left: 16, top: 50 },
   clearBtn: { position: 'absolute', right: 16, top: 50 },

@@ -214,6 +214,8 @@ const styles = StyleSheet.create({
     container: {
         backgroundColor: "#f2bb14",
         height: 120,
+        justifyContent: "center",
+        paddingHorizontal: 16,
     },
     header: {
         flexDirection: "row",

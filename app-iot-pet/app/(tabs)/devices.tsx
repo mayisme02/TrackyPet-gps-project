@@ -24,9 +24,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',        
   },
   TextHeader: {
-    fontSize: 20, 
-    fontWeight: 'bold', 
-    color: 'black',
-    textAlign: 'center',
+    fontSize: 20,
+    fontWeight: "bold",       // ไม่มีรูปโปรไฟล์เลยไม่ต้องเว้น
+    color: "black",
+    top: 10,
+     marginTop: 10, 
   },
 });

@@ -139,15 +139,18 @@ export default function Pets() {
 
   return (
     <>
-      {/* Header เหมือนในภาพ */}
       <SafeAreaView style={styles.safeArea}>
-        <View style={styles.header}>
-          <Text style={styles.headerTitle}>สัตว์เลี้ยง</Text>
+        <View style={styles.headerContainer}>
+          <View style={styles.headerContent}>
+            <Text style={styles.headerText}>สัตว์เลี้ยง</Text>
+          </View>
+
           <TouchableOpacity
-            style={styles.addButtonHeader}
+            style={styles.notiButton}
             onPress={() => router.push("/(modals)/AddPet")}
+            activeOpacity={0.8}
           >
-            <MaterialIcons name="add" size={28} color="#000" />
+            <MaterialIcons name="add" size={26} color="#fff" />
           </TouchableOpacity>
         </View>
       </SafeAreaView>
@@ -181,24 +184,33 @@ export default function Pets() {
 }
 
 const styles = StyleSheet.create({
+
   safeArea: {
     backgroundColor: "#f2bb14",
   },
-  header: {
-    backgroundColor: "#f2bb14",
-    paddingVertical: 16,
-    alignItems: "center",
+  headerContainer: {
+    height: 120,
     justifyContent: "center",
+    paddingHorizontal: 16,
+    backgroundColor: "#f2bb14",
   },
-  headerTitle: {
+  headerContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  headerText: {
     fontSize: 20,
-    fontWeight: "700",
+    fontWeight: "bold",       // ไม่มีรูปโปรไฟล์เลยไม่ต้องเว้น
+    color: "black",
+    top: 10,
+     marginTop: 10,   
   },
-  addButtonHeader: {
+  notiButton: {
     position: "absolute",
     right: 16,
-    top: "110%",
-    transform: [{ translateY: -14 }],
+    top: "50%",
+    marginTop: 10,   
   },
   AddPetHeader: {
     marginTop: 20,

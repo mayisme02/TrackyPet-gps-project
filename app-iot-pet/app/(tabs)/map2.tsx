@@ -333,7 +333,7 @@ export default function Map2() {
             thumbTintColor="#885900ff"
           />
           <View style={{ flexDirection: "row", justifyContent: "space-between", width: "100%" }}>
-            <Text>0.1 กม.</Text>
+            <Text>1 กม.</Text>
             <Text>10 กม.</Text>
           </View>
 
@@ -348,7 +348,7 @@ export default function Map2() {
                 Alert.alert("ตั้งค่าสำเร็จ", "วงกลมถูกกำหนดแล้ว");
               }}
             >
-              <Text style={styles.btnText}>ตั้งค่า</Text>
+              <Text style={styles.btnText}>บันทึก</Text>
             </TouchableOpacity>
             <TouchableOpacity style={[styles.actionBtn]} onPress={clearGeofence}>
               <Text style={styles.btnText}>ล้างพื้นที่</Text>
@@ -449,8 +449,8 @@ const styles = StyleSheet.create({
   zoomButton: {
     backgroundColor: "rgba(255,255,255,0.9)",
     paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 12,
+    paddingVertical: 5,
+    borderRadius: 5,
     elevation: 6,
     marginBottom: 8,
   },
@@ -482,7 +482,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.2,
     shadowRadius: 10,
     shadowOffset: { width: 0, height: 4 },
-    padding: 16,
+    padding: 10
   },
   handleArea: {
     alignItems: "center",
@@ -495,7 +495,10 @@ const styles = StyleSheet.create({
     backgroundColor: "#ccc",
     marginBottom: 8,
   },
-  panelTitle: { fontSize: 16, fontWeight: "700" },
+  panelTitle: {
+     fontSize: 16,
+     fontWeight: "700"
+},
   panelButtons: {
     marginTop: 10,
     width: "100%",

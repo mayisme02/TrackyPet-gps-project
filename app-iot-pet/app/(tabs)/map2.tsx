@@ -1,20 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
-import {
-  Alert,
-  Modal,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-  useWindowDimensions,
-} from "react-native";
-import MapView, {
-  Callout,
-  Circle,
-  MapPressEvent,
-  Marker,
-  Region,
-} from "react-native-maps";
+import {Alert,Modal,StyleSheet,Text,TouchableOpacity,View,useWindowDimensions,Animated,PanResponder,} from "react-native";
+import MapView, {Callout,Circle,MapPressEvent,Marker,Region} from "react-native-maps";
 import * as Location from "expo-location";
 import Slider from "@react-native-community/slider";
 import { rtdb } from "../../firebase/firebase";
@@ -27,15 +13,15 @@ const Home_ICON = require("../../assets/images/home.png");
 
 type Latest =
   | {
-    lat: number;
-    lng: number;
-    sats?: number;
-    hdop?: number;
-    utc?: string;
-    ict?: string;
-    th?: string;
-    tsMs?: number;
-  }
+      lat: number;
+      lng: number;
+      sats?: number;
+      hdop?: number;
+      utc?: string;
+      ict?: string;
+      th?: string;
+      tsMs?: number;
+    }
   | null;
 
 const initialRegion: Region = {
@@ -62,6 +48,56 @@ export default function Map2() {
 
   const [modalVisible, setModalVisible] = useState(false);
   const [pendingCoord, setPendingCoord] = useState<{ latitude: number; longitude: number } | null>(null);
+
+  // ---------- Bottom Sheet setup ----------
+  const SHEET_HEIGHT = Math.min(420, height * 0.6); // ความสูงรวมของแผง
+  const SNAP = {
+    expanded: 0,                         // เปิดสุด (เห็นเต็ม SHEET_HEIGHT)
+    mid: Math.max(0, SHEET_HEIGHT - 220),
+    collapsed: Math.max(0, SHEET_HEIGHT - 60), // เหลือแค่แฮนเดิล + แถวหัวข้อ
+  };
+  const sheetTranslateY = useRef(new Animated.Value(SNAP.collapsed)).current;
+  const sheetStartY = useRef(0);
+
+  const clamp = (v: number, min: number, max: number) => Math.min(Math.max(v, min), max);
+  const nearestSnap = (y: number) => {
+    const points = [SNAP.expanded, SNAP.mid, SNAP.collapsed];
+    let best = points[0];
+    let bestDist = Math.abs(y - points[0]);
+    for (let i = 1; i < points.length; i++) {
+      const d = Math.abs(y - points[i]);
+      if (d < bestDist) {
+        best = points[i];
+        bestDist = d;
+      }
+    }
+    return best;
+  };
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dy) > 4,
+      onPanResponderGrant: () => {
+        sheetTranslateY.stopAnimation((val) => {
+          sheetStartY.current = val ?? SNAP.collapsed;
+        });
+      },
+      onPanResponderMove: (_, g) => {
+        const next = clamp(sheetStartY.current + g.dy, SNAP.expanded, SNAP.collapsed);
+        sheetTranslateY.setValue(next);
+      },
+      onPanResponderRelease: (_, g) => {
+        const projected = sheetStartY.current + g.dy + g.vy * 120;
+        const target = nearestSnap(clamp(projected, SNAP.expanded, SNAP.collapsed));
+        Animated.spring(sheetTranslateY, {
+          toValue: target,
+          useNativeDriver: true,
+          friction: 8,
+          tension: 70,
+        }).start();
+      },
+    })
+  ).current;
 
   const toThaiTime = (utc?: string) => {
     try {
@@ -172,11 +208,11 @@ export default function Map2() {
               fillColor={inGeofence === false ? "rgba(220,0,0,0.15)" : "rgba(0,200,0,0.15)"}
             />
             <Marker
-                coordinate={geofenceCenter}
-                image={Home_ICON}             
-                anchor={{ x: 0.5, y: 1 }}       
-                tracksViewChanges={false}       
-    />
+              coordinate={geofenceCenter}
+              image={Home_ICON}
+              anchor={{ x: 0.5, y: 1 }}
+              tracksViewChanges={false}
+            />
           </>
         )}
 
@@ -200,7 +236,7 @@ export default function Map2() {
                 </View>
 
                 {!!latestThaiTime && (
-                  <Text style={styles.calloutText}>🕒 เวลาไทย: {latestThaiTime}</Text>
+                  <Text style={styles.calloutText}>เวลาไทย: {latestThaiTime}</Text>
                 )}
 
                 {latest && (
@@ -222,12 +258,12 @@ export default function Map2() {
                 )}
               </View>
             </Callout>
-
           </Marker>
         )}
       </MapView>
 
-      <View style={styles.zoomControls}>
+      {/* ปุ่มซูม + ติดตาม */}
+      <View style={[styles.zoomControls, { bottom: SHEET_HEIGHT + 40 }]}>
         <TouchableOpacity
           style={styles.zoomButton}
           onPress={() => {
@@ -262,45 +298,64 @@ export default function Map2() {
         </TouchableOpacity>
       </View>
 
-      <View style={[styles.bottomPanel, { bottom: insets.bottom + 70 }]}>
-        <Text style={styles.panelTitle}>กำหนดพื้นที่ให้สัตว์เลี้ยง</Text>
-        <Text style={{ marginTop: 4 }}>
-          รัศมี: {radiusKm >= 1 ? `${radiusKm.toFixed(1)} กม.` : `${Math.round(radiusKm * 1000)} ม.`}
-        </Text>
-        <Slider
-          style={{ width: "100%", marginTop: 6 }}
-          minimumValue={0.1}
-          maximumValue={10}
-          step={0.05}
-          value={radiusKm}
-          onValueChange={setRadiusKm}
-          minimumTrackTintColor="#885900ff"
-          maximumTrackTintColor="#ddd"
-          thumbTintColor="#885900ff"
-        />
-        <View style={{ flexDirection: "row", justifyContent: "space-between", width: "100%" }}>
-          <Text>0.1 กม.</Text>
-          <Text>10 กม.</Text>
+      {/* Bottom Sheet เลื่อนขึ้นลงได้ */}
+      <Animated.View
+        style={[
+          styles.bottomPanel,
+          {
+            height: SHEET_HEIGHT,
+            paddingBottom: Math.max(insets.bottom, 10),
+            transform: [{ translateY: sheetTranslateY }],
+          },
+        ]}
+      >
+        {/* แฮนเดิลสำหรับลาก */}
+        <View {...panResponder.panHandlers} style={styles.handleArea}>
+          <View style={styles.handleBar} />
+          <Text style={styles.panelTitle}>กำหนดพื้นที่ให้สัตว์เลี้ยง</Text>
         </View>
 
-        <View style={styles.panelButtons}>
-          <TouchableOpacity
-            style={[styles.actionBtn]}
-            onPress={() => {
-              if (!geofenceCenter) {
-                Alert.alert("ยังไม่ได้เลือกจุด", "แตะแผนที่เพื่อเลือกจุดศูนย์กลางก่อน");
-                return;
-              }
-              Alert.alert("ตั้งค่าสำเร็จ", "วงกลมถูกกำหนดแล้ว");
-            }}
-          >
-            <Text style={styles.btnText}>ตั้งค่า</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={[styles.actionBtn]} onPress={clearGeofence}>
-            <Text style={styles.btnText}>ล้างพื้นที่</Text>
-          </TouchableOpacity>
+        {/* เนื้อหาข้างใน */}
+        <View style={{ width: "100%" }}>
+          <Text style={{ marginTop: 4 }}>
+            รัศมี: {radiusKm >= 1 ? `${radiusKm.toFixed(1)} กม.` : `${Math.round(radiusKm * 1000)} ม.`}
+          </Text>
+
+          <Slider
+            style={{ width: "100%", marginTop: 6 }}
+            minimumValue={0.1}
+            maximumValue={10}
+            step={0.05}
+            value={radiusKm}
+            onValueChange={setRadiusKm}
+            minimumTrackTintColor="#885900ff"
+            maximumTrackTintColor="#ddd"
+            thumbTintColor="#885900ff"
+          />
+          <View style={{ flexDirection: "row", justifyContent: "space-between", width: "100%" }}>
+            <Text>0.1 กม.</Text>
+            <Text>10 กม.</Text>
+          </View>
+
+          <View style={styles.panelButtons}>
+            <TouchableOpacity
+              style={[styles.actionBtn]}
+              onPress={() => {
+                if (!geofenceCenter) {
+                  Alert.alert("ยังไม่ได้เลือกจุด", "แตะแผนที่เพื่อเลือกจุดศูนย์กลางก่อน");
+                  return;
+                }
+                Alert.alert("ตั้งค่าสำเร็จ", "วงกลมถูกกำหนดแล้ว");
+              }}
+            >
+              <Text style={styles.btnText}>ตั้งค่า</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.actionBtn]} onPress={clearGeofence}>
+              <Text style={styles.btnText}>ล้างพื้นที่</Text>
+            </TouchableOpacity>
+          </View>
         </View>
-      </View>
+      </Animated.View>
 
       <Modal animationType="slide" transparent visible={modalVisible}>
         <View style={styles.modalContainer}>
@@ -336,11 +391,7 @@ export default function Map2() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-
-  // --- Callout Styling ---
+  container: { flex: 1 },
   calloutBox: {
     minWidth: 200,
     maxWidth: 260,
@@ -350,28 +401,22 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     shadowColor: "#000",
     shadowOpacity: 0.2,
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
+    shadowOffset: { width: 0, height: 2 },
     shadowRadius: 4,
     elevation: 4,
   },
-
   calloutTitle: {
     fontWeight: "700",
     fontSize: 18,
     color: "#5c4033",
     marginBottom: 6,
   },
-
   calloutHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
     marginBottom: 6,
   },
-
   calloutBadge: {
     borderRadius: 10,
     paddingHorizontal: 8,
@@ -379,40 +424,28 @@ const styles = StyleSheet.create({
     marginBottom: 6,
     alignSelf: "flex-start",
   },
-
   inArea: {
-    backgroundColor: "rgba(0,200,0,0.2)",
+    backgroundColor: "rgba(0,200,0,0.2)"
   },
-
   outArea: {
-    backgroundColor: "rgba(220,0,0,0.2)",
+    backgroundColor: "rgba(220,0,0,0.2)"
   },
-
   calloutBadgeText: {
     fontSize: 12,
     fontWeight: "700",
-    color: "#000",
+    color: "#000"
   },
-
   calloutText: {
     fontSize: 14,
     color: "#333",
-    marginBottom: 4,
-  },
-
-  statusText: {
-    marginTop: 6,
-    fontWeight: "700",
-    textAlign: "center",
+    marginBottom: 4
   },
 
   zoomControls: {
     position: "absolute",
-    bottom: 300,
     right: 16,
     alignItems: "flex-end",
   },
-
   zoomButton: {
     backgroundColor: "rgba(255,255,255,0.9)",
     paddingHorizontal: 12,
@@ -421,49 +454,48 @@ const styles = StyleSheet.create({
     elevation: 6,
     marginBottom: 8,
   },
-
   zoomText: {
     fontSize: 24,
     fontWeight: "bold",
-    color: "#333",
+    color: "#333"
   },
-
   followBtn: {
     paddingVertical: 10,
     paddingHorizontal: 12,
-    borderRadius: 10,
+    borderRadius: 10
   },
-
   followOn: {
-    backgroundColor: "#6c757d",
+    backgroundColor: "#6c757d"
   },
-
   followOff: {
-    backgroundColor: "#007bff",
+    backgroundColor: "#007bff"
   },
-
   bottomPanel: {
     position: "absolute",
     left: 16,
     right: 16,
-    padding: 16,
+    bottom: 0,
     backgroundColor: "white",
     borderRadius: 16,
-    elevation: 6,
+    elevation: 8,
     shadowColor: "#000",
     shadowOpacity: 0.2,
     shadowRadius: 10,
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
+    shadowOffset: { width: 0, height: 4 },
+    padding: 16,
   },
-
-  panelTitle: {
-    fontSize: 16,
-    fontWeight: "700",
+  handleArea: {
+    alignItems: "center",
+    marginBottom: 8,
   },
-
+  handleBar: {
+    width: 44,
+    height: 5,
+    borderRadius: 3,
+    backgroundColor: "#ccc",
+    marginBottom: 8,
+  },
+  panelTitle: { fontSize: 16, fontWeight: "700" },
   panelButtons: {
     marginTop: 10,
     width: "100%",
@@ -471,7 +503,6 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     gap: 8,
   },
-
   actionBtn: {
     paddingVertical: 10,
     paddingHorizontal: 14,
@@ -480,19 +511,15 @@ const styles = StyleSheet.create({
     alignItems: "center",
     backgroundColor: "#f2bb14",
   },
-
-  btnText: {
-    color: "#fff",
-    fontWeight: "bold",
-  },
-
+  btnText: { 
+     color: "#fff",
+     fontWeight: "bold" },
   modalContainer: {
     flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
+     justifyContent: "center",
+     alignItems: "center",
     backgroundColor: "rgba(0,0,0,0.5)",
   },
-
   modalContent: {
     backgroundColor: "rgba(255,255,255,0.7)",
     padding: 24,
@@ -502,39 +529,34 @@ const styles = StyleSheet.create({
     width: "80%",
     maxWidth: 360,
   },
-
-  modalTitle: {
+  modalTitle: { 
     fontSize: 18,
     fontWeight: "bold",
-    marginBottom: 8,
+    marginBottom: 8
   },
-
   actionBtn1: {
-    backgroundColor: "#007bff",
-    paddingHorizontal: 30,
-    paddingVertical: 10,
-    borderRadius: 5,
-  },
-
+     backgroundColor: "#007bff",
+      paddingHorizontal: 30,
+       paddingVertical: 10,
+        borderRadius: 5 
+      },
   actionBtn2: {
     backgroundColor: "#28a745",
     paddingHorizontal: 30,
     paddingVertical: 10,
-    borderRadius: 5,
+    borderRadius: 5
   },
-
   actionBtn3: {
     backgroundColor: "#6c757d",
     marginTop: 10,
     paddingHorizontal: 107,
     paddingVertical: 10,
-    borderRadius: 5,
+    borderRadius: 5
   },
-
   buttonRow: {
     flexDirection: "row",
     gap: 10,
     marginTop: 6,
-    paddingHorizontal: 50,
-  },
+    paddingHorizontal: 50
+  }
 });

@@ -106,7 +106,7 @@ export default function NotificationScreen() {
         {loading ? (
           <ActivityIndicator />
         ) : alerts.length === 0 ? (
-          <Text style={{ color: '#666' }}>ยังไม่มีการแจ้งเตือน</Text>
+          <Text style={[{ color: '#666' }, styles.State]}>ยังไม่มีการแจ้งเตือน</Text>
         ) : (
           <FlatList
             contentContainerStyle={{ padding: 16 }}
@@ -132,9 +132,7 @@ const styles = StyleSheet.create({
   backBtn: { padding: 4, position: 'absolute', left: 16, top: 70 },
   clearBtn: { padding: 4,position: 'absolute', right: 16, top: 70 },
   headerText: { fontSize: 20, fontWeight: 'bold', color: 'black',top: 27 },
-
   body: { flex: 1 },
-
   card: {
     padding: 12,
     borderRadius: 12,
@@ -142,6 +140,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     marginBottom: 10,
   },
+  State: { textAlign: 'center', marginTop: 100, fontSize: 16 },
   exitCard: { borderColor: '#ffcccb', backgroundColor: '#fff8f8' },
   enterCard: { borderColor: '#cde7d6', backgroundColor: '#f7fffa' },
 

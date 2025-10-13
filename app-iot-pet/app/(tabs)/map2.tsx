@@ -4,7 +4,7 @@ import MapView, {Callout,Circle,MapPressEvent,Marker,Region} from "react-native-
 import * as Location from "expo-location";
 import Slider from "@react-native-community/slider";
 import { rtdb } from "../../firebase/firebase";
-import { ref as dbRef, onValue } from "firebase/database";
+import { ref as dbRef, onValue, push, set } from "firebase/database"; 
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 const DEVICE_ID = "DEVICE-01";
@@ -23,6 +23,8 @@ type Latest =
       tsMs?: number;
     }
   | null;
+
+type AlertType = "exit" | "enter"; // << เพิ่มประเภทแจ้งเตือน
 
 const initialRegion: Region = {
   latitude: 16.475501563990804,
@@ -49,12 +51,16 @@ export default function Map2() {
   const [modalVisible, setModalVisible] = useState(false);
   const [pendingCoord, setPendingCoord] = useState<{ latitude: number; longitude: number } | null>(null);
 
+  // ---------- Refs สำหรับตรวจจับเข้า/ออกพื้นที่ + กันแจ้งซ้ำ ----------
+  const prevInRef = useRef<boolean | null>(null);
+  const lastAlertTsRef = useRef<number>(0);
+
   // ---------- Bottom Sheet setup ----------
-  const SHEET_HEIGHT = Math.min(420, height * 0.6); // ความสูงรวมของแผง
+  const SHEET_HEIGHT = Math.min(420, height * 0.6);
   const SNAP = {
-    expanded: 0,                         // เปิดสุด (เห็นเต็ม SHEET_HEIGHT)
+    expanded: 0,
     mid: Math.max(0, SHEET_HEIGHT - 220),
-    collapsed: Math.max(0, SHEET_HEIGHT - 60), // เหลือแค่แฮนเดิล + แถวหัวข้อ
+    collapsed: Math.max(0, SHEET_HEIGHT - 60),
   };
   const sheetTranslateY = useRef(new Animated.Value(SNAP.collapsed)).current;
   const sheetStartY = useRef(0);
@@ -140,6 +146,7 @@ export default function Map2() {
       ? distanceMeters(devicePos, geofenceCenter) <= radiusKm * 1000
       : null;
 
+  // ---------- subscribe ตำแหน่ง ----------
   useEffect(() => {
     const r = dbRef(rtdb, `devices/${DEVICE_ID}/latest`);
     const off = onValue(r, (snap) => {
@@ -156,6 +163,54 @@ export default function Map2() {
     });
     return () => off();
   }, [zoomLevel, followDevice]);
+
+  // ---------- ฟังก์ชันบันทึกแจ้งเตือน RTDB ----------
+  const addAlert = async (type: AlertType, message: string) => {
+    try {
+      const alertsRef = dbRef(rtdb, `devices/${DEVICE_ID}/alerts`);
+      const keyRef = push(alertsRef);
+      const atTh = latest?.th ?? new Date().toLocaleString("th-TH", { timeZone: "Asia/Bangkok" });
+      const atUtc = latest?.utc ?? new Date().toISOString();
+
+      await set(keyRef, {
+        type,          // "exit" | "enter"
+        message,       // ข้อความแจ้งเตือน
+        radiusKm,      // รัศมีขณะนั้น
+        device: DEVICE_ID,
+        atTh,          // เวลาภาษาไทย
+        atUtc,         // เวลา UTC สำรอง
+      });
+    } catch (e) {
+      console.warn("addAlert error", e);
+    }
+  };
+
+  // ---------- ตรวจจับทรานซิชันเข้า/ออกพื้นที่ ----------
+  useEffect(() => {
+    if (inGeofence === null) return;
+
+    const prev = prevInRef.current;
+    prevInRef.current = inGeofence;
+
+    // รอบแรกยังไม่ต้องแจ้ง
+    if (prev === null) return;
+
+    // กันสแปม: อย่างน้อย 20 วินาทีกว่าจะส่งเตือนซ้ำ
+    const now = Date.now();
+    if (now - lastAlertTsRef.current < 20000) return;
+
+    if (prev === true && inGeofence === false) {
+      lastAlertTsRef.current = now;
+      const msg =
+        `สัตว์เลี้ยงออกนอกพื้นที่ (รัศมี ` +
+        (radiusKm >= 1 ? `${radiusKm.toFixed(1)} กม.` : `${Math.round(radiusKm * 1000)} ม.`) +
+        `)`;
+      addAlert("exit", msg);
+    } else if (prev === false && inGeofence === true) {
+      lastAlertTsRef.current = now;
+      addAlert("enter", "สัตว์เลี้ยงกลับเข้าพื้นที่แล้ว");
+    }
+  }, [inGeofence, radiusKm]); // ใช้ state ปัจจุบัน
 
   const handleMapPress = (e: MapPressEvent) => {
     setFollowDevice(false);
@@ -263,7 +318,7 @@ export default function Map2() {
       </MapView>
 
       {/* ปุ่มซูม + ติดตาม */}
-      <View style={[styles.zoomControls, { bottom: SHEET_HEIGHT + 40 }]}>
+      <View style={[styles.zoomControls, { bottom: SHEET_HEIGHT + 44 }]}>
         <TouchableOpacity
           style={styles.zoomButton}
           onPress={() => {
@@ -424,22 +479,10 @@ const styles = StyleSheet.create({
     marginBottom: 6,
     alignSelf: "flex-start",
   },
-  inArea: {
-    backgroundColor: "rgba(0,200,0,0.2)"
-  },
-  outArea: {
-    backgroundColor: "rgba(220,0,0,0.2)"
-  },
-  calloutBadgeText: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: "#000"
-  },
-  calloutText: {
-    fontSize: 14,
-    color: "#333",
-    marginBottom: 4
-  },
+  inArea: { backgroundColor: "rgba(0,200,0,0.2)" },
+  outArea: { backgroundColor: "rgba(220,0,0,0.2)" },
+  calloutBadgeText: { fontSize: 12, fontWeight: "700", color: "#000" },
+  calloutText: { fontSize: 14, color: "#333", marginBottom: 4 },
 
   zoomControls: {
     position: "absolute",
@@ -454,22 +497,11 @@ const styles = StyleSheet.create({
     elevation: 6,
     marginBottom: 8,
   },
-  zoomText: {
-    fontSize: 24,
-    fontWeight: "bold",
-    color: "#333"
-  },
-  followBtn: {
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderRadius: 10
-  },
-  followOn: {
-    backgroundColor: "#6c757d"
-  },
-  followOff: {
-    backgroundColor: "#007bff"
-  },
+  zoomText: { fontSize: 24, fontWeight: "bold", color: "#333" },
+  followBtn: { paddingVertical: 10, paddingHorizontal: 12, borderRadius: 10 },
+  followOn: { backgroundColor: "#6c757d" },
+  followOff: { backgroundColor: "#007bff" },
+
   bottomPanel: {
     position: "absolute",
     left: 16,
@@ -484,21 +516,10 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 4 },
     padding: 10
   },
-  handleArea: {
-    alignItems: "center",
-    marginBottom: 8,
-  },
-  handleBar: {
-    width: 44,
-    height: 5,
-    borderRadius: 3,
-    backgroundColor: "#ccc",
-    marginBottom: 8,
-  },
-  panelTitle: {
-     fontSize: 16,
-     fontWeight: "700"
-},
+  handleArea: { alignItems: "center", marginBottom: 8 },
+  handleBar: { width: 44, height: 5, borderRadius: 3, backgroundColor: "#ccc", marginBottom: 8 },
+  panelTitle: { fontSize: 16, fontWeight: "700" },
+
   panelButtons: {
     marginTop: 10,
     width: "100%",
@@ -514,13 +535,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
     backgroundColor: "#f2bb14",
   },
-  btnText: { 
-     color: "#fff",
-     fontWeight: "bold" },
+  btnText: { color: "#fff", fontWeight: "bold" },
+
   modalContainer: {
-    flex: 1,
-     justifyContent: "center",
-     alignItems: "center",
+    flex: 1, justifyContent: "center", alignItems: "center",
     backgroundColor: "rgba(0,0,0,0.5)",
   },
   modalContent: {
@@ -532,34 +550,9 @@ const styles = StyleSheet.create({
     width: "80%",
     maxWidth: 360,
   },
-  modalTitle: { 
-    fontSize: 18,
-    fontWeight: "bold",
-    marginBottom: 8
-  },
-  actionBtn1: {
-     backgroundColor: "#007bff",
-      paddingHorizontal: 30,
-       paddingVertical: 10,
-        borderRadius: 5 
-      },
-  actionBtn2: {
-    backgroundColor: "#28a745",
-    paddingHorizontal: 30,
-    paddingVertical: 10,
-    borderRadius: 5
-  },
-  actionBtn3: {
-    backgroundColor: "#6c757d",
-    marginTop: 10,
-    paddingHorizontal: 107,
-    paddingVertical: 10,
-    borderRadius: 5
-  },
-  buttonRow: {
-    flexDirection: "row",
-    gap: 10,
-    marginTop: 6,
-    paddingHorizontal: 50
-  }
+  modalTitle: { fontSize: 18, fontWeight: "bold", marginBottom: 8 },
+  actionBtn1: { backgroundColor: "#007bff", paddingHorizontal: 30, paddingVertical: 10, borderRadius: 5 },
+  actionBtn2: { backgroundColor: "#28a745", paddingHorizontal: 30, paddingVertical: 10, borderRadius: 5 },
+  actionBtn3: { backgroundColor: "#6c757d", marginTop: 10, paddingHorizontal: 107, paddingVertical: 10, borderRadius: 5 },
+  buttonRow: { flexDirection: "row", gap: 10, marginTop: 6, paddingHorizontal: 50 }
 });

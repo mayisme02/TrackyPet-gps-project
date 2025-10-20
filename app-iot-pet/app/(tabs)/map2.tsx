@@ -178,7 +178,7 @@ export default function Map2() {
         radiusKm,      // รัศมีขณะนั้น
         device: DEVICE_ID,
         atTh,          // เวลาภาษาไทย
-        atUtc,         // เวลา UTC สำรอง
+        atUtc,         // เวลา UTC 
       });
     } catch (e) {
       console.warn("addAlert error", e);

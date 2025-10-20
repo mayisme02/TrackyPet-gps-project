@@ -1,16 +1,5 @@
 import React, { useState } from "react";
-import {
-    SafeAreaView,
-    ScrollView,
-    View,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    Image,
-    StyleSheet,
-    Alert,
-    ActivityIndicator,
-} from "react-native";
+import {SafeAreaView, ScrollView, View, Text, TextInput, TouchableOpacity, Image, StyleSheet, Alert, ActivityIndicator} from "react-native";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import * as ImageManipulator from "expo-image-manipulator";

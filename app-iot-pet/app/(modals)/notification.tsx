@@ -23,7 +23,6 @@ export default function NotificationScreen() {
   const [alerts, setAlerts] = useState<AlertItem[]>([]);
 
   const handleBack = () => {
-    // ถ้าอยู่ใน stack ใช้ back ดีกว่า
     router.back();
   };
 
@@ -58,7 +57,6 @@ export default function NotificationScreen() {
         text: 'ลบทั้งหมด',
         style: 'destructive',
         onPress: async () => {
-          // ลบทีละรายการ
           await Promise.all(
             alerts.map(a => remove(dbRef(rtdb, `devices/${DEVICE_ID}/alerts/${a.key}`)).catch(() => null))
           );

@@ -1,14 +1,5 @@
 import React, { useEffect, useState } from "react";
-import {
-  Text,
-  StyleSheet,
-  SafeAreaView,
-  View,
-  TouchableOpacity,
-  Image,
-  Alert,
-  Pressable,
-} from "react-native";
+import { Text, StyleSheet, SafeAreaView, View, TouchableOpacity, Image, Alert, Pressable} from "react-native";
 import { useRouter } from "expo-router";
 import FontAwesome6 from "@expo/vector-icons/FontAwesome6";
 import { MaterialIcons } from "@expo/vector-icons";

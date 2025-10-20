@@ -1,17 +1,5 @@
 import React, { useEffect, useState } from "react";
-import {
-  View,
-  Text,
-  SafeAreaView,
-  StyleSheet,
-  TouchableOpacity,
-  Image,
-  ActivityIndicator,
-  Alert,
-  TextInput,
-  ScrollView,
-  StatusBar,
-} from "react-native";
+import { View, Text, SafeAreaView, StyleSheet, TouchableOpacity, Image, ActivityIndicator, Alert, TextInput, ScrollView, StatusBar} from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import * as ImagePicker from "expo-image-picker";

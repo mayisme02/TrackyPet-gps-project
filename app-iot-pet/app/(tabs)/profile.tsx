@@ -1,15 +1,5 @@
 import React, { useEffect, useState } from "react";
-import {
-  View,
-  Text,
-  StyleSheet,
-  Image,
-  TouchableOpacity,
-  SafeAreaView,
-  ActivityIndicator,
-  Alert,
-  ScrollView,
-} from "react-native";
+import { View, Text,StyleSheet,Image,TouchableOpacity,SafeAreaView,ActivityIndicator,Alert,ScrollView} from "react-native";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { auth, db } from "../../firebase/firebase";

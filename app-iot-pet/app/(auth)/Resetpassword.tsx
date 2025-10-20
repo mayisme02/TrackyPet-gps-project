@@ -1,17 +1,5 @@
 import React, { useState } from 'react';
-import {
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  StyleSheet,
-  Alert,
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
-  ActivityIndicator,
-  ImageBackground,
-} from 'react-native';
+import {View,Text,TextInput,TouchableOpacity,StyleSheet,Alert,KeyboardAvoidingView,Platform,ScrollView,ActivityIndicator,ImageBackground} from 'react-native';
 import { router } from 'expo-router';
 import { sendPasswordResetEmail } from 'firebase/auth';
 import { auth } from '../../firebase/firebase';

@@ -1,326 +1,158 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useRef, useState } from "react";
 import {
+  StyleSheet,
+  View,
+  TouchableOpacity,
   Alert,
   Modal,
-  StyleSheet,
   Text,
-  TouchableOpacity,
-  View,
-  useWindowDimensions,
+  TextInput,
 } from "react-native";
-import MapView, {
-  Callout,
-  Circle,
-  MapPressEvent,
-  Marker,
-  Region,
-} from "react-native-maps";
-import * as Location from "expo-location";
-import Slider from "@react-native-community/slider";
-import { rtdb } from "../../firebase/firebase";
-import { ref as dbRef, onValue } from "firebase/database";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import MapView, { Marker, Region } from "react-native-maps";
+import { MaterialIcons } from "@expo/vector-icons";
 
-const DEVICE_ID = "DEVICE-01";
-const PAW_ICON = require("../../assets/images/pow.png");
-
-type Latest =
-  | {
-    lat: number;
-    lng: number;
-    sats?: number;
-    hdop?: number;
-    utc?: string;
-    ict?: string;
-    th?: string;
-    tsMs?: number;
-  }
-  | null;
-
-const initialRegion: Region = {
-  latitude: 16.475501563990804,
-  longitude: 102.82504940900262,
-  latitudeDelta: 0.01,
-  longitudeDelta: 0.01,
-};
+const BACKEND_URL = "http://localhost:3000";
 
 export default function Map2() {
   const mapRef = useRef<MapView>(null);
-  const { height } = useWindowDimensions();
-  const insets = useSafeAreaInsets();
 
-  const [region, setRegion] = useState<Region>(initialRegion);
-  const [zoomLevel, setZoomLevel] = useState(0.05);
-  const [followDevice, setFollowDevice] = useState(true);
-  const [devicePos, setDevicePos] = useState<{ latitude: number; longitude: number } | null>(null);
-  const [latest, setLatest] = useState<Latest>(null);
-  const [latestThaiTime, setLatestThaiTime] = useState<string>("-");
+  /* ---------- MAP ---------- */
+  const [initialRegion] = useState<Region>({
+    latitude: 16.4755,
+    longitude: 102.825,
+    latitudeDelta: 0.02,
+    longitudeDelta: 0.02,
+  });
 
-  const [geofenceCenter, setGeofenceCenter] = useState<{ latitude: number; longitude: number } | null>(null);
-  const [radiusKm, setRadiusKm] = useState<number>(1);
+  const [location, setLocation] = useState<{
+    latitude: number;
+    longitude: number;
+  } | null>(null);
 
+  /* ---------- DEVICE CODE ---------- */
+  const [deviceCode, setDeviceCode] = useState("");
   const [modalVisible, setModalVisible] = useState(false);
-  const [pendingCoord, setPendingCoord] = useState<{ latitude: number; longitude: number } | null>(null);
 
-  const toThaiTime = (utc?: string) => {
+  /* ---------- STATE ---------- */
+  const [loading, setLoading] = useState(false);
+
+  /* ===============================
+     REAL FETCH (เรียก backend จริง)
+  ================================ */
+  const fetchLocation = async () => {
     try {
-      if (!utc) return "-";
-      return new Date(utc).toLocaleString("th-TH", { timeZone: "Asia/Bangkok" }) || "-";
-    } catch {
-      if (!utc) return "-";
-      const d = new Date(utc);
-      d.setMinutes(d.getMinutes() + 7 * 60);
-      return `${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear() + 543} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}:${String(d.getSeconds()).padStart(2, "0")}`;
+      setLoading(true);
+
+      const res = await fetch(`${BACKEND_URL}/api/device/location`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ deviceCode }),
+      });
+
+      if (res.status === 401) {
+        Alert.alert("รหัสอุปกรณ์ไม่ถูกต้อง");
+        setModalVisible(true);
+        return;
+      }
+
+      if (!res.ok) {
+        throw new Error("BACKEND_ERROR");
+      }
+
+      const data = await res.json();
+
+      const pos = {
+        latitude: data.latitude,
+        longitude: data.longitude,
+      };
+
+      setLocation(pos);
+
+      mapRef.current?.animateToRegion(
+        {
+          ...pos,
+          latitudeDelta: 0.01,
+          longitudeDelta: 0.01,
+        },
+        600
+      );
+    } catch (err) {
+      console.error(err);
+      Alert.alert("เชื่อมต่อไม่สำเร็จ");
+    } finally {
+      setLoading(false);
     }
   };
 
-  const moveCamera = (lat: number, lng: number, zoom = zoomLevel) => {
-    const newRegion: Region = {
-      ...region,
-      latitude: lat,
-      longitude: lng,
-      latitudeDelta: zoom,
-      longitudeDelta: zoom,
-    };
-    setRegion(newRegion);
-    mapRef.current?.animateToRegion(newRegion, 800);
-  };
-
-  const distanceMeters = (a: { latitude: number; longitude: number }, b: { latitude: number; longitude: number }) => {
-    const R = 6371000;
-    const dLat = ((b.latitude - a.latitude) * Math.PI) / 180;
-    const dLon = ((b.longitude - a.longitude) * Math.PI) / 180;
-    const lat1 = (a.latitude * Math.PI) / 180;
-    const lat2 = (b.latitude * Math.PI) / 180;
-    const x =
-      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-      Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
-    return 2 * R * Math.asin(Math.sqrt(x));
-  };
-
-  const inGeofence =
-    devicePos && geofenceCenter
-      ? distanceMeters(devicePos, geofenceCenter) <= radiusKm * 1000
-      : null;
-
-  useEffect(() => {
-    const r = dbRef(rtdb, `devices/${DEVICE_ID}/latest`);
-    const off = onValue(r, (snap) => {
-      const v = snap.val() as Latest;
-      setLatest(v);
-
-      if (v && typeof v.lat === "number" && typeof v.lng === "number") {
-        const p = { latitude: v.lat, longitude: v.lng };
-        setDevicePos(p);
-        setLatestThaiTime(v.th || toThaiTime(v.utc));
-
-        if (followDevice) moveCamera(p.latitude, p.longitude);
-      }
-    });
-    return () => off();
-  }, [zoomLevel, followDevice]);
-
-  const handleMapPress = (e: MapPressEvent) => {
-    setFollowDevice(false);
-    const { coordinate } = e.nativeEvent;
-    setPendingCoord({ latitude: coordinate.latitude, longitude: coordinate.longitude });
-    setModalVisible(true);
-  };
-
-  const confirmPlaceHere = () => {
-    if (!pendingCoord) return;
-    setGeofenceCenter(pendingCoord);
-    moveCamera(pendingCoord.latitude, pendingCoord.longitude);
-    setPendingCoord(null);
-    setModalVisible(false);
-  };
-
-  const clearGeofence = () => setGeofenceCenter(null);
-
-  const getCurrentLocation = async () => {
-    setFollowDevice(false);
-    const { status } = await Location.requestForegroundPermissionsAsync();
-    if (status !== "granted") {
-      Alert.alert("Permission denied", "ไม่สามารถเข้าถึงตำแหน่งได้");
+  /* ===============================
+     BUTTON HANDLER (จุดควบคุม flow)
+  ================================ */
+  const onPressLocate = () => {
+    if (!deviceCode) {
+      // ยังไม่เคยกรอก → เปิด modal
+      setModalVisible(true);
       return;
     }
-    const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Highest });
-    const center = { latitude: loc.coords.latitude, longitude: loc.coords.longitude };
-    setGeofenceCenter(center);
-    moveCamera(center.latitude, center.longitude);
-    setModalVisible(false);
+
+    // เคยกรอกแล้ว → ดึงพิกัดทันที
+    fetchLocation();
   };
 
+  /* ===============================
+     UI
+  ================================ */
   return (
     <View style={styles.container}>
       <MapView
         ref={mapRef}
         style={StyleSheet.absoluteFill}
-        region={region}
-        showsUserLocation
-        showsMyLocationButton
-        onPress={handleMapPress}
+        initialRegion={initialRegion}
       >
-        {geofenceCenter && (
-          <>
-            <Circle
-              center={geofenceCenter}
-              radius={radiusKm * 1000}
-              strokeColor={inGeofence === false ? "rgba(220,0,0,0.9)" : "rgba(0,200,0,0.9)"}
-              strokeWidth={2}
-              fillColor={inGeofence === false ? "rgba(220,0,0,0.15)" : "rgba(0,200,0,0.15)"}
-            />
-            <Marker coordinate={geofenceCenter} pinColor="#d00" />
-          </>
-        )}
-
-        {devicePos && (
+        {location && (
           <Marker
-            key="device"
-            coordinate={devicePos}
-            image={PAW_ICON}
-            anchor={{ x: 0.5, y: 1 }}
-            draggable={false}
-          >
-            <Callout>
-              <View style={styles.calloutBox}>
-                <View style={styles.calloutHeader}>
-                  <Text style={styles.calloutTitle}>อุปกรณ์</Text>
-                  <View style={[styles.calloutBadge, inGeofence ? styles.inArea : styles.outArea]}>
-                    <Text style={styles.calloutBadgeText}>
-                      {inGeofence ? "ในพื้นที่" : "นอกพื้นที่"}
-                    </Text>
-                  </View>
-                </View>
-
-                {!!latestThaiTime && (
-                  <Text style={styles.calloutText}>🕒 เวลาไทย: {latestThaiTime}</Text>
-                )}
-
-                {latest && (
-                  <>
-                    <Text style={styles.calloutText}>Lat: {latest.lat?.toFixed?.(6)}</Text>
-                    <Text style={styles.calloutText}>Lng: {latest.lng?.toFixed?.(6)}</Text>
-                    {latest.sats != null && <Text style={styles.calloutText}>ดาวเทียม: {latest.sats}</Text>}
-                    {latest.hdop != null && <Text style={styles.calloutText}>ความแม่นยำ: {latest.hdop}</Text>}
-                  </>
-                )}
-
-                {geofenceCenter && devicePos && (
-                  <Text style={styles.calloutText}>
-                    📍 ห่างจากศูนย์กลาง:{" "}
-                    <Text style={{ fontWeight: "bold" }}>
-                      {Math.round(distanceMeters(devicePos, geofenceCenter))} ม.
-                    </Text>
-                  </Text>
-                )}
-              </View>
-            </Callout>
-
-          </Marker>
+            coordinate={location}
+            title="ตำแหน่งอุปกรณ์"
+          />
         )}
       </MapView>
 
-      <View style={styles.zoomControls}>
-        <TouchableOpacity
-          style={styles.zoomButton}
-          onPress={() => {
-            const z = Math.max(zoomLevel / 2, 0.001);
-            setZoomLevel(z);
-            moveCamera(region.latitude, region.longitude, z);
-          }}
-        >
-          <Text style={styles.zoomText}>+</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.zoomButton}
-          onPress={() => {
-            const z = Math.min(zoomLevel * 2, 1);
-            setZoomLevel(z);
-            moveCamera(region.latitude, region.longitude, z);
-          }}
-        >
-          <Text style={styles.zoomText}>-</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.followBtn, followDevice ? styles.followOn : styles.followOff]}
-          onPress={() => {
-            const next = !followDevice;
-            setFollowDevice(next);
-            if (next && devicePos) moveCamera(devicePos.latitude, devicePos.longitude);
-          }}
-        >
-          <Text style={{ color: "#fff", fontWeight: "700" }}>
-            {followDevice ? "เลิกติดตาม" : "ติดตามอุปกรณ์"}
-          </Text>
-        </TouchableOpacity>
-      </View>
+      {/* Floating Button */}
+      <TouchableOpacity
+        style={styles.fab}
+        onPress={onPressLocate}
+        disabled={loading}
+      >
+        <MaterialIcons name="my-location" size={26} color="#fff" />
+      </TouchableOpacity>
 
-      <View style={[styles.bottomPanel, { bottom: insets.bottom + 70 }]}>
-        <Text style={styles.panelTitle}>กำหนดพื้นที่ให้สัตว์เลี้ยง</Text>
-        <Text style={{ marginTop: 4 }}>
-          รัศมี: {radiusKm >= 1 ? `${radiusKm.toFixed(1)} กม.` : `${Math.round(radiusKm * 1000)} ม.`}
-        </Text>
-        <Slider
-          style={{ width: "100%", marginTop: 6 }}
-          minimumValue={0.1}
-          maximumValue={10}
-          step={0.05}
-          value={radiusKm}
-          onValueChange={setRadiusKm}
-          minimumTrackTintColor="#885900ff"
-          maximumTrackTintColor="#ddd"
-          thumbTintColor="#885900ff"
-        />
-        <View style={{ flexDirection: "row", justifyContent: "space-between", width: "100%" }}>
-          <Text>0.1 กม.</Text>
-          <Text>10 กม.</Text>
-        </View>
+      {/* ===============================
+          DEVICE CODE MODAL
+      ================================ */}
+      <Modal visible={modalVisible} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalBox}>
+            <Text style={styles.modalTitle}>กรอกรหัสอุปกรณ์</Text>
 
-        <View style={styles.panelButtons}>
-          <TouchableOpacity
-            style={[styles.actionBtn]}
-            onPress={() => {
-              if (!geofenceCenter) {
-                Alert.alert("ยังไม่ได้เลือกจุด", "แตะแผนที่เพื่อเลือกจุดศูนย์กลางก่อน");
-                return;
-              }
-              Alert.alert("ตั้งค่าสำเร็จ", "วงกลมถูกกำหนดแล้ว");
-            }}
-          >
-            <Text style={styles.btnText}>ตั้งค่า</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={[styles.actionBtn]} onPress={clearGeofence}>
-            <Text style={styles.btnText}>ล้างพื้นที่</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
+            <TextInput
+              style={styles.input}
+              placeholder="เช่น PET-001"
+              value={deviceCode}
+              onChangeText={setDeviceCode}
+              autoCapitalize="characters"
+            />
 
-      <Modal animationType="slide" transparent visible={modalVisible}>
-        <View style={styles.modalContainer}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>กำหนดจุดศูนย์กลาง</Text>
-            {pendingCoord && (
-              <Text style={{ marginBottom: 8 }}>
-                Lat: {pendingCoord.latitude.toFixed(6)} | Lng: {pendingCoord.longitude.toFixed(6)}
-              </Text>
-            )}
-            <View style={styles.buttonRow}>
-              <TouchableOpacity style={styles.actionBtn1} onPress={confirmPlaceHere}>
-                <Text style={styles.btnText}>ใช้จุดนี้</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.actionBtn2} onPress={getCurrentLocation}>
-                <Text style={styles.btnText}>ใช้ตำแหน่งฉัน</Text>
-              </TouchableOpacity>
-            </View>
             <TouchableOpacity
-              style={styles.actionBtn3}
+              style={styles.submitBtn}
               onPress={() => {
+                if (!deviceCode) {
+                  Alert.alert("กรุณากรอกรหัสอุปกรณ์");
+                  return;
+                }
                 setModalVisible(false);
-                setPendingCoord(null);
+                fetchLocation(); // 👈 สำคัญมาก
               }}
             >
-              <Text style={styles.btnText}>ยกเลิก</Text>
+              <Text style={{ color: "#fff" }}>ยืนยัน</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -329,206 +161,54 @@ export default function Map2() {
   );
 }
 
+/* ===============================
+   STYLES
+================================ */
+
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
+  container: { flex: 1 },
 
-  // --- Callout Styling ---
-  calloutBox: {
-    minWidth: 200,
-    maxWidth: 260,
-    backgroundColor: "rgba(255,255,255,0.95)",
-    borderRadius: 14,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    shadowColor: "#000",
-    shadowOpacity: 0.2,
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowRadius: 4,
-    elevation: 4,
-  },
-
-  calloutTitle: {
-    fontWeight: "700",
-    fontSize: 18,
-    color: "#5c4033",
-    marginBottom: 6,
-  },
-
-  calloutHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 6,
-  },
-
-  calloutBadge: {
-    borderRadius: 10,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    marginBottom: 6,
-    alignSelf: "flex-start",
-  },
-
-  inArea: {
-    backgroundColor: "rgba(0,200,0,0.2)",
-  },
-
-  outArea: {
-    backgroundColor: "rgba(220,0,0,0.2)",
-  },
-
-  calloutBadgeText: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: "#000",
-  },
-
-  calloutText: {
-    fontSize: 14,
-    color: "#333",
-    marginBottom: 4,
-  },
-
-  statusText: {
-    marginTop: 6,
-    fontWeight: "700",
-    textAlign: "center",
-  },
-
-  zoomControls: {
+  fab: {
     position: "absolute",
-    bottom: 300,
-    right: 16,
-    alignItems: "flex-end",
-  },
-
-  zoomButton: {
-    backgroundColor: "rgba(255,255,255,0.9)",
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 12,
-    elevation: 6,
-    marginBottom: 8,
-  },
-
-  zoomText: {
-    fontSize: 24,
-    fontWeight: "bold",
-    color: "#333",
-  },
-
-  followBtn: {
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderRadius: 10,
-  },
-
-  followOn: {
-    backgroundColor: "#6c757d",
-  },
-
-  followOff: {
-    backgroundColor: "#007bff",
-  },
-
-  bottomPanel: {
-    position: "absolute",
-    left: 16,
-    right: 16,
-    padding: 16,
-    backgroundColor: "white",
-    borderRadius: 16,
-    elevation: 6,
-    shadowColor: "#000",
-    shadowOpacity: 0.2,
-    shadowRadius: 10,
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-  },
-
-  panelTitle: {
-    fontSize: 16,
-    fontWeight: "700",
-  },
-
-  panelButtons: {
-    marginTop: 10,
-    width: "100%",
-    flexDirection: "row",
-    justifyContent: "space-between",
-    gap: 8,
-  },
-
-  actionBtn: {
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    borderRadius: 8,
-    width: "48%",
-    alignItems: "center",
-    backgroundColor: "#f2bb14",
-  },
-
-  btnText: {
-    color: "#fff",
-    fontWeight: "bold",
-  },
-
-  modalContainer: {
-    flex: 1,
+    bottom: 90,
+    right: 20,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: "#0b1d51",
     justifyContent: "center",
     alignItems: "center",
+  },
+
+  modalOverlay: {
+    flex: 1,
     backgroundColor: "rgba(0,0,0,0.5)",
-  },
-
-  modalContent: {
-    backgroundColor: "rgba(255,255,255,0.7)",
-    padding: 24,
-    borderRadius: 16,
+    justifyContent: "center",
     alignItems: "center",
-    elevation: 5,
-    width: "80%",
-    maxWidth: 360,
   },
-
+  modalBox: {
+    width: "80%",
+    backgroundColor: "#fff",
+    padding: 20,
+    borderRadius: 12,
+  },
   modalTitle: {
     fontSize: 18,
-    fontWeight: "bold",
-    marginBottom: 8,
+    marginBottom: 12,
+    textAlign: "center",
+    fontWeight: "600",
   },
-
-  actionBtn1: {
-    backgroundColor: "#007bff",
-    paddingHorizontal: 30,
-    paddingVertical: 10,
-    borderRadius: 5,
+  input: {
+    borderWidth: 1,
+    borderColor: "#ccc",
+    borderRadius: 8,
+    padding: 10,
+    marginBottom: 12,
   },
-
-  actionBtn2: {
-    backgroundColor: "#28a745",
-    paddingHorizontal: 30,
-    paddingVertical: 10,
-    borderRadius: 5,
-  },
-
-  actionBtn3: {
-    backgroundColor: "#6c757d",
-    marginTop: 10,
-    paddingHorizontal: 107,
-    paddingVertical: 10,
-    borderRadius: 5,
-  },
-
-  buttonRow: {
-    flexDirection: "row",
-    gap: 10,
-    marginTop: 6,
-    paddingHorizontal: 50,
+  submitBtn: {
+    backgroundColor: "#0b1d51",
+    padding: 12,
+    borderRadius: 8,
+    alignItems: "center",
   },
 });

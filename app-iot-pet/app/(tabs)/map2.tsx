@@ -13,18 +13,47 @@ import MapView, {
   Region,
   Callout,
   Circle,
+  Polyline,
 } from "react-native-maps";
 import { MaterialIcons } from "@expo/vector-icons";
+import { Calendar } from "react-native-calendars";
 
+/* ===============================
+   CONFIG
+================================ */
 const BACKEND_URL = "http://localhost:3000";
+const MOVE_THRESHOLD = 10; // เมตร
 
 type DeviceLocation = {
   latitude: number;
   longitude: number;
   timestamp: string;
   accuracy?: number;
-  state?: "MOVING" | "STOP" | "LOW_GPS";
 };
+
+/* ===============================
+   HAVERSINE DISTANCE
+================================ */
+function distanceInMeters(
+  lat1: number,
+  lon1: number,
+  lat2: number,
+  lon2: number
+) {
+  const R = 6371000;
+  const toRad = (v: number) => (v * Math.PI) / 180;
+
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) *
+      Math.cos(toRad(lat2)) *
+      Math.sin(dLon / 2) ** 2;
+
+  return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
 
 export default function Map2() {
   const mapRef = useRef<MapView>(null);
@@ -37,21 +66,29 @@ export default function Map2() {
     longitudeDelta: 0.02,
   });
 
-  const [location, setLocation] = useState<DeviceLocation | null>(null);
-
-  /* ---------- DEVICE CODE ---------- */
+  /* ---------- STATE ---------- */
   const [deviceCode, setDeviceCode] = useState("");
-  const [modalVisible, setModalVisible] = useState(false);
+  const [modalVisible, setModalVisible] = useState(true);
   const [loading, setLoading] = useState(false);
 
-  /* ---------- UTIL ---------- */
-  const formatThaiDate = (iso: string) =>
-    new Date(iso).toLocaleDateString("th-TH", {
-      year: "numeric",
-      month: "long",
-      day: "numeric",
-    });
+  const [location, setLocation] = useState<DeviceLocation | null>(null);
 
+  const [path, setPath] = useState<
+    { latitude: number; longitude: number }[]
+  >([]);
+
+  const [lastRecordedPoint, setLastRecordedPoint] =
+    useState<{ latitude: number; longitude: number } | null>(null);
+
+  const [accumulatedDistance, setAccumulatedDistance] = useState(0);
+
+  /* ---------- CALENDAR ---------- */
+  const [calendarVisible, setCalendarVisible] = useState(false);
+  const [selectedDate, setSelectedDate] = useState(
+    new Date().toISOString().split("T")[0] // YYYY-MM-DD
+  );
+
+  /* ---------- FORMAT ---------- */
   const formatThaiTime = (iso: string) =>
     new Date(iso).toLocaleTimeString("th-TH", {
       hour: "2-digit",
@@ -59,21 +96,22 @@ export default function Map2() {
       second: "2-digit",
     });
 
-  const getPinColor = (state?: string) => {
-    switch (state) {
-      case "MOVING":
-        return "green";
-      case "STOP":
-        return "orange";
-      case "LOW_GPS":
-        return "gray";
-      default:
-        return "red";
-    }
-  };
+  const formatThaiDate = (iso: string) =>
+    new Date(iso).toLocaleDateString("th-TH", {
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    });
 
-  /* ---------- FETCH ---------- */
+  /* ===============================
+     FETCH LOCATION
+  ================================ */
   const fetchLocation = async () => {
+    if (!deviceCode) {
+      setModalVisible(true);
+      return;
+    }
+
     try {
       setLoading(true);
 
@@ -83,53 +121,70 @@ export default function Map2() {
         body: JSON.stringify({ deviceCode }),
       });
 
-      if (res.status === 401) {
-        Alert.alert("รหัสอุปกรณ์ไม่ถูกต้อง");
-        setModalVisible(true);
-        return;
-      }
-
-      if (!res.ok) throw new Error("BACKEND_ERROR");
+      if (!res.ok) throw new Error();
 
       const data = await res.json();
 
-      const pos: DeviceLocation = {
+      const current = {
         latitude: data.latitude,
         longitude: data.longitude,
-        accuracy: data.acc ?? 30,
-        state: data.state ?? "LOW_GPS",
-        // ถ้าอุปกรณ์ไม่ส่งเวลา → ใช้เวลา app/server
-        timestamp: data.timestamp ?? new Date().toISOString(),
       };
 
-      setLocation(pos);
+      const timestamp = data.timestamp ?? new Date().toISOString();
+
+      setLocation({
+        ...current,
+        timestamp,
+        accuracy: data.acc ?? 30,
+      });
+
+      // จุดแรก
+      if (!lastRecordedPoint) {
+        setPath([current]);
+        setLastRecordedPoint(current);
+        setAccumulatedDistance(0);
+        return;
+      }
+
+      const dist = distanceInMeters(
+        lastRecordedPoint.latitude,
+        lastRecordedPoint.longitude,
+        current.latitude,
+        current.longitude
+      );
+
+      const total = accumulatedDistance + dist;
+
+      // ❌ GPS สั่น / อยู่นิ่ง
+      if (total < MOVE_THRESHOLD) {
+        setAccumulatedDistance(total);
+        return;
+      }
+
+      // ✅ เคลื่อนที่จริง
+      setPath((prev) => [...prev, current]);
+      setLastRecordedPoint(current);
+      setAccumulatedDistance(0);
 
       mapRef.current?.animateToRegion(
         {
-          latitude: pos.latitude,
-          longitude: pos.longitude,
+          latitude: current.latitude,
+          longitude: current.longitude,
           latitudeDelta: 0.01,
           longitudeDelta: 0.01,
         },
         600
       );
     } catch {
-      Alert.alert("เชื่อมต่อไม่สำเร็จ");
+      Alert.alert("ไม่สามารถดึงตำแหน่งได้");
     } finally {
       setLoading(false);
     }
   };
 
-  /* ---------- BUTTON ---------- */
-  const onPressLocate = () => {
-    if (!deviceCode) {
-      setModalVisible(true);
-      return;
-    }
-    fetchLocation();
-  };
-
-  /* ---------- UI ---------- */
+  /* ===============================
+     UI
+  ================================ */
   return (
     <View style={styles.container}>
       <MapView
@@ -137,63 +192,35 @@ export default function Map2() {
         style={StyleSheet.absoluteFill}
         initialRegion={initialRegion}
       >
+        {/* 🔵 เส้นทาง */}
+        {path.length > 1 && (
+          <Polyline
+            coordinates={path}
+            strokeColor="#875100"
+            strokeWidth={10}
+          />
+        )}
+
+        {/* 📍 ตำแหน่งปัจจุบัน */}
         {location && (
           <>
-            {/* Accuracy Circle */}
-            {location.accuracy && (
-              <Circle
-                center={location}
-                radius={location.accuracy}
-                strokeColor="rgba(244,67,54,0.4)"
-                fillColor="rgba(244,67,54,0.18)"
-              />
-            )}
+            <Circle
+              center={location}
+              radius={location.accuracy ?? 30}
+              strokeColor="rgba(26,115,232,0.4)"
+              fillColor="rgba(26,115,232,0.18)"
+            />
 
-            <Marker
-              coordinate={location}
-              pinColor={getPinColor(location.state)}
-            >
+            <Marker coordinate={location}>
               <Callout tooltip>
                 <View style={styles.card}>
-                  {/* Header */}
-                  <View style={styles.cardHeader}>
-                    <Text style={styles.cardTitle}>LilyGo A7670E</Text>
-
-                    {location.accuracy && (
-                      <View style={styles.accBadge}>
-                        <Text style={styles.accBadgeText}>
-                          ± {Math.round(location.accuracy)} ม.
-                        </Text>
-                      </View>
-                    )}
-                  </View>
-
-                  <View style={styles.divider} />
-
-                  {/* Date */}
-                  <View style={styles.row}>
-                    <Text style={styles.icon}>📅</Text>
-                    <Text style={styles.text}>
-                      {formatThaiDate(location.timestamp)}
-                    </Text>
-                  </View>
-
-                  {/* Time */}
-                  <View style={styles.row}>
-                    <Text style={styles.icon}>🕒</Text>
-                    <Text style={styles.text}>
-                      {formatThaiTime(location.timestamp)} น.
-                    </Text>
-                  </View>
-
-                  {/* Location */}
-                  <View style={styles.row}>
-                    <Text style={styles.icon}>📍</Text>
-                    <Text style={styles.text}>
-                      {location.latitude.toFixed(6)},{" "}
-                      {location.longitude.toFixed(6)}
-                    </Text>
-                  </View>
+                  <Text style={styles.cardTitle}>LilyGo A7670E</Text>
+                  <Text>📅 {formatThaiDate(location.timestamp)}</Text>
+                  <Text>🕒 {formatThaiTime(location.timestamp)}</Text>
+                  <Text>
+                    📍 {location.latitude.toFixed(6)},{" "}
+                    {location.longitude.toFixed(6)}
+                  </Text>
                 </View>
               </Callout>
             </Marker>
@@ -201,16 +228,36 @@ export default function Map2() {
         )}
       </MapView>
 
-      {/* Floating Button */}
+      {/* 📅 Calendar Button */}
+      <TouchableOpacity
+        style={styles.calendarFab}
+        onPress={() => setCalendarVisible(true)}
+      >
+        <MaterialIcons name="calendar-today" size={22} color="#fff" />
+      </TouchableOpacity>
+
+      {/* 📍 Locate */}
       <TouchableOpacity
         style={styles.fab}
-        onPress={onPressLocate}
+        onPress={fetchLocation}
         disabled={loading}
       >
         <MaterialIcons name="my-location" size={26} color="#fff" />
       </TouchableOpacity>
 
-      {/* DEVICE CODE MODAL */}
+      {/* 🗑 Clear */}
+      <TouchableOpacity
+        style={styles.clearFab}
+        onPress={() => {
+          setPath([]);
+          setLastRecordedPoint(null);
+          setAccumulatedDistance(0);
+        }}
+      >
+        <MaterialIcons name="delete" size={22} color="#fff" />
+      </TouchableOpacity>
+
+      {/* 🔐 Device Code Modal */}
       <Modal visible={modalVisible} transparent animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={styles.modalBox}>
@@ -218,7 +265,7 @@ export default function Map2() {
 
             <TextInput
               style={styles.input}
-              placeholder="เช่น PET-001"
+              placeholder="เช่น PET-M3238-N3466"
               value={deviceCode}
               onChangeText={setDeviceCode}
               autoCapitalize="characters"
@@ -240,11 +287,42 @@ export default function Map2() {
           </View>
         </View>
       </Modal>
+
+      {/* 📅 Calendar Modal */}
+      <Modal visible={calendarVisible} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.calendarBox}>
+            <Calendar
+              current={selectedDate}
+              markedDates={{
+                [selectedDate]: {
+                  selected: true,
+                  selectedColor: "#0b1d51",
+                },
+              }}
+              onDayPress={(day) => {
+                setSelectedDate(day.dateString);
+                setCalendarVisible(false);
+                console.log("Selected date:", day.dateString);
+              }}
+            />
+
+            <TouchableOpacity
+              style={styles.closeBtn}
+              onPress={() => setCalendarVisible(false)}
+            >
+              <Text style={{ color: "#fff" }}>ปิด</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
 
-/* ---------- STYLES ---------- */
+/* ===============================
+   STYLES
+================================ */
 const styles = StyleSheet.create({
   container: { flex: 1 },
 
@@ -260,81 +338,80 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
 
-  /* Card */
+  clearFab: {
+    position: "absolute",
+    bottom: 150,
+    right: 20,
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    backgroundColor: "#c62828",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+
+  calendarFab: {
+    position: "absolute",
+    top: 50,
+    right: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "#0b1d51",
+    justifyContent: "center",
+    alignItems: "center",
+    elevation: 6,
+  },
+
   card: {
     backgroundColor: "#fff",
     borderRadius: 16,
     padding: 14,
     minWidth: 260,
-    shadowColor: "#000",
-    shadowOpacity: 0.15,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 6,
   },
-  cardHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
+
   cardTitle: {
     fontSize: 16,
     fontWeight: "600",
-    color: "#1c1c1e",
-  },
-
-  /* Accuracy badge */
-  accBadge: {
-    backgroundColor: "#e3f2fd",
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  accBadgeText: {
-    color: "#1565c0",
-    fontSize: 12,
-    fontWeight: "500",
-  },
-
-  divider: {
-    height: 1,
-    backgroundColor: "#eee",
-    marginVertical: 10,
-  },
-
-  row: {
-    flexDirection: "row",
-    alignItems: "center",
     marginBottom: 6,
   },
-  icon: {
-    fontSize: 16,
-    marginRight: 6,
-  },
-  text: {
-    fontSize: 14,
-    color: "#333",
-  },
 
-  /* Modal */
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.5)",
     justifyContent: "center",
     alignItems: "center",
   },
+
   modalBox: {
     width: "80%",
     backgroundColor: "#fff",
     padding: 20,
     borderRadius: 12,
   },
+
+  calendarBox: {
+    width: "90%",
+    backgroundColor: "#fff",
+    padding: 12,
+    borderRadius: 16,
+  },
+
+  closeBtn: {
+    marginTop: 12,
+    backgroundColor: "#0b1d51",
+    padding: 10,
+    borderRadius: 8,
+    alignItems: "center",
+  },
+
   modalTitle: {
     fontSize: 18,
     marginBottom: 12,
     textAlign: "center",
     fontWeight: "600",
   },
+
   input: {
     borderWidth: 1,
     borderColor: "#ccc",
@@ -342,6 +419,7 @@ const styles = StyleSheet.create({
     padding: 10,
     marginBottom: 12,
   },
+
   submitBtn: {
     backgroundColor: "#0b1d51",
     padding: 12,

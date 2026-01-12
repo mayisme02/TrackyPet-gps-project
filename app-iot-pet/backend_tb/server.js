@@ -16,7 +16,6 @@ const {
 
 /* ===============================
    DEVICE CODE → DEVICE ID MAP
-   (ตรงนี้คือหัวใจของแนวทางที่ 1)
 ================================ */
 const DEVICE_MAP = {
   "PET-M3238-N3466": "84c3afd0-ebf4-11f0-b6de-09388ec431d8",
@@ -38,6 +37,13 @@ async function loginThingsBoard() {
 /* ===============================
    FETCH GPS
 ================================ */
+app.get("/", (req, res) => {
+  res.json({
+    status: "OK",
+    message: "Backend is running 🚀"
+  });
+});
+
 app.post("/api/device/location", async (req, res) => {
   const { deviceCode } = req.body;
 

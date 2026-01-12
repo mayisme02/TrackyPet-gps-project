@@ -40,7 +40,7 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="map_tracker"
+        name="maps"
         options={{
           title: 'แผนที่',
           tabBarIcon: ({ color }) => <FontAwesome5 name="map-marked-alt" size={24} color={color} />,
@@ -62,7 +62,7 @@ export default function TabLayout() {
         }}
       />
       {/*  ซ่อนจากแท็บ */} 
-      <Tabs.Screen name="map" options={{ href: null }} />
+      {/* <Tabs.Screen name="map" options={{ href: null }} /> */}
     </Tabs>
   );
 }

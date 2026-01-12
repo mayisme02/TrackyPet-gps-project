@@ -332,7 +332,7 @@ export default function MapTracker() {
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalBox}>
-            <Text style={styles.modalTitle}>เพิ่มอุปกรณ์</Text>
+            <Text style={styles.modalTitle}>เพิ่มอุปกรณ์ติดตาม</Text>
 
             <TextInput
               style={styles.input}
@@ -351,7 +351,7 @@ export default function MapTracker() {
                   setTempCode("");
                 }}
               >
-                <Text style={{ color: "#fff" }}>ยกเลิก</Text>
+                <Text style={{ color: "#fff", fontSize: 16 }}>ยกเลิก</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
@@ -372,7 +372,7 @@ export default function MapTracker() {
                   setUserOpenAddModal(false);
                 }}
               >
-                <Text style={{ color: "#fff" }}>ยืนยัน</Text>
+                <Text style={{ color: "#fff", fontSize: 16 }}>ยืนยัน</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -403,9 +403,6 @@ export default function MapTracker() {
   );
 }
 
-/* ===============================
-   STYLES
-================================ */
 const styles = StyleSheet.create({
   container: { flex: 1 },
 

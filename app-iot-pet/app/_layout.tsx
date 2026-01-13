@@ -1,4 +1,6 @@
 import { Stack } from "expo-router";
+import { HapticTab } from "../components/HapticTab";
+
 
 export default function RootLayout() {
   return (

@@ -57,18 +57,19 @@ app.post("/api/device/location", async (req, res) => {
     const jwt = await loginThingsBoard();
 
     // 3️⃣ ดึง telemetry
-    const tbRes = await axios.get(
-      `${TB_BASE_URL}/api/plugins/telemetry/DEVICE/${deviceId}/values/timeseries`,
-      {
-        headers: {
-          Authorization: `Bearer ${jwt}`,
-        },
-        params: {
-          keys: "lat,lon",
-          limit: 1,
-        },
-      }
-    );
+const tbRes = await axios.get(
+  `${TB_BASE_URL}/api/plugins/telemetry/DEVICE/${deviceId}/values/timeseries`,
+  {
+    headers: {
+      "X-Authorization": `Bearer ${jwt}`, // ✅ สำคัญ
+    },
+    params: {
+      keys: "lat,lon",
+      limit: 1,
+    },
+  }
+);
+
 
     const lat = tbRes.data.lat?.[0];
     const lon = tbRes.data.lon?.[0];

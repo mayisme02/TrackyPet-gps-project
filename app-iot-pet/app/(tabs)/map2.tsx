@@ -1,4 +1,5 @@
-import React, { useRef, useState } from "react";
+import * as React from "react";
+import { useRef, useState } from "react";
 import {
   StyleSheet,
   View,
@@ -8,12 +9,7 @@ import {
   Text,
   TextInput,
 } from "react-native";
-import MapView, {
-  Marker,
-  Region,
-  Callout,
-  Circle,
-} from "react-native-maps";
+import MapView, { Marker, Region, Callout, Circle } from "react-native-maps";
 import { MaterialIcons } from "@expo/vector-icons";
 
 const BACKEND_URL = "http://localhost:3000";
@@ -28,21 +24,20 @@ type DeviceLocation = {
 
 export default function Map2() {
   const mapRef = useRef<MapView>(null);
+  const inputRef = useRef<TextInput>(null);
 
-  /* ---------- MAP ---------- */
+  /* ---------- STATE ---------- */
+  const [deviceCode, setDeviceCode] = useState("");
+  const [modalVisible, setModalVisible] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [location, setLocation] = useState<DeviceLocation | null>(null);
+
   const [initialRegion] = useState<Region>({
     latitude: 16.4755,
     longitude: 102.825,
     latitudeDelta: 0.02,
     longitudeDelta: 0.02,
   });
-
-  const [location, setLocation] = useState<DeviceLocation | null>(null);
-
-  /* ---------- DEVICE CODE ---------- */
-  const [deviceCode, setDeviceCode] = useState("");
-  const [modalVisible, setModalVisible] = useState(false);
-  const [loading, setLoading] = useState(false);
 
   /* ---------- UTIL ---------- */
   const formatThaiDate = (iso: string) =>
@@ -72,6 +67,20 @@ export default function Map2() {
     }
   };
 
+  /* ---------- ALERT + RETRY ---------- */
+  const showRetryAlert = (message: string) => {
+    Alert.alert("แจ้งเตือน", message, [
+      {
+        text: "OK",
+        onPress: () => {
+          setDeviceCode("");          // ล้างค่า
+          setModalVisible(true);      // เปิด modal ใหม่
+          requestAnimationFrame(() => inputRef.current?.focus());
+        },
+      },
+    ]);
+  };
+
   /* ---------- FETCH ---------- */
   const fetchLocation = async () => {
     try {
@@ -84,8 +93,7 @@ export default function Map2() {
       });
 
       if (res.status === 401) {
-        Alert.alert("รหัสอุปกรณ์ไม่ถูกต้อง");
-        setModalVisible(true);
+        showRetryAlert("รหัสอุปกรณ์ไม่ถูกต้อง กรุณาลองใหม่");
         return;
       }
 
@@ -98,7 +106,6 @@ export default function Map2() {
         longitude: data.longitude,
         accuracy: data.acc ?? 30,
         state: data.state ?? "LOW_GPS",
-        // ถ้าอุปกรณ์ไม่ส่งเวลา → ใช้เวลา app/server
         timestamp: data.timestamp ?? new Date().toISOString(),
       };
 
@@ -114,7 +121,7 @@ export default function Map2() {
         600
       );
     } catch {
-      Alert.alert("เชื่อมต่อไม่สำเร็จ");
+      showRetryAlert("เชื่อมต่อไม่สำเร็จ กรุณากรอกรหัสอุปกรณ์ใหม่");
     } finally {
       setLoading(false);
     }
@@ -124,6 +131,7 @@ export default function Map2() {
   const onPressLocate = () => {
     if (!deviceCode) {
       setModalVisible(true);
+      requestAnimationFrame(() => inputRef.current?.focus());
       return;
     }
     fetchLocation();
@@ -139,7 +147,6 @@ export default function Map2() {
       >
         {location && (
           <>
-            {/* Accuracy Circle */}
             {location.accuracy && (
               <Circle
                 center={location}
@@ -149,48 +156,24 @@ export default function Map2() {
               />
             )}
 
-            <Marker
-              coordinate={location}
-              pinColor={getPinColor(location.state)}
-            >
+            <Marker coordinate={location} pinColor={getPinColor(location.state)}>
               <Callout tooltip>
                 <View style={styles.card}>
-                  {/* Header */}
                   <View style={styles.cardHeader}>
                     <Text style={styles.cardTitle}>LilyGo A7670E</Text>
-
-                    {location.accuracy && (
-                      <View style={styles.accBadge}>
-                        <Text style={styles.accBadgeText}>
-                          ± {Math.round(location.accuracy)} ม.
-                        </Text>
-                      </View>
-                    )}
                   </View>
 
                   <View style={styles.divider} />
 
-                  {/* Date */}
                   <View style={styles.row}>
-                    <Text style={styles.icon}>📅</Text>
-                    <Text style={styles.text}>
-                      {formatThaiDate(location.timestamp)}
-                    </Text>
+                    <Text>📅 {formatThaiDate(location.timestamp)}</Text>
                   </View>
-
-                  {/* Time */}
                   <View style={styles.row}>
-                    <Text style={styles.icon}>🕒</Text>
-                    <Text style={styles.text}>
-                      {formatThaiTime(location.timestamp)} น.
-                    </Text>
+                    <Text>🕒 {formatThaiTime(location.timestamp)} น.</Text>
                   </View>
-
-                  {/* Location */}
                   <View style={styles.row}>
-                    <Text style={styles.icon}>📍</Text>
-                    <Text style={styles.text}>
-                      {location.latitude.toFixed(6)},{" "}
+                    <Text>
+                      📍 {location.latitude.toFixed(6)},{" "}
                       {location.longitude.toFixed(6)}
                     </Text>
                   </View>
@@ -201,7 +184,6 @@ export default function Map2() {
         )}
       </MapView>
 
-      {/* Floating Button */}
       <TouchableOpacity
         style={styles.fab}
         onPress={onPressLocate}
@@ -210,27 +192,30 @@ export default function Map2() {
         <MaterialIcons name="my-location" size={26} color="#fff" />
       </TouchableOpacity>
 
-      {/* DEVICE CODE MODAL */}
+      {/* ---------- MODAL ---------- */}
       <Modal visible={modalVisible} transparent animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={styles.modalBox}>
             <Text style={styles.modalTitle}>กรอกรหัสอุปกรณ์</Text>
 
             <TextInput
+              ref={inputRef}
               style={styles.input}
               placeholder="เช่น PET-001"
               value={deviceCode}
               onChangeText={setDeviceCode}
               autoCapitalize="characters"
+              onSubmitEditing={() => {
+                if (!deviceCode) return;
+                setModalVisible(false);
+                fetchLocation();
+              }}
             />
 
             <TouchableOpacity
               style={styles.submitBtn}
               onPress={() => {
-                if (!deviceCode) {
-                  Alert.alert("กรุณากรอกรหัสอุปกรณ์");
-                  return;
-                }
+                if (!deviceCode) return;
                 setModalVisible(false);
                 fetchLocation();
               }}
@@ -260,41 +245,15 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
 
-  /* Card */
   card: {
     backgroundColor: "#fff",
     borderRadius: 16,
     padding: 14,
     minWidth: 260,
-    shadowColor: "#000",
-    shadowOpacity: 0.15,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 6,
-  },
-  cardHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  cardTitle: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#1c1c1e",
   },
 
-  /* Accuracy badge */
-  accBadge: {
-    backgroundColor: "#e3f2fd",
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  accBadgeText: {
-    color: "#1565c0",
-    fontSize: 12,
-    fontWeight: "500",
-  },
+  cardHeader: { marginBottom: 6 },
+  cardTitle: { fontSize: 16, fontWeight: "600" },
 
   divider: {
     height: 1,
@@ -302,21 +261,8 @@ const styles = StyleSheet.create({
     marginVertical: 10,
   },
 
-  row: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 6,
-  },
-  icon: {
-    fontSize: 16,
-    marginRight: 6,
-  },
-  text: {
-    fontSize: 14,
-    color: "#333",
-  },
+  row: { marginBottom: 6 },
 
-  /* Modal */
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.5)",

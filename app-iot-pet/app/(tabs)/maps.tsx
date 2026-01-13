@@ -17,13 +17,9 @@ import MapView, {
   Polyline,
 } from "react-native-maps";
 import { MaterialIcons } from "@expo/vector-icons";
-import { Calendar } from "react-native-calendars";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useFocusEffect } from "@react-navigation/native";
 
-/* ===============================
-   CONFIG
-================================ */
 const BACKEND_URL = "http://localhost:3000";
 const MOVE_DISTANCE_THRESHOLD = 10;
 
@@ -40,9 +36,6 @@ type TrackPoint = {
   timestamp: string;
 };
 
-/* ===============================
-   HAVERSINE
-================================ */
 function distanceInMeters(
   lat1: number,
   lon1: number,
@@ -58,8 +51,8 @@ function distanceInMeters(
   const a =
     Math.sin(dLat / 2) ** 2 +
     Math.cos(toRad(lat1)) *
-      Math.cos(toRad(lat2)) *
-      Math.sin(dLon / 2) ** 2;
+    Math.cos(toRad(lat2)) *
+    Math.sin(dLon / 2) ** 2;
 
   return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
@@ -111,9 +104,6 @@ export default function MapTracker() {
       second: "2-digit",
     });
 
-  /* ===============================
-     APPEND POINT
-  ================================ */
   const appendPoint = (point: TrackPoint) => {
     setRawPath((prev) => {
       if (prev.length > 0) {
@@ -148,9 +138,6 @@ export default function MapTracker() {
     });
   };
 
-  /* ===============================
-     FETCH LOCATION
-  ================================ */
   const fetchLocation = async (
     code: string,
     options?: { silent?: boolean }
@@ -194,9 +181,6 @@ export default function MapTracker() {
     }
   };
 
-  /* ===============================
-     AUTO TRACK
-  ================================ */
   useEffect(() => {
     if (!deviceCode || !isTracking) return;
 
@@ -212,27 +196,28 @@ export default function MapTracker() {
   ================================ */
   useFocusEffect(
     React.useCallback(() => {
-      const checkRemoved = async () => {
-        const removed = await AsyncStorage.getItem("removedDevice");
-        if (!removed) return;
+      const loadActiveDevice = async () => {
+        const active = await AsyncStorage.getItem("activeDevice");
 
-        setIsTracking(false);
-        setDeviceCode(null);
-        setLocation(null);
-        setRawPath([]);
-        setDisplayPath([]);
-        setAccumulatedDistance(0);
+        if (!active) {
+          setDeviceCode(null);
+          setIsTracking(false);
+          setLocation(null);
+          setRawPath([]);
+          setDisplayPath([]);
+          setAccumulatedDistance(0);
+          return;
+        }
 
-        await AsyncStorage.removeItem("removedDevice");
+        setDeviceCode(active);
+        setIsTracking(true);
+        fetchLocation(active, { silent: true });
       };
 
-      checkRemoved();
+      loadActiveDevice();
     }, [])
   );
 
-  /* ===============================
-     UI
-  ================================ */
   return (
     <View style={styles.container}>
       <MapView
@@ -244,7 +229,7 @@ export default function MapTracker() {
           <Polyline
             coordinates={displayPath}
             strokeColor="#875100"
-            strokeWidth={6}
+            strokeWidth={8}
           />
         )}
 
@@ -263,7 +248,7 @@ export default function MapTracker() {
                   <View style={styles.calloutHandle} />
                   <View style={styles.calloutCard}>
                     <View style={styles.cardHeader}>
-                      <Text style={styles.cardTitle}>LilyGo A7670E</Text>
+                      <Text style={styles.cardTitle}>GPS Tracker</Text>
                       <View style={styles.badge}>
                         <Text style={styles.badgeText}>
                           ± {location.accuracy ?? 30} ม.
@@ -395,6 +380,8 @@ export default function MapTracker() {
                     );
                   }
 
+                  await AsyncStorage.setItem("activeDevice", code);
+
                   setDeviceCode(code);
                   setIsTracking(true);
                   setModalVisible(false);
@@ -404,27 +391,6 @@ export default function MapTracker() {
                 <Text style={{ color: "#fff", fontSize: 16 }}>ยืนยัน</Text>
               </TouchableOpacity>
             </View>
-          </View>
-        </View>
-      </Modal>
-
-      {/* 📅 Calendar Modal */}
-      <Modal visible={calendarVisible} transparent animationType="fade">
-        <View style={styles.modalOverlay}>
-          <View style={styles.calendarBox}>
-            <Calendar
-              current={selectedDate}
-              markedDates={{
-                [selectedDate]: {
-                  selected: true,
-                  selectedColor: "#0b1d51",
-                },
-              }}
-              onDayPress={(day) => {
-                setSelectedDate(day.dateString);
-                setCalendarVisible(false);
-              }}
-            />
           </View>
         </View>
       </Modal>
@@ -473,8 +439,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
 
-  calloutWrapper: { 
-    alignItems: "center" 
+  calloutWrapper: {
+    alignItems: "center"
   },
   calloutHandle: {
     width: 48,
@@ -503,9 +469,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
 
-  cardTitle: { 
-    fontSize: 16, 
-    fontWeight: "700" 
+  cardTitle: {
+    fontSize: 16,
+    fontWeight: "700"
   },
 
   badge: {
@@ -515,8 +481,10 @@ const styles = StyleSheet.create({
     borderRadius: 999,
   },
 
-  badgeText: { color: "#1a73e8", 
-    fontSize: 12, fontWeight: "600" },
+  badgeText: {
+    color: "#1a73e8",
+    fontSize: 12, fontWeight: "600"
+  },
 
   divider: {
     height: 1,
@@ -524,20 +492,20 @@ const styles = StyleSheet.create({
     marginVertical: 10,
   },
 
-  row: { 
-    flexDirection: "row", 
-    alignItems: "center", 
-    marginTop: 6 
+  row: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 6
   },
 
-  icon: { 
-    fontSize: 16, 
-    marginRight: 8 
+  icon: {
+    fontSize: 16,
+    marginRight: 8
   },
 
-  text: { 
-    fontSize: 14.5, 
-    color: "#333" 
+  text: {
+    fontSize: 14.5,
+    color: "#333"
   },
 
   monoText: {
@@ -546,10 +514,10 @@ const styles = StyleSheet.create({
     fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
   },
 
-  boldText: { 
-    fontSize: 15, 
-    fontWeight: "700", 
-    color: "#111" 
+  boldText: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: "#111"
   },
 
   modalOverlay: {
@@ -566,9 +534,9 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
 
-  modalRow: { 
-    flexDirection: "row", 
-    gap: 10 
+  modalRow: {
+    flexDirection: "row",
+    gap: 10
   },
 
   calendarBox: {

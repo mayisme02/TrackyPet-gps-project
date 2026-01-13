@@ -22,7 +22,7 @@ export default function Devices() {
   const [devices, setDevices] = useState<Device[]>([]);
 
   /* =====================
-     LOAD DEVICES (REFRESH ON FOCUS)
+     LOAD DEVICES
   ====================== */
   const loadDevices = async () => {
     try {
@@ -32,7 +32,6 @@ export default function Devices() {
       setDevices([]);
     }
   };
-
 
   useFocusEffect(
     React.useCallback(() => {
@@ -46,7 +45,7 @@ export default function Devices() {
   const deleteDevice = (device: Device) => {
     Alert.alert(
       "ยกเลิกการเชื่อมต่อ",
-      `ต้องการลบ ${device.code} ใช่หรือไม่`,
+      "",
       [
         { text: "ยกเลิก", style: "cancel" },
         {
@@ -57,8 +56,10 @@ export default function Devices() {
             await AsyncStorage.setItem("devices", JSON.stringify(updated));
 
             // แจ้งหน้า Map ว่า device นี้ถูกลบแล้ว
-            await AsyncStorage.setItem("removedDevice", device.code);
-
+            const active = await AsyncStorage.getItem("activeDevice");
+            if (active === device.code) {
+              await AsyncStorage.removeItem("activeDevice");
+            }
             setDevices(updated);
           },
         },
@@ -73,7 +74,12 @@ export default function Devices() {
     <View style={styles.card}>
       <View>
         <Text style={styles.deviceName}>{item.name}</Text>
-        <Text style={styles.deviceCode}>{item.code}</Text>
+
+        {/* 🟢 กำลังเชื่อมต่อ (ย้ายมาไว้ด้านล่าง) */}
+        <View style={styles.connectRow}>
+          <View style={styles.connectDot} />
+          <Text style={styles.connectText}>กำลังเชื่อมต่อ</Text>
+        </View>
       </View>
 
       <TouchableOpacity onPress={() => deleteDevice(item)}>
@@ -104,46 +110,74 @@ export default function Devices() {
 }
 
 const styles = StyleSheet.create({
-  safeArea: { 
-    backgroundColor: "#f2bb14" 
+  safeArea: {
+    backgroundColor: "#f2bb14",
   },
   header: {
     backgroundColor: "#f2bb14",
     paddingVertical: 16,
     alignItems: "center",
   },
-  headerTitle: { 
-    fontSize: 20, 
-    fontWeight: "700" 
+  headerTitle: {
+    fontSize: 20,
+    fontWeight: "700",
   },
-  listContainer: { 
-    padding: 16 
+  listContainer: {
+    padding: 16,
   },
   emptyText: {
     textAlign: "center",
     color: "#888",
     marginTop: 40,
+    fontSize: 16,
   },
+
+  /* =====================
+     CARD
+  ====================== */
   card: {
-    backgroundColor: "#f9f9f9",
+    backgroundColor: "#FFFFFF",
     borderRadius: 12,
-    padding: 14,
+    padding: 24,
     marginBottom: 12,
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
   },
-  deviceName: { 
-    fontSize: 16, 
-    fontWeight: "700" 
+
+  deviceName: {
+    fontSize: 18,
+    fontWeight: "700",
   },
-  deviceCode: { 
-    fontSize: 14, 
-    color: "#666", 
-    marginTop: 4 
+
+  /* =====================
+     CONNECT STATUS (BOTTOM)
+  ====================== */
+  connectRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 8,
+    backgroundColor: "#e7f9ef",
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    alignSelf: "flex-start",
   },
-  remove: { 
-    color: "red", 
-    fontWeight: "600" 
+  connectDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: "#22c55e",
+    marginRight: 6,
+  },
+  connectText: {
+    fontSize: 13,
+    color: "#22c55e",
+    fontWeight: "600",
+  },
+
+  remove: {
+    color: "red",
+    fontWeight: "600",
   },
 });

@@ -222,11 +222,19 @@ export default function Map2() {
             >
               <Text style={{ color: "#fff" }}>ยืนยัน</Text>
             </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.cancelBtn}
+              onPress={() => setModalVisible(false)}
+            >
+              <Text style={{ color: "#fff" }}>ยกเลิก</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>
     </View>
   );
+
 }
 
 /* ---------- STYLES ---------- */
@@ -293,5 +301,12 @@ const styles = StyleSheet.create({
     padding: 12,
     borderRadius: 8,
     alignItems: "center",
+  },
+  cancelBtn: {
+    backgroundColor: "#888",
+    padding: 12,  
+    borderRadius: 8,
+    alignItems: "center",
+    marginTop: 10,
   },
 });

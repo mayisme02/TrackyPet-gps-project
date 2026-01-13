@@ -18,12 +18,14 @@ import MapView, {
 } from "react-native-maps";
 import { MaterialIcons } from "@expo/vector-icons";
 import { Calendar } from "react-native-calendars";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useFocusEffect } from "@react-navigation/native";
 
 /* ===============================
    CONFIG
 ================================ */
 const BACKEND_URL = "http://localhost:3000";
-const MOVE_DISTANCE_THRESHOLD = 10; // ✅ นับระยะทางเฉพาะ > 10 เมตร
+const MOVE_DISTANCE_THRESHOLD = 10;
 
 type DeviceLocation = {
   latitude: number;
@@ -110,7 +112,7 @@ export default function MapTracker() {
     });
 
   /* ===============================
-     APPEND POINT (FIXED DISTANCE)
+     APPEND POINT
   ================================ */
   const appendPoint = (point: TrackPoint) => {
     setRawPath((prev) => {
@@ -122,8 +124,6 @@ export default function MapTracker() {
           point.latitude,
           point.longitude
         );
-
-        // ✅ นับระยะทางเฉพาะตอนขยับจริง
         if (dist >= MOVE_DISTANCE_THRESHOLD) {
           setAccumulatedDistance((d) => d + dist);
         }
@@ -208,6 +208,29 @@ export default function MapTracker() {
   }, [deviceCode, isTracking]);
 
   /* ===============================
+     HANDLE DEVICE REMOVED
+  ================================ */
+  useFocusEffect(
+    React.useCallback(() => {
+      const checkRemoved = async () => {
+        const removed = await AsyncStorage.getItem("removedDevice");
+        if (!removed) return;
+
+        setIsTracking(false);
+        setDeviceCode(null);
+        setLocation(null);
+        setRawPath([]);
+        setDisplayPath([]);
+        setAccumulatedDistance(0);
+
+        await AsyncStorage.removeItem("removedDevice");
+      };
+
+      checkRemoved();
+    }, [])
+  );
+
+  /* ===============================
      UI
   ================================ */
   return (
@@ -238,7 +261,6 @@ export default function MapTracker() {
               <Callout tooltip>
                 <View style={styles.calloutWrapper}>
                   <View style={styles.calloutHandle} />
-
                   <View style={styles.calloutCard}>
                     <View style={styles.cardHeader}>
                       <Text style={styles.cardTitle}>LilyGo A7670E</Text>
@@ -316,14 +338,6 @@ export default function MapTracker() {
         <MaterialIcons name="my-location" size={26} color="#fff" />
       </TouchableOpacity>
 
-      {/* 📅 Calendar */}
-      <TouchableOpacity
-        style={styles.calendarFab}
-        onPress={() => setCalendarVisible(true)}
-      >
-        <MaterialIcons name="calendar-today" size={22} color="#fff" />
-      </TouchableOpacity>
-
       {/* 🔐 Add Device Modal */}
       <Modal
         visible={modalVisible && userOpenAddModal}
@@ -358,15 +372,30 @@ export default function MapTracker() {
                 style={styles.submitBtn}
                 disabled={loading}
                 onPress={async () => {
-                  if (!tempCode.trim()) {
-                    Alert.alert("กรุณากรอกรหัสอุปกรณ์");
-                    return;
-                  }
+                  if (!tempCode.trim()) return;
 
-                  const ok = await fetchLocation(tempCode);
+                  const code = tempCode.trim().toUpperCase();
+                  const ok = await fetchLocation(code);
                   if (!ok) return;
 
-                  setDeviceCode(tempCode);
+                  const stored = await AsyncStorage.getItem("devices");
+                  const devices = stored ? JSON.parse(stored) : [];
+
+                  if (!devices.some((d: any) => d.code === code)) {
+                    devices.push({
+                      id: Date.now().toString(),
+                      code,
+                      name: "GPS Tracker",
+                      createdAt: new Date().toISOString(),
+                    });
+
+                    await AsyncStorage.setItem(
+                      "devices",
+                      JSON.stringify(devices)
+                    );
+                  }
+
+                  setDeviceCode(code);
                   setIsTracking(true);
                   setModalVisible(false);
                   setUserOpenAddModal(false);
@@ -403,6 +432,9 @@ export default function MapTracker() {
   );
 }
 
+/* ===============================
+   STYLES
+================================ */
 const styles = StyleSheet.create({
   container: { flex: 1 },
 
@@ -441,10 +473,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
 
-  calloutWrapper: {
-    alignItems: "center",
+  calloutWrapper: { 
+    alignItems: "center" 
   },
-
   calloutHandle: {
     width: 48,
     height: 5,
@@ -472,9 +503,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
 
-  cardTitle: {
-    fontSize: 16,
-    fontWeight: "700",
+  cardTitle: { 
+    fontSize: 16, 
+    fontWeight: "700" 
   },
 
   badge: {
@@ -484,11 +515,8 @@ const styles = StyleSheet.create({
     borderRadius: 999,
   },
 
-  badgeText: {
-    color: "#1a73e8",
-    fontSize: 12,
-    fontWeight: "600",
-  },
+  badgeText: { color: "#1a73e8", 
+    fontSize: 12, fontWeight: "600" },
 
   divider: {
     height: 1,
@@ -496,20 +524,20 @@ const styles = StyleSheet.create({
     marginVertical: 10,
   },
 
-  row: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginTop: 6,
+  row: { 
+    flexDirection: "row", 
+    alignItems: "center", 
+    marginTop: 6 
   },
 
-  icon: {
-    fontSize: 16,
-    marginRight: 8,
+  icon: { 
+    fontSize: 16, 
+    marginRight: 8 
   },
 
-  text: {
-    fontSize: 14.5,
-    color: "#333",
+  text: { 
+    fontSize: 14.5, 
+    color: "#333" 
   },
 
   monoText: {
@@ -518,10 +546,10 @@ const styles = StyleSheet.create({
     fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
   },
 
-  boldText: {
-    fontSize: 15,
-    fontWeight: "700",
-    color: "#111",
+  boldText: { 
+    fontSize: 15, 
+    fontWeight: "700", 
+    color: "#111" 
   },
 
   modalOverlay: {
@@ -538,9 +566,9 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
 
-  modalRow: {
-    flexDirection: "row",
-    gap: 10,
+  modalRow: { 
+    flexDirection: "row", 
+    gap: 10 
   },
 
   calendarBox: {

@@ -7,9 +7,14 @@ import {
   FlatList,
   SafeAreaView,
   Alert,
+  Image,
 } from "react-native";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useFocusEffect } from "@react-navigation/native";
+import { useRouter } from "expo-router";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { auth, db } from "../../firebase/firebase";
+import { collection, onSnapshot } from "firebase/firestore";
+import { MaterialIcons } from "@expo/vector-icons";
 
 type Device = {
   id: string;
@@ -19,10 +24,13 @@ type Device = {
 };
 
 export default function Devices() {
+  const router = useRouter();
+
   const [devices, setDevices] = useState<Device[]>([]);
+  const [deviceMatches, setDeviceMatches] = useState<any>({});
 
   /* =====================
-     LOAD DEVICES
+     LOAD DEVICES (LOCAL)
   ====================== */
   const loadDevices = async () => {
     try {
@@ -33,60 +41,99 @@ export default function Devices() {
     }
   };
 
+  /* =====================
+     LOAD MATCHES (FIREBASE)
+  ====================== */
+  const subscribeMatches = () => {
+    if (!auth.currentUser) return;
+
+    const uid = auth.currentUser.uid;
+    const ref = collection(db, "users", uid, "deviceMatches");
+
+    return onSnapshot(ref, (snap) => {
+      const map: any = {};
+      snap.docs.forEach((doc) => {
+        map[doc.id] = doc.data();
+      });
+      setDeviceMatches(map);
+    });
+  };
+
   useFocusEffect(
     React.useCallback(() => {
       loadDevices();
+      const unsub = subscribeMatches();
+      return () => unsub && unsub();
     }, [])
   );
 
   /* =====================
-     DELETE DEVICE
+     DELETE DEVICE (LOCAL)
   ====================== */
   const deleteDevice = (device: Device) => {
-    Alert.alert(
-      "ยกเลิกการเชื่อมต่อ",
-      "",
-      [
-        { text: "ยกเลิก", style: "cancel" },
-        {
-          text: "ยืนยัน",
-          style: "destructive",
-          onPress: async () => {
-            const updated = devices.filter((d) => d.id !== device.id);
-            await AsyncStorage.setItem("devices", JSON.stringify(updated));
-
-            // แจ้งหน้า Map ว่า device นี้ถูกลบแล้ว
-            const active = await AsyncStorage.getItem("activeDevice");
-            if (active === device.code) {
-              await AsyncStorage.removeItem("activeDevice");
-            }
-            setDevices(updated);
-          },
+    Alert.alert("ยกเลิกการเชื่อมต่ออุปกรณ์", "", [
+      { text: "ยกเลิก", style: "cancel" },
+      {
+        text: "ยืนยัน",
+        style: "destructive",
+        onPress: async () => {
+          const updated = devices.filter((d) => d.id !== device.id);
+          await AsyncStorage.setItem("devices", JSON.stringify(updated));
+          setDevices(updated);
         },
-      ]
-    );
+      },
+    ]);
   };
 
   /* =====================
      RENDER ITEM
   ====================== */
-  const renderItem = ({ item }: { item: Device }) => (
-    <View style={styles.card}>
-      <View>
-        <Text style={styles.deviceName}>{item.name}</Text>
+  const renderItem = ({ item }: { item: Device }) => {
+    const match = deviceMatches[item.code];
 
-        {/* 🟢 กำลังเชื่อมต่อ (ย้ายมาไว้ด้านล่าง) */}
-        <View style={styles.connectRow}>
-          <View style={styles.connectDot} />
-          <Text style={styles.connectText}>กำลังเชื่อมต่อ</Text>
+    return (
+      <TouchableOpacity
+        activeOpacity={0.85}
+        onPress={() =>
+          router.push({
+            pathname: "/PetMatch",
+            params: { device: JSON.stringify(item) },
+          })
+        }
+      >
+        <View style={styles.card}>
+          <View style={{ flexDirection: "row", alignItems: "center" }}>
+            {/* PROFILE */}
+            {match?.photoURL ? (
+              <Image source={{ uri: match.photoURL }} style={styles.petAvatar} />
+            ) : (
+              <View style={styles.emptyAvatar}>
+                <MaterialIcons name="pets" size={26} color="#999" />
+              </View>
+            )}
+
+            <View style={{ marginLeft: 12 }}>
+              <Text style={styles.deviceName}>{item.name}</Text>
+              {/* STATUS */}
+              <View style={styles.connectRow}>
+                <View style={styles.connectDot} />
+                <Text style={styles.connectText}>กำลังเชื่อมต่อ</Text>
+              </View>
+
+              {match && (
+                <Text style={styles.petName}>ผูกกับ {match.petName}</Text>
+              )}
+
+            </View>
+          </View>
+
+          <TouchableOpacity onPress={() => deleteDevice(item)}>
+            <Text style={styles.remove}>ยกเลิก</Text>
+          </TouchableOpacity>
         </View>
-      </View>
-
-      <TouchableOpacity onPress={() => deleteDevice(item)}>
-        <Text style={styles.remove}>ยกเลิก</Text>
       </TouchableOpacity>
-    </View>
-  );
+    );
+  };
 
   return (
     <>
@@ -111,7 +158,7 @@ export default function Devices() {
 
 const styles = StyleSheet.create({
   safeArea: {
-    backgroundColor: "#f2bb14",
+    backgroundColor: "#f2bb14"
   },
   header: {
     backgroundColor: "#f2bb14",
@@ -120,10 +167,10 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     fontSize: 20,
-    fontWeight: "700",
+    fontWeight: "700"
   },
   listContainer: {
-    padding: 16,
+    padding: 16
   },
   emptyText: {
     textAlign: "center",
@@ -131,32 +178,27 @@ const styles = StyleSheet.create({
     marginTop: 40,
     fontSize: 16,
   },
-
-  /* =====================
-     CARD
-  ====================== */
   card: {
-    backgroundColor: "#FFFFFF",
+    backgroundColor: "#fff",
     borderRadius: 12,
-    padding: 24,
+    padding: 16,
     marginBottom: 12,
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
   },
-
   deviceName: {
-    fontSize: 18,
-    fontWeight: "700",
+    fontSize: 17,
+    fontWeight: "700"
   },
-
-  /* =====================
-     CONNECT STATUS (BOTTOM)
-  ====================== */
+  petName: {
+    fontSize: 13,
+    color: "#555"
+  },
   connectRow: {
     flexDirection: "row",
     alignItems: "center",
-    marginTop: 8,
+    marginTop: 6,
     backgroundColor: "#e7f9ef",
     paddingHorizontal: 10,
     paddingVertical: 4,
@@ -175,9 +217,21 @@ const styles = StyleSheet.create({
     color: "#22c55e",
     fontWeight: "600",
   },
-
+  petAvatar: {
+    width: 55,
+    height: 55,
+    borderRadius: 30,
+  },
+  emptyAvatar: {
+    width: 55,
+    height: 55,
+    borderRadius: 30,
+    backgroundColor: "#e5e5e5",
+    justifyContent: "center",
+    alignItems: "center",
+  },
   remove: {
     color: "red",
-    fontWeight: "600",
+    fontWeight: "600"
   },
 });

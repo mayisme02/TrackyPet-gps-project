@@ -370,9 +370,11 @@ export default function MapTracker() {
                     devices.push({
                       id: Date.now().toString(),
                       code,
-                      name: "GPS Tracker",
+                      type: "GPS_TRACKER_A7670",
+                      name: "LilyGo A7670E",
                       createdAt: new Date().toISOString(),
                     });
+
 
                     await AsyncStorage.setItem(
                       "devices",

@@ -80,10 +80,16 @@ export default function Devices() {
           const updated = devices.filter((d) => d.id !== device.id);
           await AsyncStorage.setItem("devices", JSON.stringify(updated));
           setDevices(updated);
+
+          const active = await AsyncStorage.getItem("activeDevice");
+          if (active === device.code) {
+            await AsyncStorage.removeItem("activeDevice");
+          }
         },
       },
     ]);
   };
+
 
   /* =====================
      RENDER ITEM

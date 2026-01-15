@@ -8,6 +8,7 @@ import {
   Text,
   TextInput,
   Platform,
+  Image,
 } from "react-native";
 import MapView, {
   Marker,
@@ -19,10 +20,15 @@ import MapView, {
 import { MaterialIcons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useFocusEffect } from "@react-navigation/native";
+import { auth, db } from "../../firebase/firebase";
+import { doc, onSnapshot } from "firebase/firestore";
 
 const BACKEND_URL = "http://localhost:3000";
 const MOVE_DISTANCE_THRESHOLD = 10;
 
+/* ===============================
+   TYPES
+================================ */
 type DeviceLocation = {
   latitude: number;
   longitude: number;
@@ -36,6 +42,9 @@ type TrackPoint = {
   timestamp: string;
 };
 
+/* ===============================
+   HAVERSINE
+================================ */
 function distanceInMeters(
   lat1: number,
   lon1: number,
@@ -51,8 +60,8 @@ function distanceInMeters(
   const a =
     Math.sin(dLat / 2) ** 2 +
     Math.cos(toRad(lat1)) *
-    Math.cos(toRad(lat2)) *
-    Math.sin(dLon / 2) ** 2;
+      Math.cos(toRad(lat2)) *
+      Math.sin(dLon / 2) ** 2;
 
   return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
@@ -72,7 +81,6 @@ export default function MapTracker() {
   const [deviceCode, setDeviceCode] = useState<string | null>(null);
   const [tempCode, setTempCode] = useState("");
   const [modalVisible, setModalVisible] = useState(false);
-  const [userOpenAddModal, setUserOpenAddModal] = useState(false);
   const [loading, setLoading] = useState(false);
   const [isTracking, setIsTracking] = useState(false);
 
@@ -83,11 +91,27 @@ export default function MapTracker() {
   >([]);
   const [accumulatedDistance, setAccumulatedDistance] = useState(0);
 
-  /* ---------- CALENDAR ---------- */
-  const [calendarVisible, setCalendarVisible] = useState(false);
-  const [selectedDate, setSelectedDate] = useState(
-    new Date().toISOString().split("T")[0]
-  );
+  /* รูปสัตว์ */
+  const [petPhotoURL, setPetPhotoURL] = useState<string | null>(null);
+
+  /* ===============================
+     LOAD PET IMAGE (อ่านอย่างเดียว)
+  ================================ */
+  useEffect(() => {
+    if (!auth.currentUser || !deviceCode) {
+      setPetPhotoURL(null);
+      return;
+    }
+
+    const uid = auth.currentUser.uid;
+
+    return onSnapshot(
+      doc(db, "users", uid, "deviceMatches", deviceCode),
+      (snap) => {
+        setPetPhotoURL(snap.exists() ? snap.data().photoURL ?? null : null);
+      }
+    );
+  }, [deviceCode]);
 
   /* ---------- FORMAT ---------- */
   const formatThaiDate = (iso: string) =>
@@ -181,6 +205,7 @@ export default function MapTracker() {
     }
   };
 
+  /* ---------- AUTO TRACK ---------- */
   useEffect(() => {
     if (!deviceCode || !isTracking) return;
 
@@ -191,9 +216,7 @@ export default function MapTracker() {
     return () => clearInterval(timer);
   }, [deviceCode, isTracking]);
 
-  /* ===============================
-     HANDLE DEVICE REMOVED
-  ================================ */
+  /* ---------- LOAD ACTIVE DEVICE ---------- */
   useFocusEffect(
     React.useCallback(() => {
       const loadActiveDevice = async () => {
@@ -210,8 +233,7 @@ export default function MapTracker() {
         }
 
         setDeviceCode(active);
-        setIsTracking(true);
-        fetchLocation(active, { silent: true });
+        setIsTracking(false);
       };
 
       loadActiveDevice();
@@ -242,7 +264,26 @@ export default function MapTracker() {
               fillColor="rgba(26,115,232,0.18)"
             />
 
-            <Marker coordinate={location}>
+            <Marker coordinate={location} anchor={{ x: 0.5, y: 0.5 }}>
+              {/* ✅ มีรูปสัตว์ → แสดงรูป */}
+              {petPhotoURL ? (
+                <View style={styles.petMarker}>
+                  <Image
+                    source={{ uri: petPhotoURL }}
+                    style={styles.petImage}
+                  />
+                </View>
+              ) : (
+                /* ❌ ยังไม่ผูกสัตว์ → แสดงรอยเท้าสีน้ำตาล */
+                <View style={styles.pawMarker}>
+                  <MaterialIcons
+                    name="pets"
+                    size={26}
+                    color="#7A4A00"
+                  />
+                </View>
+              )}
+
               <Callout tooltip>
                 <View style={styles.calloutWrapper}>
                   <View style={styles.calloutHandle} />
@@ -299,8 +340,11 @@ export default function MapTracker() {
         style={styles.addFab}
         onPress={() => {
           setIsTracking(false);
+          setLocation(null);
+          setRawPath([]);
+          setDisplayPath([]);
+          setAccumulatedDistance(0);
           setTempCode("");
-          setUserOpenAddModal(true);
           setModalVisible(true);
         }}
       >
@@ -324,11 +368,7 @@ export default function MapTracker() {
       </TouchableOpacity>
 
       {/* 🔐 Add Device Modal */}
-      <Modal
-        visible={modalVisible && userOpenAddModal}
-        transparent
-        animationType="fade"
-      >
+      <Modal visible={modalVisible} transparent animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={styles.modalBox}>
             <Text style={styles.modalTitle}>เพิ่มอุปกรณ์ติดตาม</Text>
@@ -344,11 +384,7 @@ export default function MapTracker() {
             <View style={styles.modalRow}>
               <TouchableOpacity
                 style={[styles.submitBtn, { backgroundColor: "#aaa" }]}
-                onPress={() => {
-                  setModalVisible(false);
-                  setUserOpenAddModal(false);
-                  setTempCode("");
-                }}
+                onPress={() => setModalVisible(false)}
               >
                 <Text style={{ color: "#fff", fontSize: 16 }}>ยกเลิก</Text>
               </TouchableOpacity>
@@ -374,8 +410,6 @@ export default function MapTracker() {
                       name: "LilyGo A7670E",
                       createdAt: new Date().toISOString(),
                     });
-
-
                     await AsyncStorage.setItem(
                       "devices",
                       JSON.stringify(devices)
@@ -383,11 +417,9 @@ export default function MapTracker() {
                   }
 
                   await AsyncStorage.setItem("activeDevice", code);
-
                   setDeviceCode(code);
                   setIsTracking(true);
                   setModalVisible(false);
-                  setUserOpenAddModal(false);
                 }}
               >
                 <Text style={{ color: "#fff", fontSize: 16 }}>ยืนยัน</Text>
@@ -406,6 +438,34 @@ export default function MapTracker() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
 
+  petMarker: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: "#F4C430",
+    justifyContent: "center",
+    alignItems: "center",
+    borderWidth: 3,
+    borderColor: "#fff",
+  },
+  petImage: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+  },
+
+  /* 🐾 marker ตอนยังไม่ผูกสัตว์ */
+  pawMarker: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: "#F5E6C8",
+    justifyContent: "center",
+    alignItems: "center",
+    borderWidth: 3,
+    borderColor: "#fff",
+  },
+
   fab: {
     position: "absolute",
     bottom: 90,
@@ -416,7 +476,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-
   addFab: {
     position: "absolute",
     bottom: 160,
@@ -429,21 +488,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
 
-  calendarFab: {
-    position: "absolute",
-    top: 50,
-    right: 20,
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: "#0b1d51",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-
-  calloutWrapper: {
-    alignItems: "center"
-  },
+  calloutWrapper: { alignItems: "center" },
   calloutHandle: {
     width: 48,
     height: 5,
@@ -451,76 +496,36 @@ const styles = StyleSheet.create({
     backgroundColor: "#e0e0e0",
     marginBottom: 8,
   },
-
   calloutCard: {
     backgroundColor: "#fff",
     borderRadius: 18,
     paddingHorizontal: 16,
     paddingVertical: 14,
     minWidth: 280,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
     elevation: 6,
   },
-
   cardHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "center",
   },
-
-  cardTitle: {
-    fontSize: 16,
-    fontWeight: "700"
-  },
-
+  cardTitle: { fontSize: 16, fontWeight: "700" },
   badge: {
     backgroundColor: "#e8f0fe",
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 999,
   },
-
-  badgeText: {
-    color: "#1a73e8",
-    fontSize: 12, fontWeight: "600"
-  },
-
-  divider: {
-    height: 1,
-    backgroundColor: "#eee",
-    marginVertical: 10,
-  },
-
-  row: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginTop: 6
-  },
-
-  icon: {
-    fontSize: 16,
-    marginRight: 8
-  },
-
-  text: {
-    fontSize: 14.5,
-    color: "#333"
-  },
-
+  badgeText: { color: "#1a73e8", fontSize: 12, fontWeight: "600" },
+  divider: { height: 1, backgroundColor: "#eee", marginVertical: 10 },
+  row: { flexDirection: "row", alignItems: "center", marginTop: 6 },
+  icon: { fontSize: 16, marginRight: 8 },
+  text: { fontSize: 14.5, color: "#333" },
   monoText: {
     fontSize: 14,
     color: "#444",
     fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
   },
-
-  boldText: {
-    fontSize: 15,
-    fontWeight: "700",
-    color: "#111"
-  },
+  boldText: { fontSize: 15, fontWeight: "700", color: "#111" },
 
   modalOverlay: {
     flex: 1,
@@ -528,33 +533,19 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-
   modalBox: {
     width: "80%",
     backgroundColor: "#fff",
     padding: 20,
     borderRadius: 12,
   },
-
-  modalRow: {
-    flexDirection: "row",
-    gap: 10
-  },
-
-  calendarBox: {
-    width: "90%",
-    backgroundColor: "#fff",
-    padding: 12,
-    borderRadius: 16,
-  },
-
+  modalRow: { flexDirection: "row", gap: 10 },
   modalTitle: {
     fontSize: 18,
     marginBottom: 12,
     textAlign: "center",
     fontWeight: "600",
   },
-
   input: {
     borderWidth: 1,
     borderColor: "#ccc",
@@ -562,7 +553,6 @@ const styles = StyleSheet.create({
     padding: 12,
     marginBottom: 12,
   },
-
   submitBtn: {
     flex: 1,
     backgroundColor: "#905b0d",

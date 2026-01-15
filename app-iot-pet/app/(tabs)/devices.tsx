@@ -15,12 +15,17 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { auth, db } from "../../firebase/firebase";
 import { collection, onSnapshot } from "firebase/firestore";
 import { MaterialIcons } from "@expo/vector-icons";
+import { DEVICE_TYPES } from "../../assets/constants/deviceData";
 
+/* =====================
+   TYPES
+====================== */
 type Device = {
   id: string;
   code: string;
   name: string;
   createdAt: string;
+  type?: string;
 };
 
 export default function Devices() {
@@ -90,12 +95,15 @@ export default function Devices() {
     ]);
   };
 
-
   /* =====================
      RENDER ITEM
   ====================== */
   const renderItem = ({ item }: { item: Device }) => {
     const match = deviceMatches[item.code];
+
+    const deviceType =
+      (item.type && DEVICE_TYPES[item.type]) ||
+      DEVICE_TYPES["GPS_TRACKER_A7670"];
 
     return (
       <TouchableOpacity
@@ -108,34 +116,47 @@ export default function Devices() {
         }
       >
         <View style={styles.card}>
-          <View style={{ flexDirection: "row", alignItems: "center" }}>
-            {/* PROFILE */}
-            {match?.photoURL ? (
-              <Image source={{ uri: match.photoURL }} style={styles.petAvatar} />
-            ) : (
-              <View style={styles.emptyAvatar}>
-                <MaterialIcons name="pets" size={26} color="#999" />
-              </View>
-            )}
-
-            <View style={{ marginLeft: 12 }}>
-              <Text style={styles.deviceName}>{item.name}</Text>
-              {/* STATUS */}
-              <View style={styles.connectRow}>
-                <View style={styles.connectDot} />
-                <Text style={styles.connectText}>กำลังเชื่อมต่อ</Text>
-              </View>
-
-              {match && (
-                <Text style={styles.petName}>ผูกกับ {match.petName}</Text>
-              )}
-
-            </View>
+          {/* LEFT : DEVICE IMAGE */}
+          <View style={styles.leftSection}>
+            <Image
+              source={{ uri: deviceType.image.uri }}
+              style={styles.deviceImage}
+            />
           </View>
 
-          <TouchableOpacity onPress={() => deleteDevice(item)}>
-            <Text style={styles.remove}>ยกเลิก</Text>
-          </TouchableOpacity>
+          {/* CENTER : INFO */}
+          <View style={styles.centerSection}>
+            <Text style={styles.deviceName}>{item.name}</Text>
+
+            {/* REPLACE STATUS WITH DISCONNECT */}
+            {match ? (
+              <TouchableOpacity onPress={() => deleteDevice(item)}>
+                <View style={styles.disconnectRow}>
+                  <MaterialIcons name="link-off" size={14} color="#DC2626" />
+                  <Text style={styles.disconnectText}>ยกเลิกการเชื่อมต่อ</Text>
+                </View>
+              </TouchableOpacity>
+            ) : (
+              <View style={styles.connectRow}>
+                <View style={styles.connectDot} />
+                <Text style={styles.connectText}>ยังไม่เชื่อมต่อ</Text>
+              </View>
+            )}
+          </View>
+
+          {/* RIGHT : PET */}
+          <View style={styles.rightSection}>
+            {match?.photoURL ? (
+              <Image
+                source={{ uri: match.photoURL }}
+                style={styles.petAvatar}
+              />
+            ) : (
+              <View style={styles.emptyAvatar}>
+                <MaterialIcons name="pets" size={22} color="#999" />
+              </View>
+            )}
+          </View>
         </View>
       </TouchableOpacity>
     );
@@ -162,9 +183,12 @@ export default function Devices() {
   );
 }
 
+/* =====================
+   STYLES
+====================== */
 const styles = StyleSheet.create({
   safeArea: {
-    backgroundColor: "#f2bb14"
+    backgroundColor: "#f2bb14",
   },
   header: {
     backgroundColor: "#f2bb14",
@@ -173,10 +197,10 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     fontSize: 20,
-    fontWeight: "700"
+    fontWeight: "700",
   },
   listContainer: {
-    padding: 16
+    padding: 16,
   },
   emptyText: {
     textAlign: "center",
@@ -184,28 +208,41 @@ const styles = StyleSheet.create({
     marginTop: 40,
     fontSize: 16,
   },
+
   card: {
     backgroundColor: "#fff",
-    borderRadius: 12,
+    borderRadius: 16,
     padding: 16,
     marginBottom: 12,
     flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "center",
+  },
+
+  leftSection: {
+    marginRight: 12,
+  },
+  centerSection: {
+    flex: 1,
+  },
+  rightSection: {
+    alignItems: "center",
+  },
+
+  deviceImage: {
+    width: 56,
+    height: 56,
+    borderRadius: 12,
   },
   deviceName: {
     fontSize: 17,
-    fontWeight: "700"
+    fontWeight: "700",
   },
-  petName: {
-    fontSize: 13,
-    color: "#555"
-  },
+
   connectRow: {
     flexDirection: "row",
     alignItems: "center",
     marginTop: 6,
-    backgroundColor: "#e7f9ef",
+    backgroundColor: "#F1F5F9",
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 12,
@@ -215,29 +252,43 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: "#22c55e",
+    backgroundColor: "#9CA3AF",
     marginRight: 6,
   },
   connectText: {
     fontSize: 13,
-    color: "#22c55e",
+    color: "#6B7280",
     fontWeight: "600",
   },
+
+  disconnectRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 6,
+    backgroundColor: "#FEE2E2",
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    alignSelf: "flex-start",
+    gap: 4,
+  },
+  disconnectText: {
+    fontSize: 13,
+    color: "#DC2626",
+    fontWeight: "600",
+  },
+
   petAvatar: {
-    width: 55,
-    height: 55,
-    borderRadius: 30,
+    width: 50,
+    height: 50,
+    borderRadius: 26,
   },
   emptyAvatar: {
-    width: 55,
-    height: 55,
-    borderRadius: 30,
+    width: 50,
+    height: 50,
+    borderRadius: 26,
     backgroundColor: "#e5e5e5",
     justifyContent: "center",
     alignItems: "center",
-  },
-  remove: {
-    color: "red",
-    fontWeight: "600"
   },
 });

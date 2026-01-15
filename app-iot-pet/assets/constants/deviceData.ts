@@ -11,7 +11,7 @@ export const DEVICE_TYPES: Record<string, DeviceType> = {
     name: "LilyGo A7670E",
     description: "GSM + GPS Module (ESP32)",
     image: {
-      uri: "https://s.alicdn.com/@sc04/kf/H826482faad2642b489c06215a46ef2f1p.jpg",
+      uri: "https://m.media-amazon.com/images/I/61GT9Lf8WsL.jpg",
     },
   },
 

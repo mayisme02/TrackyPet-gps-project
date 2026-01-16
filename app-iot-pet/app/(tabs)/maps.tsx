@@ -95,7 +95,7 @@ export default function MapTracker() {
   const [petPhotoURL, setPetPhotoURL] = useState<string | null>(null);
 
   /* ===============================
-     LOAD PET IMAGE (อ่านอย่างเดียว)
+     LOAD PET IMAGE
   ================================ */
   useEffect(() => {
     if (!auth.currentUser || !deviceCode) {
@@ -265,7 +265,6 @@ export default function MapTracker() {
             />
 
             <Marker coordinate={location} anchor={{ x: 0.5, y: 0.5 }}>
-              {/* ✅ มีรูปสัตว์ → แสดงรูป */}
               {petPhotoURL ? (
                 <View style={styles.petMarker}>
                   <Image
@@ -274,13 +273,8 @@ export default function MapTracker() {
                   />
                 </View>
               ) : (
-                /* ❌ ยังไม่ผูกสัตว์ → แสดงรอยเท้าสีน้ำตาล */
                 <View style={styles.pawMarker}>
-                  <MaterialIcons
-                    name="pets"
-                    size={26}
-                    color="#7A4A00"
-                  />
+                  <MaterialIcons name="pets" size={26} color="#7A4A00" />
                 </View>
               )}
 
@@ -388,30 +382,45 @@ export default function MapTracker() {
                 style={styles.submitBtn}
                 disabled={loading}
                 onPress={async () => {
-                  if (!tempCode.trim()) return;
-
                   const code = tempCode.trim().toUpperCase();
-                  const ok = await fetchLocation(code);
-                  if (!ok) return;
+                  if (!code) return;
+
+                  const active = await AsyncStorage.getItem("activeDevice");
+                  if (active === code) {
+                    Alert.alert(
+                      "อุปกรณ์ถูกใช้งานแล้ว"
+                    );
+                    return;
+                  }
 
                   const stored = await AsyncStorage.getItem("devices");
                   const devices = stored ? JSON.parse(stored) : [];
 
-                  if (!devices.some((d: any) => d.code === code)) {
-                    devices.push({
-                      id: Date.now().toString(),
-                      code,
-                      type: "GPS_TRACKER_A7670",
-                      name: "LilyGo A7670E",
-                      createdAt: new Date().toISOString(),
-                    });
-                    await AsyncStorage.setItem(
-                      "devices",
-                      JSON.stringify(devices)
+                  if (devices.some((d: any) => d.code === code)) {
+                    Alert.alert(
+                      "อุปกรณ์ถูกเพิ่มแล้ว",
+                      "อุปกรณ์นี้ถูกใช้งานไปแล้ว"
                     );
+                    return;
                   }
 
+                  const ok = await fetchLocation(code);
+                  if (!ok) return;
+
+                  devices.push({
+                    id: Date.now().toString(),
+                    code,
+                    type: "GPS_TRACKER_A7670",
+                    name: "LilyGo A7670E",
+                    createdAt: new Date().toISOString(),
+                  });
+
+                  await AsyncStorage.setItem(
+                    "devices",
+                    JSON.stringify(devices)
+                  );
                   await AsyncStorage.setItem("activeDevice", code);
+
                   setDeviceCode(code);
                   setIsTracking(true);
                   setModalVisible(false);
@@ -449,7 +458,6 @@ const styles = StyleSheet.create({
     borderRadius: 23,
   },
 
-  /* 🐾 marker ตอนยังไม่ผูกสัตว์ */
   pawMarker: {
     width: 56,
     height: 56,

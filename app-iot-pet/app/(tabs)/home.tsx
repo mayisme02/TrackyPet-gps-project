@@ -421,7 +421,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginRight: 12,
   },
-  markerPetImg: { width: 42, height: 42, borderRadius: 20 },
+  markerPetImg: { width: 45, height: 45, borderRadius: 20 },
   miniPin: {
     position: "absolute",
     bottom: -4,

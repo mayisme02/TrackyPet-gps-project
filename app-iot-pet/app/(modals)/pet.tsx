@@ -23,6 +23,8 @@ import {
 } from "firebase/firestore";
 import { SwipeListView } from "react-native-swipe-list-view";
 
+/* ================= TYPES ================= */
+
 interface Pet {
   id: string;
   name: string;
@@ -34,9 +36,17 @@ interface Pet {
   photoURL?: string;
 }
 
+type DeviceMatch = {
+  deviceCode: string;
+  deviceName: string;
+  deviceType: string;
+  petId: string;
+};
+
 export default function Pets() {
   const router = useRouter();
   const [pets, setPets] = useState<Pet[]>([]);
+  const [deviceMap, setDeviceMap] = useState<Record<string, DeviceMatch>>({});
 
   /* ================= LOAD PETS ================= */
   useEffect(() => {
@@ -57,6 +67,24 @@ export default function Pets() {
     });
 
     return () => unsubscribe();
+  }, []);
+
+  /* ================= LOAD DEVICE MATCH ================= */
+  useEffect(() => {
+    if (!auth.currentUser) return;
+    const uid = auth.currentUser.uid;
+
+    return onSnapshot(
+      collection(db, "users", uid, "deviceMatches"),
+      (snap) => {
+        const map: Record<string, DeviceMatch> = {};
+        snap.docs.forEach((d) => {
+          const m = d.data() as DeviceMatch;
+          map[m.petId] = m;
+        });
+        setDeviceMap(map);
+      }
+    );
   }, []);
 
   /* ================= DELETE ================= */
@@ -84,6 +112,7 @@ export default function Pets() {
     try {
       if (!auth.currentUser) return;
       const uid = auth.currentUser.uid;
+
       await deleteDoc(doc(db, "users", uid, "pets", petId));
 
       if (rowMap[rowKey]) {
@@ -95,30 +124,53 @@ export default function Pets() {
   };
 
   /* ================= RENDER ITEM ================= */
-  const renderPetItem = ({ item }: { item: Pet }) => (
-    <Pressable
-      style={styles.petCard}
-      onPress={() =>
-        router.push({
-          pathname: "/(modals)/PetDetail",
-          params: { pet: JSON.stringify(item) },
-        })
-      }
-    >
-      {item.photoURL ? (
-        <Image source={{ uri: item.photoURL }} style={styles.petImage} />
-      ) : (
-        <MaterialIcons name="pets" size={40} color="gray" />
-      )}
+  const renderPetItem = ({ item }: { item: Pet }) => {
+    const device = deviceMap[item.id];
 
-      <View style={{ flex: 1, marginLeft: 12 }}>
-        <Text style={styles.petName}>{item.name}</Text>
-        <Text style={styles.petDetail}>
-          {item.breed} • {item.age} ปี • {item.gender}
-        </Text>
-      </View>
-    </Pressable>
-  );
+    return (
+      <Pressable
+        style={styles.petCard}
+        onPress={() =>
+          router.push({
+            pathname: "/(modals)/PetDetail",
+            params: { pet: JSON.stringify(item) },
+          })
+        }
+      >
+        {/* Image */}
+        <View>
+          {item.photoURL ? (
+            <Image source={{ uri: item.photoURL }} style={styles.petImage} />
+          ) : (
+            <View style={styles.placeholder}>
+              <MaterialIcons name="pets" size={32} color="#aaa" />
+            </View>
+          )}
+
+          {/* CONNECTED BADGE */}
+          {device && (
+            <View style={styles.connectedBadge}>
+              <MaterialIcons name="gps-fixed" size={14} color="#2ECC71" />
+            </View>
+          )}
+        </View>
+
+        {/* Info */}
+        <View style={styles.info}>
+          <Text style={styles.petName}>{item.name}</Text>
+          <Text style={styles.petDetail}>
+            {item.breed} • {item.age} ปี • {item.gender}
+          </Text>
+
+          {device && (
+            <View style={styles.deviceTag}>
+              <Text style={styles.deviceTagText}>{device.deviceName}</Text>
+            </View>
+          )}
+        </View>
+      </Pressable>
+    );
+  };
 
   const renderHiddenItem = (
     { item }: { item: Pet },
@@ -141,23 +193,18 @@ export default function Pets() {
       {/* ================= HEADER ================= */}
       <SafeAreaView style={styles.safeArea}>
         <View style={styles.header}>
-          {/* Back */}
           <TouchableOpacity
             style={styles.headerLeft}
             onPress={() => router.back()}
-            hitSlop={10}
           >
             <Ionicons name="chevron-back" size={28} color="#000" />
           </TouchableOpacity>
 
-          {/* Title */}
           <Text style={styles.headerTitle}>สัตว์เลี้ยงของคุณ</Text>
 
-          {/* Add */}
           <TouchableOpacity
             style={styles.headerRight}
             onPress={() => router.push("/(modals)/AddPet")}
-            hitSlop={10}
           >
             <MaterialIcons name="add" size={28} color="#000" />
           </TouchableOpacity>
@@ -180,7 +227,10 @@ export default function Pets() {
           keyExtractor={(item) => item.id}
           rightOpenValue={-75}
           disableRightSwipe
-          contentContainerStyle={{ padding: 16 }}
+          contentContainerStyle={{
+            paddingHorizontal: 16,
+            paddingVertical: 16,
+          }}
         />
       )}
     </>
@@ -188,13 +238,14 @@ export default function Pets() {
 }
 
 /* ================= STYLES ================= */
+
 const styles = StyleSheet.create({
   safeArea: {
     backgroundColor: "#f2bb14",
   },
 
   header: {
-    height: 56, // iOS standard
+    height: 56,
     backgroundColor: "#f2bb14",
     justifyContent: "center",
     alignItems: "center",
@@ -202,25 +253,18 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 20,
     fontWeight: "700",
-    color: "#000000",
   },
   headerLeft: {
     position: "absolute",
     left: 16,
-    height: 56,
-    justifyContent: "center",
-    alignItems: "center",
   },
   headerRight: {
     position: "absolute",
     right: 16,
-    height: 56,
-    justifyContent: "center",
-    alignItems: "center",
   },
+
   emptyContainer: {
     marginTop: 50,
-    justifyContent: "center",
     alignItems: "center",
   },
   emptyText: {
@@ -237,18 +281,60 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     marginBottom: 12,
   },
+
   petImage: {
     width: 60,
     height: 60,
     borderRadius: 30,
   },
+  placeholder: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: "#eee",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  connectedBadge: {
+    position: "absolute",
+    right: -2,
+    bottom: -2,
+    backgroundColor: "#E7F9EF",
+    borderRadius: 999,
+    padding: 4,
+    borderWidth: 1,
+    borderColor: "#C7EED3",
+  },
+
+  info: {
+    flex: 1,
+    marginLeft: 12,
+  },
+
   petName: {
     fontSize: 16,
-    fontWeight: "bold",
+    fontWeight: "700",
   },
   petDetail: {
     fontSize: 14,
     color: "#666",
+  },
+
+  deviceTag: {
+    marginTop: 4,
+    alignSelf: "flex-start",
+    backgroundColor: "#E7F9EF",
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderWidth: 1,
+    borderColor: "#C7EED3",
+    borderRadius: 999,
+  },
+  deviceTagText: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "#17BD54",
   },
 
   hiddenContainer: {
@@ -258,15 +344,15 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 12,
     borderRadius: 12,
-    overflow: "hidden",
+    paddingRight: 16,
   },
+
   deleteButton: {
-    justifyContent: "center",
-    alignItems: "center",
     width: 75,
     height: "100%",
     backgroundColor: "#C21F04",
-    borderTopRightRadius: 12,
-    borderBottomRightRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 12,
   },
 });

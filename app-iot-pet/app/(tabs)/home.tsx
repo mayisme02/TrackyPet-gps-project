@@ -21,7 +21,7 @@ import {
   orderBy,
 } from "firebase/firestore";
 
-// ---- interface ของ Pet ----
+/* ================= TYPES ================= */
 interface Pet {
   id: string;
   name: string;
@@ -38,7 +38,7 @@ export default function HomeScreen() {
   const [loading, setLoading] = useState(true);
   const [pets, setPets] = useState<Pet[]>([]);
 
-  // โหลดข้อมูลโปรไฟล์จาก Firestore
+  /* ================= LOAD PROFILE ================= */
   useEffect(() => {
     const user = auth.currentUser;
     if (!user) return;
@@ -52,27 +52,28 @@ export default function HomeScreen() {
     return () => unsub();
   }, []);
 
-  // โหลดข้อมูลสัตว์เลี้ยงจาก Firestore
+  /* ================= LOAD PETS ================= */
   useEffect(() => {
     if (!auth.currentUser) return;
     const uid = auth.currentUser.uid;
+
     const q = query(
       collection(db, "users", uid, "pets"),
       orderBy("createdAt", "asc")
     );
 
-    const unsubscribe = onSnapshot(q, (querySnapshot) => {
-      const petsData = querySnapshot.docs.map((doc) => ({
+    const unsub = onSnapshot(q, (snapshot) => {
+      const data = snapshot.docs.map((doc) => ({
         id: doc.id,
         ...(doc.data() as Omit<Pet, "id">),
       }));
-      setPets(petsData);
+      setPets(data);
     });
 
-    return () => unsubscribe();
+    return () => unsub();
   }, []);
 
-  // ถ้าโหลดอยู่
+  /* ================= STATE ================= */
   if (loading) {
     return (
       <SafeAreaView style={styles.loadingContainer}>
@@ -81,15 +82,11 @@ export default function HomeScreen() {
     );
   }
 
-  // ข้อมูลผู้ใช้
   const name = profile?.username ?? "-";
   const avatar = profile?.avatarUrl ?? "";
 
-  // ไปหน้าแจ้งเตือน
-  const handleNoti = () => router.push("/(modals)/notification");
-
-  // ไปหน้าบัญชีผู้ใช้
   const handleProfile = () => router.push("/(tabs)/profile");
+  const handleViewAllPets = () => router.push("/(modals)/pet");
 
   return (
     <ParallaxScrollView
@@ -97,31 +94,44 @@ export default function HomeScreen() {
       headerImage={
         <SafeAreaView style={styles.headerContainer}>
           <View style={styles.headerContent}>
-            {/* รูปโปรไฟล์ */}
             {avatar ? (
               <TouchableOpacity onPress={handleProfile}>
                 <Image source={{ uri: avatar }} style={styles.profileImage} />
               </TouchableOpacity>
             ) : (
               <View style={styles.imagePlaceholder}>
-                <Ionicons name="person-circle-outline" size={50} color="#fff" />
+                <Ionicons
+                  name="person-circle-outline"
+                  size={50}
+                  color="#fff"
+                />
               </View>
             )}
-
             <Text style={styles.headerText}>สวัสดี! {name}</Text>
           </View>
-
-          {/* ปุ่มแจ้งเตือน */}
-          <TouchableOpacity style={styles.notiButton} onPress={handleNoti}>
-            <Ionicons name="notifications" size={26} color="#fff" />
-          </TouchableOpacity>
         </SafeAreaView>
       }
     >
-      {/* --- Container แสดงสัตว์เลี้ยง --- */}
-      <View style={styles.mainTitleContainer}>
+      {/* ================= PET SECTION HEADER ================= */}
+      <View style={styles.sectionHeader}>
         <Text style={styles.mainTitle}>สัตว์เลี้ยงของคุณ</Text>
+
+        {pets.length > 0 && (
+          <TouchableOpacity
+            onPress={handleViewAllPets}
+            style={styles.arrowButton}
+            activeOpacity={0.7}
+          >
+            <Ionicons
+              name="chevron-forward"
+              size={22}
+              color="#ffffff"
+            />
+          </TouchableOpacity>
+        )}
       </View>
+
+      {/* ================= PET LIST ================= */}
       <View style={styles.petContainer}>
         <View style={styles.petBorder}>
           <ScrollView
@@ -142,7 +152,7 @@ export default function HomeScreen() {
                   activeOpacity={0.8}
                   style={[
                     styles.petBox,
-                    index === 0 && { marginLeft: 10 }, // การ์ดแรกขยับเข้ามานิดนึง
+                    index === 0 && { marginLeft: 10 },
                   ]}
                 >
                   {pet.photoURL ? (
@@ -152,7 +162,11 @@ export default function HomeScreen() {
                     />
                   ) : (
                     <View style={styles.petPlaceholder}>
-                      <MaterialIcons name="pets" size={40} color="#fff" />
+                      <MaterialIcons
+                        name="pets"
+                        size={40}
+                        color="#fff"
+                      />
                     </View>
                   )}
                   <Text style={styles.petName}>{pet.name}</Text>
@@ -168,12 +182,14 @@ export default function HomeScreen() {
   );
 }
 
+/* ================= STYLES ================= */
 const styles = StyleSheet.create({
   loadingContainer: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
   },
+
   headerContainer: {
     height: 175,
     justifyContent: "center",
@@ -190,12 +206,6 @@ const styles = StyleSheet.create({
     marginLeft: 12,
     color: "black",
   },
-  notiButton: {
-    position: "absolute",
-    right: 16,
-    top: "50%",
-    marginTop: -12,
-  },
   profileImage: {
     width: 40,
     height: 40,
@@ -210,7 +220,29 @@ const styles = StyleSheet.create({
     alignItems: "center",
     backgroundColor: "rgba(255,255,255,0.2)",
   },
-  // --- Container สัตว์เลี้ยง ---
+
+  /* ===== Section Header ===== */
+  sectionHeader: {
+    marginTop: 20,
+    marginHorizontal: 20,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  mainTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#333",
+  },
+  arrowButton: {
+  width: 32,
+  height: 32,
+  borderRadius: 16,
+  justifyContent: "center",
+  alignItems: "center",
+  backgroundColor: "#f2bb14", // เหลืองอ่อน
+},
+  /* ===== Pet List ===== */
   petContainer: {
     backgroundColor: "#fff",
     borderRadius: 24,
@@ -231,11 +263,11 @@ const styles = StyleSheet.create({
   petImgList: {
     flexDirection: "row",
     alignItems: "center",
-    paddingRight: 5, // ให้การ์ดสุดท้ายโผล่มาทางขวา
+    paddingRight: 5,
   },
   petBox: {
     alignItems: "center",
-    marginRight: 16, // ระยะห่างระหว่างการ์ด
+    marginRight: 16,
   },
   petImage: {
     width: 90,
@@ -261,15 +293,4 @@ const styles = StyleSheet.create({
     color: "#aaa",
     fontSize: 16,
   },
-  mainTitleContainer: {
-    marginTop: 20,
-    alignItems: "flex-start",
-    marginHorizontal: 20,
-  },
-  mainTitle: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: "#333",
-  },
-
 });

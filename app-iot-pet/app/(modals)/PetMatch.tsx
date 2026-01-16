@@ -280,11 +280,8 @@ export default function PetMatch() {
     );
 }
 
-/* =====================
-   STYLES
-====================== */
 const styles = StyleSheet.create({
-    safeArea: { backgroundColor: "#F4C430" },
+    safeArea: { backgroundColor: "#f2bb14" },
 
     header: {
         padding: 16,

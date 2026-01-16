@@ -11,9 +11,6 @@ export default function notification() {
     return (
         <SafeAreaView style={styles.container}>
             <View style={styles.header}>
-                        <TouchableOpacity style={styles.backBtn} onPress={handleBack}>
-                          <Ionicons name="chevron-back" size={24} color="#fff" />
-                        </TouchableOpacity>
                 <Text style={styles.headerText}>การแจ้งเตือน</Text>
             </View>
         </SafeAreaView>

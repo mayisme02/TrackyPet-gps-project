@@ -33,10 +33,10 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="pet"
+        name="devices"
         options={{
-          title: 'สัตว์เลี้ยง',
-          tabBarIcon: ({ color }) => <FontAwesome6 name="paw" size={24} color={color} />,
+          title: 'อุปกรณ์',
+          tabBarIcon: ({ color }) => <MaterialIcons name="devices" size={24} color={color} />,
         }}
       />
       <Tabs.Screen
@@ -48,10 +48,10 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="devices"
+        name="notification"
         options={{
-          title: 'อุปกรณ์',
-          tabBarIcon: ({ color }) => <MaterialIcons name="devices" size={24} color={color} />,
+          title: 'แจ้งเตือน',
+          tabBarIcon: ({ color }) => <FontAwesome6 name="bell" size={24} color={color} />,
         }}
       />
       <Tabs.Screen

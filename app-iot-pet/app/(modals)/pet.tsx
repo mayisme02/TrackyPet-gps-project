@@ -11,7 +11,7 @@ import {
 } from "react-native";
 import { useRouter } from "expo-router";
 import FontAwesome6 from "@expo/vector-icons/FontAwesome6";
-import { MaterialIcons } from "@expo/vector-icons";
+import { MaterialIcons, Ionicons } from "@expo/vector-icons";
 import { auth, db } from "../../firebase/firebase";
 import {
   onSnapshot,
@@ -38,27 +38,28 @@ export default function Pets() {
   const router = useRouter();
   const [pets, setPets] = useState<Pet[]>([]);
 
-  // โหลดข้อมูลแบบ realtime
+  /* ================= LOAD PETS ================= */
   useEffect(() => {
     if (!auth.currentUser) return;
     const uid = auth.currentUser.uid;
+
     const q = query(
       collection(db, "users", uid, "pets"),
       orderBy("createdAt", "asc")
     );
 
-    const unsubscribe = onSnapshot(q, (querySnapshot) => {
-      const petsData = querySnapshot.docs.map((doc) => ({
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const data = snapshot.docs.map((doc) => ({
         id: doc.id,
         ...(doc.data() as Omit<Pet, "id">),
       }));
-      setPets(petsData);
+      setPets(data);
     });
 
     return () => unsubscribe();
   }, []);
 
-  // ฟังก์ชันยืนยันก่อนลบ
+  /* ================= DELETE ================= */
   const confirmDelete = (
     rowMap: { [key: string]: any },
     rowKey: string,
@@ -75,7 +76,6 @@ export default function Pets() {
     ]);
   };
 
-  // ฟังก์ชันลบสัตว์เลี้ยง
   const handleDelete = async (
     rowMap: { [key: string]: any },
     rowKey: string,
@@ -85,9 +85,7 @@ export default function Pets() {
       if (!auth.currentUser) return;
       const uid = auth.currentUser.uid;
       await deleteDoc(doc(db, "users", uid, "pets", petId));
-      console.log("Pet deleted:", petId);
 
-      // ปิด row ที่เปิดอยู่
       if (rowMap[rowKey]) {
         rowMap[rowKey].closeRow();
       }
@@ -96,11 +94,10 @@ export default function Pets() {
     }
   };
 
-  // การ์ดสัตว์เลี้ยง
+  /* ================= RENDER ITEM ================= */
   const renderPetItem = ({ item }: { item: Pet }) => (
     <Pressable
       style={styles.petCard}
-      android_ripple={{ color: "transparent" }}
       onPress={() =>
         router.push({
           pathname: "/(modals)/PetDetail",
@@ -113,6 +110,7 @@ export default function Pets() {
       ) : (
         <MaterialIcons name="pets" size={40} color="gray" />
       )}
+
       <View style={{ flex: 1, marginLeft: 12 }}>
         <Text style={styles.petName}>{item.name}</Text>
         <Text style={styles.petDetail}>
@@ -122,7 +120,6 @@ export default function Pets() {
     </Pressable>
   );
 
-  // การ์ดซ่อน (swipe to delete)
   const renderHiddenItem = (
     { item }: { item: Pet },
     rowMap: { [key: string]: any }
@@ -130,7 +127,9 @@ export default function Pets() {
     <View style={styles.hiddenContainer}>
       <TouchableOpacity
         style={styles.deleteButton}
-        onPress={() => confirmDelete(rowMap, item.id, item.id, item.name)}
+        onPress={() =>
+          confirmDelete(rowMap, item.id, item.id, item.name)
+        }
       >
         <FontAwesome6 name="trash" size={18} color="#fff" />
       </TouchableOpacity>
@@ -139,28 +138,36 @@ export default function Pets() {
 
   return (
     <>
-      {/* Header เหมือนในภาพ */}
+      {/* ================= HEADER ================= */}
       <SafeAreaView style={styles.safeArea}>
         <View style={styles.header}>
-          <Text style={styles.headerTitle}>สัตว์เลี้ยง</Text>
+          {/* Back */}
           <TouchableOpacity
-            style={styles.addButtonHeader}
+            style={styles.headerLeft}
+            onPress={() => router.back()}
+            hitSlop={10}
+          >
+            <Ionicons name="chevron-back" size={28} color="#000" />
+          </TouchableOpacity>
+
+          {/* Title */}
+          <Text style={styles.headerTitle}>สัตว์เลี้ยงของคุณ</Text>
+
+          {/* Add */}
+          <TouchableOpacity
+            style={styles.headerRight}
             onPress={() => router.push("/(modals)/AddPet")}
+            hitSlop={10}
           >
             <MaterialIcons name="add" size={28} color="#000" />
           </TouchableOpacity>
         </View>
       </SafeAreaView>
 
-      {/* เนื้อหา */}
-      <View style={styles.AddPetHeader}>
-        <Text style={styles.AddPetHeaderText}>สัตว์เลี้ยงของคุณ</Text>
-        <Text style={styles.noOfItem}>{pets.length}</Text>
-      </View>
-
+      {/* ================= CONTENT ================= */}
       {pets.length === 0 ? (
         <View style={styles.emptyContainer}>
-          <FontAwesome6 name="dog" size={100} color={"lightgray"} />
+          <FontAwesome6 name="dog" size={100} color="lightgray" />
           <Text style={styles.emptyText}>
             เพิ่มความน่ารักด้วยสัตว์เลี้ยงตัวแรกของคุณ
           </Text>
@@ -172,7 +179,7 @@ export default function Pets() {
           renderHiddenItem={renderHiddenItem}
           keyExtractor={(item) => item.id}
           rightOpenValue={-75}
-          disableRightSwipe={true}
+          disableRightSwipe
           contentContainerStyle={{ padding: 16 }}
         />
       )}
@@ -180,40 +187,36 @@ export default function Pets() {
   );
 }
 
+/* ================= STYLES ================= */
 const styles = StyleSheet.create({
   safeArea: {
     backgroundColor: "#f2bb14",
   },
+
   header: {
+    height: 56, // iOS standard
     backgroundColor: "#f2bb14",
-    paddingVertical: 16,
-    alignItems: "center",
     justifyContent: "center",
+    alignItems: "center",
   },
   headerTitle: {
     fontSize: 20,
     fontWeight: "700",
+    color: "#000000",
   },
-  addButtonHeader: {
+  headerLeft: {
+    position: "absolute",
+    left: 16,
+    height: 56,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  headerRight: {
     position: "absolute",
     right: 16,
-    top: "110%",
-    transform: [{ translateY: -14 }],
-  },
-  AddPetHeader: {
-    marginTop: 20,
-    paddingHorizontal: 20,
+    height: 56,
+    justifyContent: "center",
     alignItems: "center",
-    flexDirection: "row",
-    justifyContent: "space-between",
-  },
-  AddPetHeaderText: {
-    fontSize: 18,
-    fontWeight: "bold",
-  },
-  noOfItem: {
-    fontSize: 18,
-    fontWeight: "bold",
   },
   emptyContainer: {
     marginTop: 50,
@@ -225,6 +228,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: "#888",
   },
+
   petCard: {
     flexDirection: "row",
     alignItems: "center",
@@ -246,6 +250,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "#666",
   },
+
   hiddenContainer: {
     flex: 1,
     flexDirection: "row",

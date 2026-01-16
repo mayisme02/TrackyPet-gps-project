@@ -339,11 +339,6 @@ export default function MapTracker() {
       <TouchableOpacity
         style={styles.addFab}
         onPress={() => {
-          setIsTracking(false);
-          setLocation(null);
-          setRawPath([]);
-          setDisplayPath([]);
-          setAccumulatedDistance(0);
           setTempCode("");
           setModalVisible(true);
         }}

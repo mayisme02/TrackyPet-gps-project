@@ -24,6 +24,8 @@ import {
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useFocusEffect } from "@react-navigation/native";
 import { DEVICE_TYPES } from "../../assets/constants/deviceData";
+
+/* ================= TYPES ================= */
 interface Pet {
   id: string;
   name: string;
@@ -35,11 +37,32 @@ interface ActiveDevice {
   type: string;
 }
 
+interface LastLocation {
+  latitude: number;
+  longitude: number;
+  timestamp: string;
+}
+
+interface MatchedPet {
+  petId: string;
+  petName: string;
+  photoURL?: string | null;
+}
+
 export default function HomeScreen() {
   const [profile, setProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+
   const [pets, setPets] = useState<Pet[]>([]);
   const [device, setDevice] = useState<ActiveDevice | null>(null);
+  const [matchedPet, setMatchedPet] = useState<MatchedPet | null>(null);
+
+  const [lastLocation, setLastLocation] = useState<LastLocation | null>(null);
+  const [locationLoading, setLocationLoading] = useState(false);
+
+  // ✅ แยกอำเภอ / จังหวัด (เพิ่มใหม่)
+  const [districtName, setDistrictName] = useState<string | null>(null);
+  const [provinceName, setProvinceName] = useState<string | null>(null);
 
   /* ================= LOAD PROFILE ================= */
   useEffect(() => {
@@ -81,6 +104,99 @@ export default function HomeScreen() {
     }, [])
   );
 
+  /* ================= LOAD MATCHED PET ================= */
+  useEffect(() => {
+    if (!auth.currentUser || !device?.code) {
+      setMatchedPet(null);
+      return;
+    }
+
+    const uid = auth.currentUser.uid;
+
+    return onSnapshot(
+      doc(db, "users", uid, "deviceMatches", device.code),
+      (snap) => {
+        if (!snap.exists()) {
+          setMatchedPet(null);
+          return;
+        }
+
+        const data = snap.data();
+        setMatchedPet({
+          petId: data.petId,
+          petName: data.petName,
+          photoURL: data.photoURL ?? null,
+        });
+      }
+    );
+  }, [device]);
+
+  /* ================= LOAD LAST LOCATION ================= */
+  const fetchLastLocation = async (code: string) => {
+    try {
+      setLocationLoading(true);
+      const res = await fetch("http://localhost:3000/api/device/location", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ deviceCode: code }),
+      });
+      if (!res.ok) throw new Error();
+
+      const data = await res.json();
+      setLastLocation({
+        latitude: data.latitude,
+        longitude: data.longitude,
+        timestamp: data.timestamp ?? new Date().toISOString(),
+      });
+    } catch {
+      setLastLocation(null);
+    } finally {
+      setLocationLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (device?.code) fetchLastLocation(device.code);
+    else setLastLocation(null);
+  }, [device]);
+
+  /* ================= REVERSE GEOCODE ================= */
+  const reverseGeocode = async (lat: number, lon: number) => {
+    try {
+      const res = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`
+      );
+      const data = await res.json();
+      const addr = data.address ?? {};
+
+      const district =
+        addr.district ||
+        addr.county ||
+        addr.city ||
+        null;
+
+      const province =
+        addr.province ||
+        addr.state ||
+        null;
+
+      setDistrictName(district);
+      setProvinceName(province);
+    } catch {
+      setDistrictName(null);
+      setProvinceName(null);
+    }
+  };
+
+  useEffect(() => {
+    if (lastLocation) {
+      reverseGeocode(lastLocation.latitude, lastLocation.longitude);
+    } else {
+      setDistrictName(null);
+      setProvinceName(null);
+    }
+  }, [lastLocation]);
+
   if (loading) {
     return (
       <SafeAreaView style={styles.loading}>
@@ -109,7 +225,7 @@ export default function HomeScreen() {
         </SafeAreaView>
       }
     >
-      {/* ===== PET SECTION (PRESSABLE HEADER) ===== */}
+      {/* ===== PET SECTION ===== */}
       <Pressable
         style={styles.sectionHeader}
         onPress={() => router.push("/(modals)/pet")}
@@ -144,15 +260,13 @@ export default function HomeScreen() {
         <Text style={styles.sectionTitle}>อุปกรณ์</Text>
       </View>
 
-      <View style={[styles.card, { marginBottom: 24 }]}>
+      <View style={styles.card}>
         {device && deviceInfo ? (
           <View style={styles.deviceRow}>
             <Image source={deviceInfo.image} style={styles.deviceImg} />
-
             <View style={{ flex: 1, marginLeft: 12 }}>
               <Text style={styles.deviceName}>{deviceInfo.name}</Text>
             </View>
-
             <View style={styles.status}>
               <View style={styles.dot} />
               <Text style={styles.statusText}>เชื่อมต่ออยู่</Text>
@@ -164,6 +278,58 @@ export default function HomeScreen() {
           </View>
         )}
       </View>
+
+      {/* ===== LAST LOCATION ===== */}
+      <View style={styles.sectionHeader}>
+        <Text style={styles.sectionTitle}>ตำแหน่งล่าสุด</Text>
+      </View>
+
+      <View style={[styles.card, { marginBottom: 32 }]}>
+        {locationLoading ? (
+          <ActivityIndicator color="#f2bb14" />
+        ) : lastLocation && matchedPet ? (
+          <View style={styles.locationRow}>
+            <View style={styles.petMarkerPreview}>
+              {matchedPet.photoURL ? (
+                <Image
+                  source={{ uri: matchedPet.photoURL }}
+                  style={styles.markerPetImg}
+                />
+              ) : (
+                <MaterialIcons name="pets" size={20} color="#7A4A00" />
+              )}
+              <View style={styles.miniPin}>
+                <Ionicons name="location-sharp" size={14} color="#fff" />
+              </View>
+            </View>
+
+            <View style={{ flex: 1 }}>
+              <Text style={styles.locationText}>
+                {districtName ?? "ไม่ทราบอำเภอ"}
+              </Text>
+              <Text style={styles.locationSubText}>
+                {provinceName ?? "ไม่ทราบจังหวัด"}
+              </Text>
+              <Text style={styles.locationTime}>
+                อัปเดตล่าสุด:{" "}
+                {new Date(lastLocation.timestamp).toLocaleTimeString("th-TH")}
+              </Text>
+            </View>
+
+            <TouchableOpacity
+              style={styles.mapBtn}
+              onPress={() => router.push("/(tabs)/maps")}
+            >
+              <MaterialIcons name="map" size={20} color="#fff" />
+              <Text style={styles.mapBtnText}>ดูแผนที่</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <View style={styles.emptyCenter}>
+            <Text style={styles.emptyText}>ยังไม่มีข้อมูลตำแหน่งล่าสุด</Text>
+          </View>
+        )}
+      </View>
     </ParallaxScrollView>
   );
 }
@@ -172,11 +338,7 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   loading: { flex: 1, justifyContent: "center", alignItems: "center" },
 
-  header: {
-    height: 175,
-    justifyContent: "center",
-    paddingHorizontal: 20,
-  },
+  header: { height: 175, justifyContent: "center", paddingHorizontal: 20 },
   headerRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -216,11 +378,11 @@ const styles = StyleSheet.create({
   },
 
   petBox: { alignItems: "center", marginRight: 16 },
-  petImg: { width: 90, height: 90, borderRadius: 20 },
+  petImg: { width: 80, height: 80, borderRadius: 16 },
   petPlaceholder: {
-    width: 90,
-    height: 90,
-    borderRadius: 20,
+    width: 80,
+    height: 80,
+    borderRadius: 14,
     backgroundColor: "#D3D3D3",
     justifyContent: "center",
     alignItems: "center",
@@ -234,7 +396,6 @@ const styles = StyleSheet.create({
   },
   deviceImg: { width: 48, height: 48, borderRadius: 12 },
   deviceName: { fontSize: 16, fontWeight: "600" },
-  deviceCode: { fontSize: 13, color: "#888", marginTop: 2 },
 
   status: { flexDirection: "row", alignItems: "center" },
   dot: {
@@ -245,6 +406,53 @@ const styles = StyleSheet.create({
     marginRight: 6,
   },
   statusText: { fontSize: 14, fontWeight: "500" },
+
+  locationRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 16,
+  },
+  petMarkerPreview: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: "#F5E6C8",
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 12,
+  },
+  markerPetImg: { width: 42, height: 42, borderRadius: 20 },
+  miniPin: {
+    position: "absolute",
+    bottom: -4,
+    right: -4,
+    backgroundColor: "#f2bb14",
+    borderRadius: 8,
+    padding: 2,
+  },
+
+  locationText: { fontSize: 15, fontWeight: "600" },
+  locationSubText: {
+    fontSize: 14,
+    color: "#666",
+    marginTop: 2,
+  },
+  locationTime: { marginTop: 4, fontSize: 13, color: "#888" },
+
+  mapBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#f2bb14",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+  },
+  mapBtnText: {
+    marginLeft: 6,
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: "600",
+  },
 
   emptyCenter: { alignItems: "center", paddingVertical: 28 },
   emptyText: { color: "#aaa", fontSize: 15 },

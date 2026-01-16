@@ -183,9 +183,6 @@ export default function Devices() {
   );
 }
 
-/* =====================
-   STYLES
-====================== */
 const styles = StyleSheet.create({
   safeArea: {
     backgroundColor: "#f2bb14",

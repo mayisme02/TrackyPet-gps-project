@@ -91,7 +91,7 @@ export default function AddPet() {
       });
 
       Alert.alert("สำเร็จ", "เพิ่มสัตว์เลี้ยงเรียบร้อยแล้ว");
-      router.push("/(tabs)/pet");
+      router.push("/(modals)/pet");
     } catch (error) {
       console.error("Error adding pet:", error);
       Alert.alert("ผิดพลาด", "ไม่สามารถเพิ่มข้อมูลได้");

@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { Text, StyleSheet, SafeAreaView, View, TouchableOpacity, Image, Alert, Pressable} from "react-native";
 import { useRouter } from "expo-router";
 import FontAwesome6 from "@expo/vector-icons/FontAwesome6";
-import { MaterialIcons } from "@expo/vector-icons";
+import { MaterialIcons, Ionicons } from "@expo/vector-icons";
 import { auth, db } from "../../firebase/firebase";
 import {
   onSnapshot,
@@ -13,6 +13,8 @@ import {
   doc,
 } from "firebase/firestore";
 import { SwipeListView } from "react-native-swipe-list-view";
+
+/* ================= TYPES ================= */
 
 interface Pet {
   id: string;
@@ -25,31 +27,58 @@ interface Pet {
   photoURL?: string;
 }
 
+type DeviceMatch = {
+  deviceCode: string;
+  deviceName: string;
+  deviceType: string;
+  petId: string;
+};
+
 export default function Pets() {
   const router = useRouter();
   const [pets, setPets] = useState<Pet[]>([]);
+  const [deviceMap, setDeviceMap] = useState<Record<string, DeviceMatch>>({});
 
-  // โหลดข้อมูลแบบ realtime
+  /* ================= LOAD PETS ================= */
   useEffect(() => {
     if (!auth.currentUser) return;
     const uid = auth.currentUser.uid;
+
     const q = query(
       collection(db, "users", uid, "pets"),
       orderBy("createdAt", "asc")
     );
 
-    const unsubscribe = onSnapshot(q, (querySnapshot) => {
-      const petsData = querySnapshot.docs.map((doc) => ({
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const data = snapshot.docs.map((doc) => ({
         id: doc.id,
         ...(doc.data() as Omit<Pet, "id">),
       }));
-      setPets(petsData);
+      setPets(data);
     });
 
     return () => unsubscribe();
   }, []);
 
-  // ฟังก์ชันยืนยันก่อนลบ
+  /* ================= LOAD DEVICE MATCH ================= */
+  useEffect(() => {
+    if (!auth.currentUser) return;
+    const uid = auth.currentUser.uid;
+
+    return onSnapshot(
+      collection(db, "users", uid, "deviceMatches"),
+      (snap) => {
+        const map: Record<string, DeviceMatch> = {};
+        snap.docs.forEach((d) => {
+          const m = d.data() as DeviceMatch;
+          map[m.petId] = m;
+        });
+        setDeviceMap(map);
+      }
+    );
+  }, []);
+
+  /* ================= DELETE ================= */
   const confirmDelete = (
     rowMap: { [key: string]: any },
     rowKey: string,
@@ -66,7 +95,6 @@ export default function Pets() {
     ]);
   };
 
-  // ฟังก์ชันลบสัตว์เลี้ยง
   const handleDelete = async (
     rowMap: { [key: string]: any },
     rowKey: string,
@@ -75,10 +103,9 @@ export default function Pets() {
     try {
       if (!auth.currentUser) return;
       const uid = auth.currentUser.uid;
-      await deleteDoc(doc(db, "users", uid, "pets", petId));
-      console.log("Pet deleted:", petId);
 
-      // ปิด row ที่เปิดอยู่
+      await deleteDoc(doc(db, "users", uid, "pets", petId));
+
       if (rowMap[rowKey]) {
         rowMap[rowKey].closeRow();
       }
@@ -87,33 +114,55 @@ export default function Pets() {
     }
   };
 
-  // การ์ดสัตว์เลี้ยง
-  const renderPetItem = ({ item }: { item: Pet }) => (
-    <Pressable
-      style={styles.petCard}
-      android_ripple={{ color: "transparent" }}
-      onPress={() =>
-        router.push({
-          pathname: "/(modals)/PetDetail",
-          params: { pet: JSON.stringify(item) },
-        })
-      }
-    >
-      {item.photoURL ? (
-        <Image source={{ uri: item.photoURL }} style={styles.petImage} />
-      ) : (
-        <MaterialIcons name="pets" size={40} color="gray" />
-      )}
-      <View style={{ flex: 1, marginLeft: 12 }}>
-        <Text style={styles.petName}>{item.name}</Text>
-        <Text style={styles.petDetail}>
-          {item.breed} • {item.age} ปี • {item.gender}
-        </Text>
-      </View>
-    </Pressable>
-  );
+  /* ================= RENDER ITEM ================= */
+  const renderPetItem = ({ item }: { item: Pet }) => {
+    const device = deviceMap[item.id];
 
-  // การ์ดซ่อน (swipe to delete)
+    return (
+      <Pressable
+        style={styles.petCard}
+        onPress={() =>
+          router.push({
+            pathname: "/(modals)/PetDetail",
+            params: { pet: JSON.stringify(item) },
+          })
+        }
+      >
+        {/* Image */}
+        <View>
+          {item.photoURL ? (
+            <Image source={{ uri: item.photoURL }} style={styles.petImage} />
+          ) : (
+            <View style={styles.placeholder}>
+              <MaterialIcons name="pets" size={32} color="#aaa" />
+            </View>
+          )}
+
+          {/* CONNECTED BADGE */}
+          {device && (
+            <View style={styles.connectedBadge}>
+              <MaterialIcons name="gps-fixed" size={14} color="#2ECC71" />
+            </View>
+          )}
+        </View>
+
+        {/* Info */}
+        <View style={styles.info}>
+          <Text style={styles.petName}>{item.name}</Text>
+          <Text style={styles.petDetail}>
+            {item.breed} • {item.age} ปี • {item.gender}
+          </Text>
+
+          {device && (
+            <View style={styles.deviceTag}>
+              <Text style={styles.deviceTagText}>{device.deviceName}</Text>
+            </View>
+          )}
+        </View>
+      </Pressable>
+    );
+  };
+
   const renderHiddenItem = (
     { item }: { item: Pet },
     rowMap: { [key: string]: any }
@@ -121,7 +170,9 @@ export default function Pets() {
     <View style={styles.hiddenContainer}>
       <TouchableOpacity
         style={styles.deleteButton}
-        onPress={() => confirmDelete(rowMap, item.id, item.id, item.name)}
+        onPress={() =>
+          confirmDelete(rowMap, item.id, item.id, item.name)
+        }
       >
         <FontAwesome6 name="trash" size={18} color="#fff" />
       </TouchableOpacity>
@@ -146,15 +197,10 @@ export default function Pets() {
         </View>
       </SafeAreaView>
 
-      {/* เนื้อหา */}
-      <View style={styles.AddPetHeader}>
-        <Text style={styles.AddPetHeaderText}>สัตว์เลี้ยงของคุณ</Text>
-        <Text style={styles.noOfItem}>{pets.length}</Text>
-      </View>
-
+      {/* ================= CONTENT ================= */}
       {pets.length === 0 ? (
         <View style={styles.emptyContainer}>
-          <FontAwesome6 name="dog" size={100} color={"lightgray"} />
+          <FontAwesome6 name="dog" size={100} color="lightgray" />
           <Text style={styles.emptyText}>
             เพิ่มความน่ารักด้วยสัตว์เลี้ยงตัวแรกของคุณ
           </Text>
@@ -166,13 +212,18 @@ export default function Pets() {
           renderHiddenItem={renderHiddenItem}
           keyExtractor={(item) => item.id}
           rightOpenValue={-75}
-          disableRightSwipe={true}
-          contentContainerStyle={{ padding: 16 }}
+          disableRightSwipe
+          contentContainerStyle={{
+            paddingHorizontal: 16,
+            paddingVertical: 16,
+          }}
         />
       )}
     </>
   );
 }
+
+/* ================= STYLES ================= */
 
 const styles = StyleSheet.create({
 
@@ -217,9 +268,9 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: "bold",
   },
+
   emptyContainer: {
     marginTop: 50,
-    justifyContent: "center",
     alignItems: "center",
   },
   emptyText: {
@@ -227,6 +278,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: "#888",
   },
+
   petCard: {
     flexDirection: "row",
     alignItems: "center",
@@ -235,19 +287,62 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     marginBottom: 12,
   },
+
   petImage: {
     width: 60,
     height: 60,
     borderRadius: 30,
   },
+  placeholder: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: "#eee",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  connectedBadge: {
+    position: "absolute",
+    right: -2,
+    bottom: -2,
+    backgroundColor: "#E7F9EF",
+    borderRadius: 999,
+    padding: 4,
+    borderWidth: 1,
+    borderColor: "#C7EED3",
+  },
+
+  info: {
+    flex: 1,
+    marginLeft: 12,
+  },
+
   petName: {
     fontSize: 16,
-    fontWeight: "bold",
+    fontWeight: "700",
   },
   petDetail: {
     fontSize: 14,
     color: "#666",
   },
+
+  deviceTag: {
+    marginTop: 4,
+    alignSelf: "flex-start",
+    backgroundColor: "#E7F9EF",
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderWidth: 1,
+    borderColor: "#C7EED3",
+    borderRadius: 999,
+  },
+  deviceTagText: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "#17BD54",
+  },
+
   hiddenContainer: {
     flex: 1,
     flexDirection: "row",
@@ -255,15 +350,15 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 12,
     borderRadius: 12,
-    overflow: "hidden",
+    paddingRight: 16,
   },
+
   deleteButton: {
-    justifyContent: "center",
-    alignItems: "center",
     width: 75,
     height: "100%",
     backgroundColor: "#C21F04",
-    borderTopRightRadius: 12,
-    borderBottomRightRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 12,
   },
 });

@@ -1,5 +1,14 @@
 import React, { useEffect, useState } from "react";
-import { SafeAreaView, ScrollView, View, Text, Image, TouchableOpacity, StyleSheet, Alert} from "react-native";
+import {
+    SafeAreaView,
+    ScrollView,
+    View,
+    Text,
+    Image,
+    TouchableOpacity,
+    StyleSheet,
+    Alert,
+} from "react-native";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import AntDesign from "@expo/vector-icons/AntDesign";
@@ -7,11 +16,11 @@ import { auth, db } from "../../firebase/firebase";
 import {
     onSnapshot,
     collection,
-    query,
-    orderBy,
     deleteDoc,
     doc,
 } from "firebase/firestore";
+
+/* ================= TYPES ================= */
 
 type Pet = {
     id: string;
@@ -22,16 +31,45 @@ type Pet = {
     height: string;
     gender: string;
     photoURL?: string;
-    dob?: string;
 };
+
+type DeviceMatch = {
+    deviceCode: string;
+    deviceName: string;
+    deviceType: string;
+    petId: string;
+};
+
+/* ================= SCREEN ================= */
 
 export default function PetDetail() {
     const { pet } = useLocalSearchParams<{ pet: string }>();
     const petData: Pet | null = pet ? JSON.parse(pet) : null;
     const router = useRouter();
-    const [pets, setPets] = useState<Pet[]>([]);
+
+    const [deviceMatch, setDeviceMatch] = useState<DeviceMatch | null>(null);
 
     if (!petData) return null;
+
+    /* ================= LOAD DEVICE MATCH ================= */
+
+    useEffect(() => {
+        if (!auth.currentUser) return;
+        const uid = auth.currentUser.uid;
+
+        return onSnapshot(
+            collection(db, "users", uid, "deviceMatches"),
+            (snap) => {
+                const match = snap.docs
+                    .map((d) => d.data() as DeviceMatch)
+                    .find((m) => m.petId === petData.id);
+
+                setDeviceMatch(match ?? null);
+            }
+        );
+    }, [petData.id]);
+
+    /* ================= ACTIONS ================= */
 
     const handleEdit = () => {
         router.push({
@@ -40,330 +78,232 @@ export default function PetDetail() {
         });
     };
 
-    // โหลดข้อมูลแบบ realtime
-    useEffect(() => {
-        if (!auth.currentUser) return;
-        const uid = auth.currentUser.uid;
-        const q = query(
-            collection(db, "users", uid, "pets"),
-            orderBy("createdAt", "asc")
-        );
-
-        const unsubscribe = onSnapshot(q, (querySnapshot) => {
-            const petsData = querySnapshot.docs.map((doc) => ({
-                id: doc.id,
-                ...(doc.data() as Omit<Pet, "id">),
-            }));
-            setPets(petsData);
-        });
-
-        return () => unsubscribe();
-    }, []);
-
-    // ฟังก์ชันลบสัตว์เลี้ยง
-    const handleDelete = async (petId: string, petName: string) => {
-        try {
-            if (!auth.currentUser) return;
-            const uid = auth.currentUser.uid;
-            await deleteDoc(doc(db, "users", uid, "pets", petId));
-            console.log("Pet deleted:", petId);
-
-            // หลังจากลบแล้วแสดง Popup และกลับไปหน้า pet.tsx
-            Alert.alert(
-                "ลบสำเร็จ",
-                `ข้อมูลสัตว์เลี้ยง "${petName}" ถูกลบเรียบร้อยแล้ว`,
-                [
-                    {
-                        text: "ตกลง",
-                        onPress: () => router.push("/pet"), // กลับไปหน้า pet.tsx
-                    },
-                ]
-            );
-        } catch (error) {
-            console.error("Error deleting pet:", error);
-            Alert.alert("เกิดข้อผิดพลาด", "ไม่สามารถลบสัตว์เลี้ยงได้ โปรดลองอีกครั้ง");
-        }
-    };
-
-    // ฟังก์ชันยืนยันก่อนลบ
-    const confirmDelete = (petId: string, petName: string) => {
+    const confirmDelete = () => {
         Alert.alert(
             "ยืนยันการลบ",
-            `คุณแน่ใจหรือไม่ว่าต้องการลบ ${petName}?`,
+            `ต้องการลบ ${petData.name} หรือไม่`,
             [
                 { text: "ยกเลิก", style: "cancel" },
                 {
                     text: "ลบ",
                     style: "destructive",
-                    onPress: () => handleDelete(petId, petName),
+                    onPress: async () => {
+                        if (!auth.currentUser) return;
+                        const uid = auth.currentUser.uid;
+                        await deleteDoc(doc(db, "users", uid, "pets", petData.id));
+                        router.push("/pet");
+                    },
                 },
             ]
         );
     };
 
-    const handleViewHistory = () => {
-        console.log("View history of:", petData.id);
-    };
+    /* ================= UI ================= */
 
     return (
         <>
-            <SafeAreaView style={styles.container}>
-                {/* Header */}
+            {/* Header */}
+            <SafeAreaView style={styles.headerSafe}>
                 <View style={styles.header}>
-                    <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-                        <Ionicons name="arrow-back" size={26} color="black" />
+                    <TouchableOpacity onPress={() => router.back()}>
+                        <Ionicons name="chevron-back" size={28} color="#000" />
                     </TouchableOpacity>
-                    <Text style={styles.topHeaderTitle}>ข้อมูลสัตว์เลี้ยง</Text>
-                    <View style={{ width: 26 }} />
+                    <Text style={styles.headerTitle}>ข้อมูลสัตว์เลี้ยง</Text>
+                    <View style={{ width: 28 }} />
                 </View>
             </SafeAreaView>
 
-            <ScrollView contentContainerStyle={{ paddingBottom: 60 }}>
-                {/* รูปสัตว์เลี้ยง */}
+            <ScrollView contentContainerStyle={styles.scroll}>
+                {/* Image */}
                 {petData.photoURL ? (
                     <Image source={{ uri: petData.photoURL }} style={styles.image} />
                 ) : (
                     <View style={styles.placeholderImage}>
-                        <Text style={{ color: "#666" }}>{petData.name}</Text>
+                        <Ionicons name="paw" size={48} color="#ccc" />
                     </View>
                 )}
 
-                {/* การ์ดข้อมูลสัตว์ */}
-                <View style={styles.infoCard}>
-                    <View style={styles.petRow}>
-                        <Text style={styles.petName}>{petData.name} - </Text>
-                        <Text style={styles.petBreed}>{petData.breed}</Text>
-                    </View>
+                {/* Info */}
+                <View style={styles.card}>
+                    <Text style={styles.petName}>{petData.name}</Text>
+                    <Text style={styles.petBreed}>{petData.breed}</Text>
 
                     <View style={styles.infoGrid}>
-                        <View style={styles.infoBox}>
-                            <Text style={styles.infoLabel}>อายุ</Text>
-                            <Text style={styles.infoValue}>{petData.age ? petData.age + " ปี" : "-"}</Text>
-                        </View>
-
-                        <View style={styles.infoBox}>
-                            <Text style={styles.infoLabel}>เพศ</Text>
-                            <Text style={styles.infoValue}>{petData.gender || "-"}</Text>
-                        </View>
-
-                        <View style={styles.infoBox}>
-                            <Text style={styles.infoLabel}>น้ำหนัก</Text>
-                            <Text style={styles.infoValue}>{petData.weight || "-"}</Text>
-                        </View>
-
-                        <View style={styles.infoBox}>
-                            <Text style={styles.infoLabel}>ส่วนสูง</Text>
-                            <Text style={styles.infoValue}>{petData.height || "-"}</Text>
-                        </View>
+                        <InfoBox label="อายุ" value={`${petData.age} ปี`} />
+                        <InfoBox label="เพศ" value={petData.gender} />
+                        <InfoBox label="น้ำหนัก" value={petData.weight} />
+                        <InfoBox label="ส่วนสูง" value={petData.height} />
                     </View>
                 </View>
 
-                {/* ส่วนเมนูสีขาว */}
-                <View style={styles.graySection}>
-                    <TouchableOpacity style={styles.grayRow} onPress={handleViewHistory}>
-                        <View style={styles.grayIcon}>
-                            <MaterialIcons name="device-unknown" size={20} color="#333" />
-                        </View>
-                        <View style={styles.connectSection}>
-                            <Text style={styles.connectText}>การเชื่อมต่ออุปกรณ์</Text>
-                            <Text style={styles.connectStatus}>เชื่อมต่อแล้ว</Text>
-                        </View>
-                        <Ionicons name="chevron-forward" size={20} color="#999" style={{ marginLeft: "auto" }} />
-                    </TouchableOpacity>
+                {/* Menu */}
+                <View style={styles.section}>
+                    <MenuRow
+                        icon={<MaterialIcons name="gps-fixed" size={20} color="#905b0dff" />}
+                        title="การเชื่อมต่ออุปกรณ์"
+                        subtitle={deviceMatch?.deviceName} 
+                        onPress={() => {
+                            if (!deviceMatch) {
+                                Alert.alert(
+                                    "ยังไม่มีอุปกรณ์",
+                                    "สัตว์เลี้ยงนี้ยังไม่ได้เชื่อมต่ออุปกรณ์"
+                                );
+                                return;
+                            }
 
-                    <TouchableOpacity style={styles.grayRow} onPress={handleViewHistory}>
-                        <View style={styles.grayIcon}>
-                            <MaterialIcons name="history" size={20} color="#333" />
-                        </View>
-                        <Text style={styles.grayText}>ดูประวัติเส้นทางย้อนหลัง</Text>
-                        <Ionicons name="chevron-forward" size={20} color="#999" style={{ marginLeft: "auto" }} />
-                    </TouchableOpacity>
+                            router.push({
+                                pathname: "/(modals)/PetMatch",
+                                params: {
+                                    device: JSON.stringify({
+                                        code: deviceMatch.deviceCode,
+                                        name: deviceMatch.deviceName,
+                                        type: deviceMatch.deviceType,
+                                    }),
+                                },
+                            });
+                        }}
 
-                    <TouchableOpacity style={styles.grayRow} onPress={handleEdit}>
-                        <View style={styles.grayIcon}>
-                            <AntDesign name="edit" size={20} color="#333" />
-                        </View>
-                        <Text style={styles.grayText}>แก้ไขข้อมูล</Text>
-                        <Ionicons name="chevron-forward" size={20} color="#999" style={{ marginLeft: "auto" }} />
-                    </TouchableOpacity>
+                    />
+
+                    <MenuRow
+                        icon={<MaterialIcons name="history" size={20} color="#905b0dff" />}
+                        title="ประวัติเส้นทางย้อนหลัง"
+                        onPress={() => { }}
+                    />
+
+                    <MenuRow
+                        icon={<AntDesign name="edit" size={20} color="#905b0dff" />}
+                        title="แก้ไขข้อมูล"
+                        onPress={handleEdit}
+                    />
                 </View>
 
-                {/* ปุ่มลบ */}
-                <TouchableOpacity
-                    style={styles.deleteButton}
-                    onPress={() => confirmDelete(petData.id, petData.name)}
-                >
-                    <AntDesign name="delete" size={20} color="#fff" />
-                    <Text style={styles.deleteText}>ลบข้อมูลสัตว์เลี้ยง</Text>
+                <TouchableOpacity style={styles.deleteButton} onPress={confirmDelete}>
+                    <Text style={styles.deleteText}>ลบข้อมูล</Text>
                 </TouchableOpacity>
             </ScrollView>
         </>
     );
 }
 
+function InfoBox({ label, value }: { label: string; value: string }) {
+    return (
+        <View style={styles.infoBox}>
+            <Text style={styles.infoLabel}>{label}</Text>
+            <Text style={styles.infoValue}>{value}</Text>
+        </View>
+    );
+}
+
+function MenuRow({
+    icon,
+    title,
+    subtitle,
+    onPress,
+}: {
+    icon: React.ReactNode;
+    title: string;
+    subtitle?: string;
+    onPress: () => void;
+}) {
+    return (
+        <TouchableOpacity style={styles.menuRow} onPress={onPress}>
+            <View style={styles.menuIcon}>{icon}</View>
+            <View style={{ flex: 1 }}>
+                <Text style={styles.menuTitle}>{title}</Text>
+                {subtitle ? <Text style={styles.menuSubtitle}>{subtitle}</Text> : null}
+            </View>
+            <Ionicons name="chevron-forward" size={20} color="#C7C7CC" />
+        </TouchableOpacity>
+    );
+}
+
 const styles = StyleSheet.create({
-    container: {
-        backgroundColor: "#f2bb14",
-        height: 120,
-        justifyContent: "center",
-        paddingHorizontal: 16,
-    },
+    headerSafe: { backgroundColor: "#f2bb14" },
     header: {
+        height: 56,
         flexDirection: "row",
         alignItems: "center",
         justifyContent: "space-between",
         paddingHorizontal: 16,
-        marginTop: 10,
     },
-    backButton: {
-        position: "absolute",
-        left: 10,
-        padding: 8,
-        top: "60%",
-    },
-    topHeaderTitle: {
-        fontSize: 20,
-        fontWeight: "700",
-        color: "black",
-        textAlign: "center",
-        flex: 1,
-        top: 27,
-    },
-    image: {
-        width: "100%",
-        height: 250,
-    },
+    headerTitle: { fontSize: 20, fontWeight: "600" },
+    scroll: { paddingBottom: 40, backgroundColor: "#F2F2F7" },
+    image: { width: "100%", height: 280 },
     placeholderImage: {
         width: "100%",
-        height: 250,
+        height: 280,
         alignItems: "center",
         justifyContent: "center",
-        backgroundColor: "#F3F3F3",
+        backgroundColor: "#EFEFF4",
     },
-    petRow: {
-        flexDirection: "row",
-        alignItems: "center",
-        paddingTop: 10,
-        marginTop: 5,
-        marginLeft: 5,
+    card: {
+        backgroundColor: "#fff",
+        marginHorizontal: 16,
+        marginTop: -24,
+        borderRadius: 20,
+        padding: 20,
     },
-    petName: {
-        fontSize: 24,
-        fontWeight: "700",
-        color: "#333",
-        textAlign: "left",
-        paddingHorizontal: 16,
-    },
-    petBreed: {
-        fontSize: 16,
-        color: "#666",
-        marginLeft: -10,
-        marginTop: 5,
-    },
-    infoGrid: {
-        flexDirection: "row",
-        justifyContent: "space-between",
-        alignItems: "center",
-        paddingHorizontal: 12,
-        paddingBottom: 16,
-        marginTop: 15,
-    },
+    petName: { fontSize: 24, fontWeight: "700" },
+    petBreed: { fontSize: 15, color: "#8E8E93", marginTop: 4 },
+    infoGrid: { flexDirection: "row", marginTop: 10, gap: 10 },
     infoBox: {
         flex: 1,
-        backgroundColor: "#f2bb14",
+        backgroundColor: "#F2F2F7",
         borderRadius: 14,
-        paddingVertical: 12,
-        marginHorizontal: 4,
+        paddingVertical: 14,
         alignItems: "center",
-        justifyContent: "center",
-        shadowColor: "#000",
-        shadowOpacity: 0.08,
-        shadowRadius: 4,
-        elevation: 2,
     },
-    infoLabel: {
-        fontSize: 13,
-        fontWeight: "600",
-        color: "#333",
-        marginBottom: 4,
-    },
-    infoValue: {
-        fontSize: 15,
-        fontWeight: "700",
-        color: "#333",
-    },
-    infoCard: {
-        marginTop: -20,
-        backgroundColor: "#fff",
-        borderRadius: 16,
-        marginHorizontal: 12,
-        shadowColor: "#000",
-        shadowOpacity: 0.1,
-        shadowRadius: 6,
-        elevation: 3,
-        overflow: "hidden",
-        paddingVertical: 10,
-    },
-    graySection: {
+    infoLabel: { fontSize: 12, color: "#8E8E93" },
+    infoValue: { fontSize: 15, fontWeight: "600" },
+    section: {
         marginTop: 10,
         marginHorizontal: 16,
-        borderRadius: 16,
-    },
-    grayRow: {
-        flexDirection: "row",
-        alignItems: "center",
         backgroundColor: "#fff",
-        paddingHorizontal: 14,
-        paddingVertical: 12,
-        borderRadius: 14,
-        marginBottom: 10,
-        shadowColor: "#000",
-        shadowOpacity: 0.05,
-        shadowRadius: 4,
-        elevation: 1,
+        borderRadius: 20,
+        overflow: "hidden",
     },
-    grayIcon: {
-        width: 36,
-        height: 36,
-        borderRadius: 10,
-        backgroundColor: "#EAEAEAFF",
-        alignItems: "center",
-        justifyContent: "center",
-    },
-    grayText: {
-        marginLeft: 12,
-        fontSize: 15,
-        fontWeight: "600",
-        color: "#4E342E",
-    },
-    connectSection: {
-        flexDirection: "column",
-        marginLeft: 12,
-    },
-    connectText: {
-        fontSize: 15,
-        fontWeight: "600",
-        color: "#4E342E",
-    },
-    connectStatus: {
-        fontSize: 12,
-        color: "#2E7D32",
-        marginTop: 2,
-    },
-    deleteButton: {
+    menuRow: {
         flexDirection: "row",
         alignItems: "center",
+        paddingHorizontal: 16,
+        paddingVertical: 14,
+        borderBottomWidth: 0.5,
+        borderBottomColor: "#E5E5EA",
+    },
+    menuIcon: {
+        width: 38,
+        height: 38,
+        borderRadius: 10,
+        alignItems: "center",
         justifyContent: "center",
-        backgroundColor: "#D32929FF",
-        marginHorizontal: 16,
+        marginRight: 12,
+        backgroundColor: "#FFEBD0", 
+    },
+
+    menuTitle: { fontSize: 16 },
+    menuSubtitle: {
+    alignSelf: "flex-start",     
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#22C55E",
+    backgroundColor: "#E7F9EF",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,  
+    marginTop: 4,
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: "#C7EED3",
+},
+
+    deleteButton: {
         marginTop: 20,
+        marginHorizontal: 16,
         paddingVertical: 14,
         borderRadius: 14,
+        backgroundColor: "#DF2016",
+        alignItems: "center",
     },
-    deleteText: {
-        color: "#fff",
-        fontSize: 15,
-        fontWeight: "600",
-        marginLeft: 8,
-    },
+    deleteText: { color: "#fff", fontSize: 16, fontWeight: "600" },
 });

@@ -1,5 +1,14 @@
 import React, { useEffect, useState } from "react";
-import { Text, StyleSheet, SafeAreaView, View, TouchableOpacity, Image, Alert, Pressable} from "react-native";
+import {
+  Text,
+  StyleSheet,
+  SafeAreaView,
+  View,
+  TouchableOpacity,
+  Image,
+  Alert,
+  Pressable,
+} from "react-native";
 import { useRouter } from "expo-router";
 import FontAwesome6 from "@expo/vector-icons/FontAwesome6";
 import { MaterialIcons, Ionicons } from "@expo/vector-icons";
@@ -178,18 +187,23 @@ export default function Pets() {
 
   return (
     <>
+      {/* ================= HEADER ================= */}
       <SafeAreaView style={styles.safeArea}>
-        <View style={styles.headerContainer}>
-          <View style={styles.headerContent}>
-            <Text style={styles.headerText}>สัตว์เลี้ยง</Text>
-          </View>
+        <View style={styles.header}>
+          <TouchableOpacity
+            style={styles.headerLeft}
+            onPress={() => router.back()}
+          >
+            <Ionicons name="chevron-back" size={28} color="#000" />
+          </TouchableOpacity>
+
+          <Text style={styles.headerTitle}>สัตว์เลี้ยงของคุณ</Text>
 
           <TouchableOpacity
-            style={styles.notiButton}
+            style={styles.headerRight}
             onPress={() => router.push("/(modals)/AddPet")}
-            activeOpacity={0.8}
           >
-            <MaterialIcons name="add" size={26} color="#fff" />
+            <MaterialIcons name="add" size={28} color="#000" />
           </TouchableOpacity>
         </View>
       </SafeAreaView>
@@ -223,47 +237,27 @@ export default function Pets() {
 /* ================= STYLES ================= */
 
 const styles = StyleSheet.create({
-
   safeArea: {
     backgroundColor: "#f2bb14",
   },
-  headerContainer: {
-    height: 120,
-    justifyContent: "center",
+
+  header: {
+    height: 56,
     backgroundColor: "#f2bb14",
-  },
-  headerContent: {
-    flexDirection: "row",
+    justifyContent: "center",
     alignItems: "center",
-    justifyContent: "center"
   },
-  headerText: {
+  headerTitle: {
     fontSize: 20,
-    fontWeight: "bold",       
-    color: "black",
-    top: 27,
- 
+    fontWeight: "700",
   },
-  notiButton: {
+  headerLeft: {
+    position: "absolute",
+    left: 16,
+  },
+  headerRight: {
     position: "absolute",
     right: 16,
-    top: "50%",
-    marginTop: 10,   
-  },
-  AddPetHeader: {
-    marginTop: 20,
-    paddingHorizontal: 20,
-    alignItems: "center",
-    flexDirection: "row",
-    justifyContent: "space-between",
-  },
-  AddPetHeaderText: {
-    fontSize: 18,
-    fontWeight: "bold",
-  },
-  noOfItem: {
-    fontSize: 18,
-    fontWeight: "bold",
   },
 
   emptyContainer: {

@@ -14,8 +14,6 @@ import {
 } from "firebase/firestore";
 import { SwipeListView } from "react-native-swipe-list-view";
 
-/* ================= TYPES ================= */
-
 interface Pet {
   id: string;
   name: string;
@@ -138,12 +136,8 @@ export default function Pets() {
             </View>
           )}
 
-          {/* CONNECTED BADGE */}
-          {device && (
-            <View style={styles.connectedBadge}>
-              <MaterialIcons name="gps-fixed" size={14} color="#2ECC71" />
-            </View>
-          )}
+          {/* ONLINE DOT (NO ICON) */}
+          {device && <View style={styles.connectedBadge} />}
         </View>
 
         {/* Info */}
@@ -153,9 +147,12 @@ export default function Pets() {
             {item.breed} • {item.age} ปี • {item.gender}
           </Text>
 
+          {/* DEVICE STATUS PILL */}
           {device && (
             <View style={styles.deviceTag}>
-              <Text style={styles.deviceTagText}>{device.deviceName}</Text>
+              <Text style={styles.deviceTagText}>
+                {device.deviceName}
+              </Text>
             </View>
           )}
         </View>
@@ -282,9 +279,9 @@ const styles = StyleSheet.create({
   petCard: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#f9f9f9",
+    backgroundColor: "#FEFEFE",
     padding: 12,
-    borderRadius: 12,
+    borderRadius: 14,
     marginBottom: 12,
   },
 
@@ -297,20 +294,22 @@ const styles = StyleSheet.create({
     width: 60,
     height: 60,
     borderRadius: 30,
-    backgroundColor: "#eee",
+    backgroundColor: "#E5E7EB",
     alignItems: "center",
     justifyContent: "center",
   },
 
+  /* ===== ONLINE DOT ===== */
   connectedBadge: {
     position: "absolute",
-    right: -2,
-    bottom: -2,
-    backgroundColor: "#E7F9EF",
-    borderRadius: 999,
-    padding: 4,
-    borderWidth: 1,
-    borderColor: "#C7EED3",
+    right: 2,
+    bottom: 2,
+    width: 15,
+    height: 15,
+    borderRadius: 8,
+    backgroundColor: "#009B4B",
+    borderWidth: 2,
+    borderColor: "#FFFFFF",
   },
 
   info: {
@@ -324,23 +323,20 @@ const styles = StyleSheet.create({
   },
   petDetail: {
     fontSize: 14,
-    color: "#666",
+    color: "#6B7280",
   },
-
   deviceTag: {
-    marginTop: 4,
+    marginTop: 6,
     alignSelf: "flex-start",
-    backgroundColor: "#E7F9EF",
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderWidth: 1,
-    borderColor: "#C7EED3",
+    backgroundColor: "#009B4B",
+    paddingHorizontal: 12,
+    paddingVertical: 4,
     borderRadius: 999,
   },
   deviceTagText: {
     fontSize: 11,
     fontWeight: "600",
-    color: "#17BD54",
+    color: "#FFFFFF",
   },
 
   hiddenContainer: {
@@ -349,7 +345,7 @@ const styles = StyleSheet.create({
     justifyContent: "flex-end",
     alignItems: "center",
     marginBottom: 12,
-    borderRadius: 12,
+    borderRadius: 14,
     paddingRight: 16,
   },
 
@@ -359,6 +355,6 @@ const styles = StyleSheet.create({
     backgroundColor: "#C21F04",
     alignItems: "center",
     justifyContent: "center",
-    borderRadius: 12,
+    borderRadius: 14,
   },
 });

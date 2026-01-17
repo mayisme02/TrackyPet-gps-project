@@ -8,18 +8,17 @@ import {
   SafeAreaView,
   Alert,
   Image,
+  Modal,
+  TextInput,
 } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import { useRouter } from "expo-router";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { auth, db } from "../../firebase/firebase";
-import { collection, onSnapshot } from "firebase/firestore";
+import { collection, onSnapshot, deleteDoc, doc } from "firebase/firestore";
 import { MaterialIcons } from "@expo/vector-icons";
 import { DEVICE_TYPES } from "../../assets/constants/deviceData";
 
-/* =====================
-   TYPES
-====================== */
 type Device = {
   id: string;
   code: string;
@@ -34,9 +33,12 @@ export default function Devices() {
   const [devices, setDevices] = useState<Device[]>([]);
   const [deviceMatches, setDeviceMatches] = useState<any>({});
 
-  /* =====================
-     LOAD DEVICES (LOCAL)
-  ====================== */
+  /* ===== ADD DEVICE ===== */
+  const [modalVisible, setModalVisible] = useState(false);
+  const [tempCode, setTempCode] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  /* ================= LOAD DEVICES (LOCAL) ================= */
   const loadDevices = async () => {
     try {
       const stored = await AsyncStorage.getItem("devices");
@@ -46,22 +48,21 @@ export default function Devices() {
     }
   };
 
-  /* =====================
-     LOAD MATCHES (FIREBASE)
-  ====================== */
+  /* ================= LOAD MATCHES (FIRESTORE) ================= */
   const subscribeMatches = () => {
     if (!auth.currentUser) return;
-
     const uid = auth.currentUser.uid;
-    const ref = collection(db, "users", uid, "deviceMatches");
 
-    return onSnapshot(ref, (snap) => {
-      const map: any = {};
-      snap.docs.forEach((doc) => {
-        map[doc.id] = doc.data();
-      });
-      setDeviceMatches(map);
-    });
+    return onSnapshot(
+      collection(db, "users", uid, "deviceMatches"),
+      (snap) => {
+        const map: any = {};
+        snap.docs.forEach((doc) => {
+          map[doc.id] = doc.data();
+        });
+        setDeviceMatches(map);
+      }
+    );
   };
 
   useFocusEffect(
@@ -72,9 +73,7 @@ export default function Devices() {
     }, [])
   );
 
-  /* =====================
-     DELETE DEVICE (LOCAL)
-  ====================== */
+  /* ================= DELETE DEVICE ================= */
   const deleteDevice = (device: Device) => {
     Alert.alert("ยกเลิกการเชื่อมต่ออุปกรณ์", "", [
       { text: "ยกเลิก", style: "cancel" },
@@ -90,17 +89,72 @@ export default function Devices() {
           if (active === device.code) {
             await AsyncStorage.removeItem("activeDevice");
           }
+
+          if (auth.currentUser) {
+            const uid = auth.currentUser.uid;
+            await deleteDoc(
+              doc(db, "users", uid, "deviceMatches", device.code)
+            );
+          }
         },
       },
     ]);
   };
 
-  /* =====================
-     RENDER ITEM
-  ====================== */
+  /* ================= ADD DEVICE (SAME AS MAPTRACKER) ================= */
+  const fetchLocation = async (code: string) => {
+    try {
+      setLoading(true);
+      const res = await fetch("http://localhost:3000/api/device/location", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ deviceCode: code }),
+      });
+      if (!res.ok) throw new Error();
+      return true;
+    } catch {
+      Alert.alert("ไม่พบอุปกรณ์", "กรุณาตรวจสอบรหัสอุปกรณ์");
+      return false;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const confirmAddDevice = async () => {
+    const code = tempCode.trim().toUpperCase();
+    if (!code) return;
+
+    const stored = await AsyncStorage.getItem("devices");
+    const list = stored ? JSON.parse(stored) : [];
+
+    if (list.some((d: any) => d.code === code)) {
+      Alert.alert("อุปกรณ์ถูกเพิ่มแล้ว");
+      return;
+    }
+
+    const ok = await fetchLocation(code);
+    if (!ok) return;
+
+    const newDevice: Device = {
+      id: Date.now().toString(),
+      code,
+      type: "GPS_TRACKER_A7670",
+      name: "LilyGo A7670E",
+      createdAt: new Date().toISOString(),
+    };
+
+    const updated = [...list, newDevice];
+    await AsyncStorage.setItem("devices", JSON.stringify(updated));
+    await AsyncStorage.setItem("activeDevice", code);
+
+    setDevices(updated);
+    setModalVisible(false);
+    setTempCode("");
+  };
+
+  /* ================= RENDER ITEM ================= */
   const renderItem = ({ item }: { item: Device }) => {
     const match = deviceMatches[item.code];
-
     const deviceType =
       (item.type && DEVICE_TYPES[item.type]) ||
       DEVICE_TYPES["GPS_TRACKER_A7670"];
@@ -116,19 +170,14 @@ export default function Devices() {
         }
       >
         <View style={styles.card}>
-          {/* LEFT : DEVICE IMAGE */}
-          <View style={styles.leftSection}>
-            <Image
-              source={{ uri: deviceType.image.uri }}
-              style={styles.deviceImage}
-            />
-          </View>
+          <Image
+            source={{ uri: deviceType.image.uri }}
+            style={styles.deviceImage}
+          />
 
-          {/* CENTER : INFO */}
-          <View style={styles.centerSection}>
+          <View style={{ flex: 1 }}>
             <Text style={styles.deviceName}>{item.name}</Text>
 
-            {/* REPLACE STATUS WITH DISCONNECT */}
             {match ? (
               <TouchableOpacity onPress={() => deleteDevice(item)}>
                 <View style={styles.disconnectRow}>
@@ -144,19 +193,13 @@ export default function Devices() {
             )}
           </View>
 
-          {/* RIGHT : PET */}
-          <View style={styles.rightSection}>
-            {match?.photoURL ? (
-              <Image
-                source={{ uri: match.photoURL }}
-                style={styles.petAvatar}
-              />
-            ) : (
-              <View style={styles.emptyAvatar}>
-                <MaterialIcons name="pets" size={22} color="#999" />
-              </View>
-            )}
-          </View>
+          {match?.photoURL ? (
+            <Image source={{ uri: match.photoURL }} style={styles.petAvatar} />
+          ) : (
+            <View style={styles.emptyAvatar}>
+              <MaterialIcons name="pets" size={22} color="#999" />
+            </View>
+          )}
         </View>
       </TouchableOpacity>
     );
@@ -164,9 +207,18 @@ export default function Devices() {
 
   return (
     <>
+      {/* ===== HEADER ===== */}
       <SafeAreaView style={styles.safeArea}>
         <View style={styles.header}>
+          <View style={{ width: 32 }} />{/* spacer */}
           <Text style={styles.headerTitle}>อุปกรณ์</Text>
+
+          <TouchableOpacity
+            style={styles.addHeaderBtn}
+            onPress={() => setModalVisible(true)}
+          >
+            <MaterialIcons name="add" size={26} color="#000" />
+          </TouchableOpacity>
         </View>
       </SafeAreaView>
 
@@ -174,36 +226,66 @@ export default function Devices() {
         data={devices}
         keyExtractor={(item) => item.id}
         renderItem={renderItem}
-        contentContainerStyle={styles.listContainer}
+        contentContainerStyle={{ padding: 16 }}
         ListEmptyComponent={
-          <Text style={styles.emptyText}>ยังไม่มีอุปกรณ์</Text>
+          <Text style={styles.noDeviceText}>ยังไม่มีอุปกรณ์</Text>
         }
       />
+
+      {/* ===== ADD DEVICE MODAL ===== */}
+      <Modal visible={modalVisible} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalBox}>
+            <Text style={styles.modalTitle}>เพิ่มอุปกรณ์ติดตาม</Text>
+
+            <TextInput
+              style={styles.input}
+              placeholder="เช่น PET-001"
+              value={tempCode}
+              onChangeText={setTempCode}
+              autoCapitalize="characters"
+            />
+
+            <View style={styles.modalRow}>
+              <TouchableOpacity
+                style={[styles.submitBtn, { backgroundColor: "#aaa" }]}
+                onPress={() => setModalVisible(false)}
+              >
+                <Text style={styles.submitText}>ยกเลิก</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.submitBtn}
+                disabled={loading}
+                onPress={confirmAddDevice}
+              >
+                <Text style={styles.submitText}>ยืนยัน</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </>
   );
 }
 
+/* ================= STYLES ================= */
 const styles = StyleSheet.create({
-  safeArea: {
-    backgroundColor: "#f2bb14",
-  },
+  safeArea: { backgroundColor: "#f2bb14" },
+
   header: {
-    backgroundColor: "#f2bb14",
-    paddingVertical: 16,
+    padding: 16,
+    flexDirection: "row",
     alignItems: "center",
+    justifyContent: "space-between",
   },
   headerTitle: {
     fontSize: 20,
     fontWeight: "700",
   },
-  listContainer: {
-    padding: 16,
-  },
-  emptyText: {
-    textAlign: "center",
-    color: "#888",
-    marginTop: 40,
-    fontSize: 16,
+  addHeaderBtn: {
+    width: 32,
+    alignItems: "flex-end",
   },
 
   card: {
@@ -213,27 +295,11 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     flexDirection: "row",
     alignItems: "center",
+    gap: 12,
   },
 
-  leftSection: {
-    marginRight: 12,
-  },
-  centerSection: {
-    flex: 1,
-  },
-  rightSection: {
-    alignItems: "center",
-  },
-
-  deviceImage: {
-    width: 56,
-    height: 56,
-    borderRadius: 12,
-  },
-  deviceName: {
-    fontSize: 17,
-    fontWeight: "700",
-  },
+  deviceImage: { width: 56, height: 56, borderRadius: 12 },
+  deviceName: { fontSize: 17, fontWeight: "700" },
 
   connectRow: {
     flexDirection: "row",
@@ -252,40 +318,74 @@ const styles = StyleSheet.create({
     backgroundColor: "#9CA3AF",
     marginRight: 6,
   },
-  connectText: {
-    fontSize: 13,
-    color: "#6B7280",
-    fontWeight: "600",
-  },
+  connectText: { fontSize: 13, color: "#6B7280" },
 
   disconnectRow: {
     flexDirection: "row",
     alignItems: "center",
     marginTop: 6,
     backgroundColor: "#FEE2E2",
-    paddingHorizontal: 10,
+    paddingHorizontal: 12,
     paddingVertical: 4,
-    borderRadius: 12,
+    borderRadius: 999,
+    gap: 6,
     alignSelf: "flex-start",
-    gap: 4,
   },
   disconnectText: {
     fontSize: 13,
     color: "#DC2626",
-    fontWeight: "600",
+    fontWeight: "700",
   },
 
-  petAvatar: {
-    width: 50,
-    height: 50,
-    borderRadius: 26,
-  },
+  petAvatar: { width: 50, height: 50, borderRadius: 25 },
   emptyAvatar: {
     width: 50,
     height: 50,
-    borderRadius: 26,
+    borderRadius: 25,
     backgroundColor: "#e5e5e5",
     justifyContent: "center",
     alignItems: "center",
   },
+
+  noDeviceText: {
+    textAlign: "center",
+    marginTop: 40,
+    fontSize: 16,
+    color: "#959595",
+  },
+
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  modalBox: {
+    width: "80%",
+    backgroundColor: "#fff",
+    padding: 20,
+    borderRadius: 12,
+  },
+  modalTitle: {
+    fontSize: 18,
+    marginBottom: 12,
+    textAlign: "center",
+    fontWeight: "600",
+  },
+  input: {
+    borderWidth: 1,
+    borderColor: "#ccc",
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 12,
+  },
+  modalRow: { flexDirection: "row", gap: 10 },
+  submitBtn: {
+    flex: 1,
+    backgroundColor: "#905b0d",
+    padding: 14,
+    borderRadius: 8,
+    alignItems: "center",
+  },
+  submitText: { color: "#fff", fontSize: 16 },
 });

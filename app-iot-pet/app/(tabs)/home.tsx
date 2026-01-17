@@ -49,6 +49,10 @@ interface MatchedPet {
   photoURL?: string | null;
 }
 
+type DeviceMatch = {
+  petId: string;
+};
+
 export default function HomeScreen() {
   const [profile, setProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -60,9 +64,11 @@ export default function HomeScreen() {
   const [lastLocation, setLastLocation] = useState<LastLocation | null>(null);
   const [locationLoading, setLocationLoading] = useState(false);
 
-  // ✅ แยกอำเภอ / จังหวัด (เพิ่มใหม่)
   const [districtName, setDistrictName] = useState<string | null>(null);
   const [provinceName, setProvinceName] = useState<string | null>(null);
+
+  /* ====== ⭐ เพิ่ม map สำหรับจุดเขียว ====== */
+  const [petMatchMap, setPetMatchMap] = useState<Record<string, boolean>>({});
 
   /* ================= LOAD PROFILE ================= */
   useEffect(() => {
@@ -104,7 +110,7 @@ export default function HomeScreen() {
     }, [])
   );
 
-  /* ================= LOAD MATCHED PET ================= */
+  /* ================= LOAD MATCHED PET (เดิม) ================= */
   useEffect(() => {
     if (!auth.currentUser || !device?.code) {
       setMatchedPet(null);
@@ -130,6 +136,23 @@ export default function HomeScreen() {
       }
     );
   }, [device]);
+
+  /* ====== เพิ่ม listener สำหรับจุดเขียว ====== */
+  useEffect(() => {
+    if (!auth.currentUser) return;
+    const uid = auth.currentUser.uid;
+
+    return onSnapshot(
+      collection(db, "users", uid, "deviceMatches"),
+      (snap) => {
+        const map: Record<string, boolean> = {};
+        snap.docs.forEach((d) => {
+          map[d.data().petId] = true;
+        });
+        setPetMatchMap(map);
+      }
+    );
+  }, []);
 
   /* ================= LOAD LAST LOCATION ================= */
   const fetchLastLocation = async (code: string) => {
@@ -160,7 +183,6 @@ export default function HomeScreen() {
     else setLastLocation(null);
   }, [device]);
 
-  /* ================= REVERSE GEOCODE ================= */
   const reverseGeocode = async (lat: number, lon: number) => {
     try {
       const res = await fetch(
@@ -169,19 +191,8 @@ export default function HomeScreen() {
       const data = await res.json();
       const addr = data.address ?? {};
 
-      const district =
-        addr.district ||
-        addr.county ||
-        addr.city ||
-        null;
-
-      const province =
-        addr.province ||
-        addr.state ||
-        null;
-
-      setDistrictName(district);
-      setProvinceName(province);
+      setDistrictName(addr.district || addr.county || addr.city || null);
+      setProvinceName(addr.province || addr.state || null);
     } catch {
       setDistrictName(null);
       setProvinceName(null);
@@ -240,22 +251,38 @@ export default function HomeScreen() {
 
       <View style={styles.card}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-          {pets.map((p, i) => (
-            <View key={p.id} style={[styles.petBox, i === 0 && { marginLeft: 16 }]}>
-              {p.photoURL ? (
-                <Image source={{ uri: p.photoURL }} style={styles.petImg} />
-              ) : (
-                <View style={styles.petPlaceholder}>
-                  <MaterialIcons name="pets" size={36} color="#fff" />
+          {pets.map((p, i) => {
+            const isConnected = petMatchMap[p.id];
+
+            return (
+              <View key={p.id} style={[styles.petBox, i === 0 && { marginLeft: 16 }]}>
+                <View>
+                  {p.photoURL ? (
+                    <Image source={{ uri: p.photoURL }} style={styles.petImg} />
+                  ) : (
+                    <View style={styles.petPlaceholder}>
+                      <MaterialIcons name="pets" size={36} color="#fff" />
+                    </View>
+                  )}
+
+                  {/* ===== GPS FIXED ===== */}
+                  {isConnected && (
+                    <View style={styles.gpsBadge}>
+                      {/* <MaterialIcons name="gps-fixed" size={14} color="#FFFFFF" /> */}
+                      <Text style={styles.gpsText}>GPS</Text>
+                    </View>
+                  )}
+
                 </View>
-              )}
-              <Text style={styles.petName}>{p.name}</Text>
-            </View>
-          ))}
+
+                <Text style={styles.petName}>{p.name}</Text>
+              </View>
+            );
+          })}
         </ScrollView>
       </View>
 
-      {/* ===== DEVICE SECTION ===== */}
+      {/* ===== DEVICE SECTION (เดิมทั้งหมด) ===== */}
       <View style={styles.sectionHeader}>
         <Text style={styles.sectionTitle}>อุปกรณ์</Text>
       </View>
@@ -279,7 +306,7 @@ export default function HomeScreen() {
         )}
       </View>
 
-      {/* ===== LAST LOCATION ===== */}
+      {/* ===== LAST LOCATION (เดิมทั้งหมด) ===== */}
       <View style={styles.sectionHeader}>
         <Text style={styles.sectionTitle}>ตำแหน่งล่าสุด</Text>
       </View>
@@ -335,6 +362,7 @@ export default function HomeScreen() {
 }
 
 /* ================= STYLES ================= */
+
 const styles = StyleSheet.create({
   loading: { flex: 1, justifyContent: "center", alignItems: "center" },
 
@@ -378,7 +406,11 @@ const styles = StyleSheet.create({
   },
 
   petBox: { alignItems: "center", marginRight: 16 },
-  petImg: { width: 80, height: 80, borderRadius: 16 },
+  petImg: { 
+    width: 80, 
+    height: 80, 
+    borderRadius: 14, 
+  },
   petPlaceholder: {
     width: 80,
     height: 80,
@@ -389,6 +421,23 @@ const styles = StyleSheet.create({
   },
   petName: { marginTop: 8, fontSize: 16, fontWeight: "500" },
 
+  gpsBadge: {
+    position: "absolute",
+    paddingHorizontal: 8,
+    borderRadius: 12,
+    backgroundColor: "#003FC8",
+    borderWidth: 1,
+    borderColor: "#FFFFFF",
+    right: -2,
+    bottom: -2,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  gpsText: {
+    color: "#ffffff",
+    fontSize: 14,
+    fontWeight: 600,
+  },
   deviceRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -402,7 +451,7 @@ const styles = StyleSheet.create({
     width: 10,
     height: 10,
     borderRadius: 5,
-    backgroundColor: "#2ECC71",
+    backgroundColor: "#009B4B",
     marginRight: 6,
   },
   statusText: { fontSize: 14, fontWeight: "500" },

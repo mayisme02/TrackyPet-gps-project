@@ -32,9 +32,6 @@ const ROW_HEIGHT = 64;
 const CARD_PADDING = 16;
 const ACTIVE_INSET = 8;
 
-/* =====================
-   TYPES
-====================== */
 type UserDevice = {
     id: string;
     code: string;
@@ -60,9 +57,6 @@ export default function PetMatch() {
     const [pets, setPets] = useState<Pet[]>([]);
     const [currentMatch, setCurrentMatch] = useState<any>(null);
 
-    /* =====================
-       LOAD PETS
-    ====================== */
     useEffect(() => {
         if (!auth.currentUser) return;
         const uid = auth.currentUser.uid;
@@ -74,9 +68,6 @@ export default function PetMatch() {
         );
     }, []);
 
-    /* =====================
-       LOAD CURRENT MATCH
-    ====================== */
     useEffect(() => {
         if (!auth.currentUser) return;
         const uid = auth.currentUser.uid;
@@ -211,12 +202,12 @@ export default function PetMatch() {
                                     !currentMatch && styles.statusPillInactive,
                                 ]}
                             >
-                                <View
+                                {/* <View
                                     style={[
                                         styles.statusDot,
                                         !currentMatch && styles.statusDotInactive,
                                     ]}
-                                />
+                                /> */}
                                 <Text
                                     style={[
                                         styles.statusText,
@@ -265,7 +256,7 @@ export default function PetMatch() {
                                         <Ionicons
                                             name="checkmark-circle"
                                             size={24}
-                                            color="#22C55E"
+                                            color="#009B4B"
                                         />
                                     )}
                                 </TouchableOpacity>
@@ -377,10 +368,10 @@ const styles = StyleSheet.create({
     },
 
     petItemActive: {
-        backgroundColor: "#F6FFFA",
-        borderWidth: 1,
+        backgroundColor: "#F9FFFC",
+        borderWidth: 0.5,
         borderRadius: 12,
-        borderColor: "#86EFAC",
+        borderColor: "#009B4B",
         marginHorizontal: -(CARD_PADDING - ACTIVE_INSET),
         paddingHorizontal: CARD_PADDING - ACTIVE_INSET,
     },
@@ -401,8 +392,8 @@ const styles = StyleSheet.create({
     statusPill: {
         flexDirection: "row",
         alignItems: "center",
-        backgroundColor: "#E7F9EF",
-        paddingHorizontal: 14,
+        backgroundColor: "#009B4B",
+        paddingHorizontal: 15,
         paddingVertical: 6,
         borderRadius: 999,
     },
@@ -413,7 +404,7 @@ const styles = StyleSheet.create({
         width: 8,
         height: 8,
         borderRadius: 4,
-        backgroundColor: "#22C55E",
+        backgroundColor: "#ffffff",
         marginRight: 6,
     },
     statusDotInactive: {
@@ -421,8 +412,8 @@ const styles = StyleSheet.create({
     },
     statusText: {
         fontSize: 13,
-        fontWeight: "600",
-        color: "#22C55E",
+        fontWeight: "500",
+        color: "#ffffff",
     },
     statusTextInactive: {
         color: "#6B7280",

@@ -340,6 +340,7 @@ export default function MapTracker() {
             coordinates={displayPath}
             strokeColor="#875100"
             strokeWidth={8}
+            zIndex={3}
           />
         )}
 
@@ -348,12 +349,16 @@ export default function MapTracker() {
             <Circle
               center={geofenceCenter}
               radius={geofenceRadius}
-              strokeColor="rgba(140,176,158,0.9)"   // #8CB09E
-              fillColor="rgba(203,223,225,0.55)"    // #CBE0E1
+              strokeColor="rgba(140,176,158,0.9)"
+              fillColor="rgba(203,223,225,0.55)"
+              zIndex={1}
             />
+
             <Marker
               coordinate={geofenceCenter}
               draggable
+              zIndex={4}
+              anchor={{ x: 0.5, y: 1 }}
               onDragEnd={(e) =>
                 setGeofenceCenter(e.nativeEvent.coordinate)
               }
@@ -363,9 +368,11 @@ export default function MapTracker() {
           </>
         )}
 
+
+
         {petLocation && (
           <Marker
-            key={`pet-marker-${petMarkerKey}`}   // ⭐ สำคัญมาก
+            key={`pet-marker-${petMarkerKey}`}
             ref={petMarkerRef}
             coordinate={{
               latitude: petLocation.latitude,
@@ -551,7 +558,6 @@ export default function MapTracker() {
   );
 }
 
-/* ================= STYLES ================= */
 const styles = StyleSheet.create({
   container: { flex: 1 },
 

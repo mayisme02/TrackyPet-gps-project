@@ -1,5 +1,16 @@
 import React, { useState } from "react";
-import {SafeAreaView, ScrollView, View, Text, TextInput, TouchableOpacity, Image, StyleSheet, Alert, ActivityIndicator} from "react-native";
+import {
+    SafeAreaView,
+    ScrollView,
+    View,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    Image,
+    StyleSheet,
+    Alert,
+    ActivityIndicator,
+} from "react-native";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import * as ImageManipulator from "expo-image-manipulator";
@@ -233,28 +244,24 @@ const styles = StyleSheet.create({
     headerContainer: {
         paddingHorizontal: 16,
         paddingTop: 18,
-        paddingBottom: 12,
         backgroundColor: "#f2bb14",
     },
     headerContent: {
         flexDirection: "row",
         alignItems: "center",
         justifyContent: "center",
-        height: 91,
+        height: 60,
         position: "relative",
     },
     backButton: {
-        padding: 4,
         position: "absolute",
-        left: 16,
-        top: "60%",
+        left: 10,
+        padding: 8,
     },
     topHeaderTitle: {
         fontSize: 20,
-        fontWeight: "bold",       
+        fontWeight: "700",
         color: "black",
-        top: 27,
-
     },
     imageWrapper: {
         alignItems: "center",

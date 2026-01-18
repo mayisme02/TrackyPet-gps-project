@@ -16,19 +16,19 @@ import MapView, {
   Callout,
   Circle,
   Polyline,
+  MapPressEvent,
 } from "react-native-maps";
 import { MaterialIcons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useFocusEffect } from "@react-navigation/native";
 import { auth, db } from "../../firebase/firebase";
 import { doc, onSnapshot } from "firebase/firestore";
+import Slider from "@react-native-community/slider";
 
 const BACKEND_URL = "http://localhost:3000";
 const MOVE_DISTANCE_THRESHOLD = 10;
 
-/* ===============================
-   TYPES
-================================ */
+/* ================= TYPES ================= */
 type DeviceLocation = {
   latitude: number;
   longitude: number;
@@ -42,9 +42,7 @@ type TrackPoint = {
   timestamp: string;
 };
 
-/* ===============================
-   HAVERSINE
-================================ */
+/* ================= HAVERSINE ================= */
 function distanceInMeters(
   lat1: number,
   lon1: number,
@@ -60,8 +58,8 @@ function distanceInMeters(
   const a =
     Math.sin(dLat / 2) ** 2 +
     Math.cos(toRad(lat1)) *
-      Math.cos(toRad(lat2)) *
-      Math.sin(dLon / 2) ** 2;
+    Math.cos(toRad(lat2)) *
+    Math.sin(dLon / 2) ** 2;
 
   return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
@@ -69,7 +67,7 @@ function distanceInMeters(
 export default function MapTracker() {
   const mapRef = useRef<MapView>(null);
 
-  /* ---------- MAP ---------- */
+  /* ================= MAP ================= */
   const [initialRegion] = useState<Region>({
     latitude: 16.4755,
     longitude: 102.825,
@@ -77,7 +75,7 @@ export default function MapTracker() {
     longitudeDelta: 0.02,
   });
 
-  /* ---------- STATE ---------- */
+  /* ================= STATE ================= */
   const [deviceCode, setDeviceCode] = useState<string | null>(null);
   const [tempCode, setTempCode] = useState("");
   const [modalVisible, setModalVisible] = useState(false);
@@ -91,29 +89,33 @@ export default function MapTracker() {
   >([]);
   const [accumulatedDistance, setAccumulatedDistance] = useState(0);
 
-  /* รูปสัตว์ */
   const [petPhotoURL, setPetPhotoURL] = useState<string | null>(null);
 
-  /* ===============================
-     LOAD PET IMAGE
-  ================================ */
+  /* ================= GEOFENCE ================= */
+  const [isGeofenceMode, setIsGeofenceMode] = useState(false);
+  const [geofenceCenter, setGeofenceCenter] = useState<{
+    latitude: number;
+    longitude: number;
+  } | null>(null);
+  const [geofenceRadius, setGeofenceRadius] = useState(300);
+  const [showGeofenceUI, setShowGeofenceUI] = useState(false);
+
+  /* ================= LOAD PET IMAGE ================= */
   useEffect(() => {
     if (!auth.currentUser || !deviceCode) {
       setPetPhotoURL(null);
       return;
     }
 
-    const uid = auth.currentUser.uid;
-
     return onSnapshot(
-      doc(db, "users", uid, "deviceMatches", deviceCode),
+      doc(db, "users", auth.currentUser.uid, "deviceMatches", deviceCode),
       (snap) => {
         setPetPhotoURL(snap.exists() ? snap.data().photoURL ?? null : null);
       }
     );
   }, [deviceCode]);
 
-  /* ---------- FORMAT ---------- */
+  /* ================= FORMAT ================= */
   const formatThaiDate = (iso: string) =>
     new Date(iso).toLocaleDateString("th-TH", {
       day: "numeric",
@@ -128,6 +130,7 @@ export default function MapTracker() {
       second: "2-digit",
     });
 
+  /* ================= PATH ================= */
   const appendPoint = (point: TrackPoint) => {
     setRawPath((prev) => {
       if (prev.length > 0) {
@@ -162,6 +165,7 @@ export default function MapTracker() {
     });
   };
 
+  /* ================= FETCH ================= */
   const fetchLocation = async (
     code: string,
     options?: { silent?: boolean }
@@ -205,7 +209,16 @@ export default function MapTracker() {
     }
   };
 
-  /* ---------- AUTO TRACK ---------- */
+  /* ================= MAP PRESS (GEOFENCE) ================= */
+  const onMapPress = (e: MapPressEvent) => {
+    if (!isGeofenceMode) return;
+
+    setGeofenceCenter(e.nativeEvent.coordinate);
+    setShowGeofenceUI(true);
+    setIsGeofenceMode(false);
+  };
+
+  /* ================= AUTO TRACK ================= */
   useEffect(() => {
     if (!deviceCode || !isTracking) return;
 
@@ -216,7 +229,7 @@ export default function MapTracker() {
     return () => clearInterval(timer);
   }, [deviceCode, isTracking]);
 
-  /* ---------- LOAD ACTIVE DEVICE ---------- */
+  /* ================= LOAD ACTIVE DEVICE ================= */
   useFocusEffect(
     React.useCallback(() => {
       const loadActiveDevice = async () => {
@@ -246,6 +259,7 @@ export default function MapTracker() {
         ref={mapRef}
         style={StyleSheet.absoluteFill}
         initialRegion={initialRegion}
+        onPress={onMapPress}
       >
         {displayPath.length > 1 && (
           <Polyline
@@ -255,15 +269,38 @@ export default function MapTracker() {
           />
         )}
 
-        {location && (
+        {/* ===== GEOFENCE ===== */}
+        {geofenceCenter && (
           <>
             <Circle
-              center={location}
-              radius={location.accuracy ?? 30}
-              strokeColor="rgba(26,115,232,0.4)"
-              fillColor="rgba(26,115,232,0.18)"
+              center={geofenceCenter}
+              radius={geofenceRadius}
+              strokeColor="rgba(0, 147, 81, 0.72)"
+              fillColor="rgba(130, 236, 172, 0.33)"
             />
 
+            <Marker
+              coordinate={geofenceCenter}
+              draggable
+              onDragEnd={(e) =>
+                setGeofenceCenter(e.nativeEvent.coordinate)
+              }
+              onPress={(e) => e.stopPropagation()}
+            >
+              <MaterialIcons
+                name="location-on"
+                size={46}
+                color="#2E7D32"
+              />
+            </Marker>
+
+          </>
+        )}
+
+
+        {/* ===== DEVICE MARKER ===== */}
+        {location && (
+          <>
             <Marker coordinate={location} anchor={{ x: 0.5, y: 0.5 }}>
               {petPhotoURL ? (
                 <View style={styles.petMarker}>
@@ -329,6 +366,17 @@ export default function MapTracker() {
         )}
       </MapView>
 
+      {/* 🔴 GEOFENCE FAB */}
+      <TouchableOpacity
+        style={styles.geofenceFab}
+        onPress={() => {
+          Alert.alert("ตั้งค่า Geofence", "แตะบนแผนที่เพื่อกำหนดตำแหน่ง");
+          setIsGeofenceMode(true);
+        }}
+      >
+        <MaterialIcons name="location-searching" size={26} color="#fff" />
+      </TouchableOpacity>
+
       {/* ➕ Add Device */}
       <TouchableOpacity
         style={styles.addFab}
@@ -355,6 +403,34 @@ export default function MapTracker() {
       >
         <MaterialIcons name="my-location" size={26} color="#fff" />
       </TouchableOpacity>
+
+      {/* ===== GEOFENCE UI ===== */}
+      {showGeofenceUI && (
+        <View style={styles.geofencePanel}>
+          <Text style={styles.geofenceTitle}>
+            รัศมี {geofenceRadius} เมตร
+          </Text>
+
+          <Slider
+            minimumValue={50}
+            maximumValue={1000}
+            step={16}
+            value={geofenceRadius}
+            onValueChange={setGeofenceRadius}
+            minimumTrackTintColor="#975800"
+            maximumTrackTintColor="#ccc"
+          />
+
+          <TouchableOpacity
+            style={styles.confirmBtn}
+            onPress={() => setShowGeofenceUI(false)}
+          >
+            <Text style={{ color: "#fff", fontWeight: "600" }}>
+              ยืนยัน
+            </Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
       {/* 🔐 Add Device Modal */}
       <Modal visible={modalVisible} transparent animationType="fade">
@@ -385,42 +461,10 @@ export default function MapTracker() {
                   const code = tempCode.trim().toUpperCase();
                   if (!code) return;
 
-                  const active = await AsyncStorage.getItem("activeDevice");
-                  if (active === code) {
-                    Alert.alert(
-                      "อุปกรณ์ถูกใช้งานแล้ว"
-                    );
-                    return;
-                  }
-
-                  const stored = await AsyncStorage.getItem("devices");
-                  const devices = stored ? JSON.parse(stored) : [];
-
-                  if (devices.some((d: any) => d.code === code)) {
-                    Alert.alert(
-                      "อุปกรณ์ถูกเพิ่มแล้ว",
-                      "อุปกรณ์นี้ถูกใช้งานไปแล้ว"
-                    );
-                    return;
-                  }
-
                   const ok = await fetchLocation(code);
                   if (!ok) return;
 
-                  devices.push({
-                    id: Date.now().toString(),
-                    code,
-                    type: "GPS_TRACKER_A7670",
-                    name: "LilyGo A7670E",
-                    createdAt: new Date().toISOString(),
-                  });
-
-                  await AsyncStorage.setItem(
-                    "devices",
-                    JSON.stringify(devices)
-                  );
                   await AsyncStorage.setItem("activeDevice", code);
-
                   setDeviceCode(code);
                   setIsTracking(true);
                   setModalVisible(false);
@@ -436,9 +480,7 @@ export default function MapTracker() {
   );
 }
 
-/* ===============================
-   STYLES
-================================ */
+/* ================= STYLES ================= */
 const styles = StyleSheet.create({
   container: { flex: 1 },
 
@@ -457,7 +499,6 @@ const styles = StyleSheet.create({
     height: 46,
     borderRadius: 23,
   },
-
   pawMarker: {
     width: 56,
     height: 56,
@@ -490,6 +531,40 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
+  geofenceFab: {
+    position: "absolute",
+    bottom: 230,
+    right: 20,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: "#c62828",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+
+  geofencePanel: {
+    position: "absolute",
+    bottom: 90,
+    left: 20,
+    right: 20,
+    backgroundColor: "#fff",
+    borderRadius: 16,
+    padding: 16,
+    elevation: 12,
+  },
+  geofenceTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    marginBottom: 8,
+  },
+  confirmBtn: {
+    marginTop: 12,
+    backgroundColor: "#1a73e8",
+    paddingVertical: 12,
+    borderRadius: 10,
+    alignItems: "center",
+  },
 
   calloutWrapper: { alignItems: "center" },
   calloutHandle: {
@@ -510,6 +585,7 @@ const styles = StyleSheet.create({
   cardHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
+    alignItems: "center",
   },
   cardTitle: { fontSize: 16, fontWeight: "700" },
   badge: {
@@ -563,4 +639,4 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     alignItems: "center",
   },
-});
+}); 

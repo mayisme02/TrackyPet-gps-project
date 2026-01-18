@@ -27,7 +27,7 @@ import Slider from "@react-native-community/slider";
 
 /* ================= CONFIG ================= */
 const BACKEND_URL = "http://localhost:3000";
-const MOVE_DISTANCE_THRESHOLD = 10;
+const MIN_MOVE_DISTANCE = 5;
 
 /* ================= TYPES ================= */
 type DeviceLocation = {
@@ -153,16 +153,21 @@ export default function MapTracker() {
           point.latitude,
           point.longitude
         );
-        if (dist >= MOVE_DISTANCE_THRESHOLD) {
+
+        // นับระยะเฉพาะเคลื่อนที่จริง
+        if (dist >= MIN_MOVE_DISTANCE) {
           setAccumulatedDistance((d) => d + dist);
+        } else {
+          return prev;
         }
       }
       return [...prev, point];
     });
 
     setDisplayPath((prev) => {
-      if (prev.length === 0)
+      if (prev.length === 0) {
         return [{ latitude: point.latitude, longitude: point.longitude }];
+      }
 
       const last = prev[prev.length - 1];
       const dist = distanceInMeters(
@@ -172,10 +177,12 @@ export default function MapTracker() {
         point.longitude
       );
 
-      if (dist < 3) return prev;
+      if (dist < MIN_MOVE_DISTANCE) return prev;
+
       return [...prev, { latitude: point.latitude, longitude: point.longitude }];
     });
   };
+
 
   /* ================= FETCH ================= */
   const fetchLocation = async (
@@ -245,19 +252,19 @@ export default function MapTracker() {
       const load = async () => {
         const active = await AsyncStorage.getItem("activeDevice");
         if (!active) {
-  setDeviceCode(null);
-  setLocation(null);
-  // ล้าง marker สัตว์เลี้ยง
-  setPetLocation(null);
-  setPetPhotoURL(null);
-  setMarkerReady(false);
-  // ล้างเส้นทาง
-  setRawPath([]);
-  setDisplayPath([]);
-  setAccumulatedDistance(0);
-  setIsTracking(false);
-  return;
-}
+          setDeviceCode(null);
+          setLocation(null);
+          // ล้าง marker สัตว์เลี้ยง
+          setPetLocation(null);
+          setPetPhotoURL(null);
+          setMarkerReady(false);
+          // ล้างเส้นทาง
+          setRawPath([]);
+          setDisplayPath([]);
+          setAccumulatedDistance(0);
+          setIsTracking(false);
+          return;
+        }
 
         setDeviceCode(active);
         setIsTracking(false);

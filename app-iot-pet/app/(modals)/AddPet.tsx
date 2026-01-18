@@ -1,5 +1,15 @@
 import React, { useEffect, useState } from "react";
-import {View,Text,TextInput,TouchableOpacity,StyleSheet,Image,SafeAreaView,ActivityIndicator,Alert} from "react-native";
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  StyleSheet,
+  Image,
+  SafeAreaView,
+  ActivityIndicator,
+  Alert,
+} from "react-native";
 import { useRouter } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import * as ImageManipulator from "expo-image-manipulator";
@@ -254,29 +264,27 @@ export default function AddPet() {
 
 const styles = StyleSheet.create({
   headerContainer: {
-        backgroundColor: "#f2bb14",
-        height: 120,
-        justifyContent: "center",
-        paddingHorizontal: 16,
+    paddingHorizontal: 16,
+    paddingTop: 18,
+    backgroundColor: "#f2bb14",
+    height: 120,
   },
   headerContent: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    height: 91,
+    height: 60,
     position: "relative",
   },
   backButton: {
     position: "absolute",
     left: 10,
     padding: 8,
-    top: "60%",
   },
   topHeaderTitle: {
     fontSize: 20,
     fontWeight: "700",
     color: "black",
-    top: 27,
   },
   container: {
     padding: 20,

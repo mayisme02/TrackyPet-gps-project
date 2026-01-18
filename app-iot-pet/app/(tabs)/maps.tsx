@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect } from "react";
+import React, { useRef, useState, useEffect, useCallback } from "react";
 import {
   StyleSheet,
   View,
@@ -25,6 +25,7 @@ import { auth, db } from "../../firebase/firebase";
 import { doc, onSnapshot } from "firebase/firestore";
 import Slider from "@react-native-community/slider";
 
+/* ================= CONFIG ================= */
 const BACKEND_URL = "http://localhost:3000";
 const MOVE_DISTANCE_THRESHOLD = 10;
 
@@ -42,6 +43,14 @@ type TrackPoint = {
   timestamp: string;
 };
 
+type Device = {
+  id: string;
+  code: string;
+  name: string;
+  createdAt: string;
+  type?: string;
+};
+
 /* ================= HAVERSINE ================= */
 function distanceInMeters(
   lat1: number,
@@ -51,7 +60,6 @@ function distanceInMeters(
 ) {
   const R = 6371000;
   const toRad = (v: number) => (v * Math.PI) / 180;
-
   const dLat = toRad(lat2 - lat1);
   const dLon = toRad(lon2 - lon1);
 
@@ -75,7 +83,7 @@ export default function MapTracker() {
     longitudeDelta: 0.02,
   });
 
-  /* ================= STATE ================= */
+  /* ================= CORE STATE ================= */
   const [deviceCode, setDeviceCode] = useState<string | null>(null);
   const [tempCode, setTempCode] = useState("");
   const [modalVisible, setModalVisible] = useState(false);
@@ -88,8 +96,12 @@ export default function MapTracker() {
     { latitude: number; longitude: number }[]
   >([]);
   const [accumulatedDistance, setAccumulatedDistance] = useState(0);
-
   const [petPhotoURL, setPetPhotoURL] = useState<string | null>(null);
+  const petMarkerRef = useRef<React.ElementRef<typeof Marker>>(null);
+  const [restorePetCallout, setRestorePetCallout] = useState(false);
+  const [petLocation, setPetLocation] = useState<DeviceLocation | null>(null);
+  const [markerReady, setMarkerReady] = useState(false);
+  const [petMarkerKey, setPetMarkerKey] = useState(0);
 
   /* ================= GEOFENCE ================= */
   const [isGeofenceMode, setIsGeofenceMode] = useState(false);
@@ -172,13 +184,11 @@ export default function MapTracker() {
   ): Promise<boolean> => {
     try {
       setLoading(true);
-
       const res = await fetch(`${BACKEND_URL}/api/device/location`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ deviceCode: code }),
       });
-
       if (!res.ok) throw new Error();
 
       const data = await res.json();
@@ -192,6 +202,8 @@ export default function MapTracker() {
       };
 
       setLocation(current);
+      setPetLocation(current);
+
       appendPoint({
         latitude: current.latitude,
         longitude: current.longitude,
@@ -201,7 +213,7 @@ export default function MapTracker() {
       return true;
     } catch {
       if (!options?.silent) {
-        Alert.alert("ไม่พบอุปกรณ์", "กรุณาป้อนรหัสอุปกรณ์ใหม่");
+        Alert.alert("ไม่พบอุปกรณ์", "กรุณาตรวจสอบรหัสอุปกรณ์");
       }
       return false;
     } finally {
@@ -212,7 +224,6 @@ export default function MapTracker() {
   /* ================= MAP PRESS (GEOFENCE) ================= */
   const onMapPress = (e: MapPressEvent) => {
     if (!isGeofenceMode) return;
-
     setGeofenceCenter(e.nativeEvent.coordinate);
     setShowGeofenceUI(true);
     setIsGeofenceMode(false);
@@ -221,38 +232,94 @@ export default function MapTracker() {
   /* ================= AUTO TRACK ================= */
   useEffect(() => {
     if (!deviceCode || !isTracking) return;
-
-    const timer = setInterval(() => {
-      fetchLocation(deviceCode, { silent: true });
-    }, 5000);
-
+    const timer = setInterval(
+      () => fetchLocation(deviceCode, { silent: true }),
+      5000
+    );
     return () => clearInterval(timer);
   }, [deviceCode, isTracking]);
 
   /* ================= LOAD ACTIVE DEVICE ================= */
   useFocusEffect(
-    React.useCallback(() => {
-      const loadActiveDevice = async () => {
+    useCallback(() => {
+      const load = async () => {
         const active = await AsyncStorage.getItem("activeDevice");
-
         if (!active) {
-          setDeviceCode(null);
-          setIsTracking(false);
-          setLocation(null);
-          setRawPath([]);
-          setDisplayPath([]);
-          setAccumulatedDistance(0);
-          return;
-        }
+  setDeviceCode(null);
+  setLocation(null);
+  // ล้าง marker สัตว์เลี้ยง
+  setPetLocation(null);
+  setPetPhotoURL(null);
+  setMarkerReady(false);
+  // ล้างเส้นทาง
+  setRawPath([]);
+  setDisplayPath([]);
+  setAccumulatedDistance(0);
+  setIsTracking(false);
+  return;
+}
 
         setDeviceCode(active);
         setIsTracking(false);
       };
-
-      loadActiveDevice();
+      load();
     }, [])
   );
 
+  useEffect(() => {
+    if (!restorePetCallout || !petLocation) return;
+
+    setTimeout(() => {
+      petMarkerRef.current?.showCallout();
+      setRestorePetCallout(false);
+    }, 300);
+  }, [restorePetCallout, petLocation]);
+
+  /* ================= ADD DEVICE (UNIFIED) ================= */
+  const confirmAddDevice = async () => {
+    const code = tempCode.trim().toUpperCase();
+    if (!code) return;
+
+    const stored = await AsyncStorage.getItem("devices");
+    const list: Device[] = stored ? JSON.parse(stored) : [];
+
+    if (list.some((d) => d.code === code)) {
+      Alert.alert("อุปกรณ์ถูกเพิ่มแล้ว");
+      return;
+    }
+
+    const ok = await fetchLocation(code);
+    if (!ok) return;
+
+    const newDevice: Device = {
+      id: Date.now().toString(),
+      code,
+      type: "GPS_TRACKER_A7670",
+      name: "LilyGo A7670E",
+      createdAt: new Date().toISOString(),
+    };
+
+    const updated = [...list, newDevice];
+    await AsyncStorage.setItem("devices", JSON.stringify(updated));
+    await AsyncStorage.setItem("activeDevice", code);
+
+    setDeviceCode(code);
+    setIsTracking(true);
+    setModalVisible(false);
+    setTempCode("");
+  };
+  const cancelGeofence = () => {
+    setShowGeofenceUI(false);
+    setGeofenceCenter(null);
+    setGeofenceRadius(10);
+
+    // บังคับ redraw marker
+    setMarkerReady(false);
+    setPetMarkerKey((k) => k + 1);
+  };
+
+
+  /* ================= UI ================= */
   return (
     <View style={styles.container}>
       <MapView
@@ -269,104 +336,109 @@ export default function MapTracker() {
           />
         )}
 
-        {/* ===== GEOFENCE ===== */}
         {geofenceCenter && (
           <>
             <Circle
               center={geofenceCenter}
               radius={geofenceRadius}
-              strokeColor="rgba(0, 147, 81, 0.72)"
-              fillColor="rgba(130, 236, 172, 0.33)"
+              strokeColor="rgba(140,176,158,0.9)"   // #8CB09E
+              fillColor="rgba(203,223,225,0.55)"    // #CBE0E1
             />
-
             <Marker
               coordinate={geofenceCenter}
               draggable
               onDragEnd={(e) =>
                 setGeofenceCenter(e.nativeEvent.coordinate)
               }
-              onPress={(e) => e.stopPropagation()}
             >
-              <MaterialIcons
-                name="location-on"
-                size={46}
-                color="#2E7D32"
-              />
+              <MaterialIcons name="location-on" size={42} color="#2E7D32" />
             </Marker>
-
           </>
         )}
 
+        {petLocation && (
+          <Marker
+            key={`pet-marker-${petMarkerKey}`}   // ⭐ สำคัญมาก
+            ref={petMarkerRef}
+            coordinate={{
+              latitude: petLocation.latitude,
+              longitude: petLocation.longitude,
+            }}
+            tracksViewChanges={!markerReady}
+            anchor={{ x: 0.5, y: 0.5 }}
+          >
 
-        {/* ===== DEVICE MARKER ===== */}
-        {location && (
-          <>
-            <Marker coordinate={location} anchor={{ x: 0.5, y: 0.5 }}>
-              {petPhotoURL ? (
-                <View style={styles.petMarker}>
-                  <Image
-                    source={{ uri: petPhotoURL }}
-                    style={styles.petImage}
-                  />
-                </View>
-              ) : (
-                <View style={styles.pawMarker}>
-                  <MaterialIcons name="pets" size={26} color="#7A4A00" />
-                </View>
-              )}
+            {petPhotoURL ? (
+              <View
+                style={styles.petMarker}
+                onLayout={() => setMarkerReady(true)} // ⭐
+              >
+                <Image
+                  source={{ uri: petPhotoURL }}
+                  style={styles.petImage}
+                  onLoadEnd={() => setMarkerReady(true)} // ⭐
+                />
+              </View>
+            ) : (
+              <View
+                style={styles.pawMarker}
+                onLayout={() => setMarkerReady(true)} // ⭐
+              >
+                <MaterialIcons name="pets" size={26} color="#7A4A00" />
+              </View>
+            )}
 
-              <Callout tooltip>
-                <View style={styles.calloutWrapper}>
-                  <View style={styles.calloutHandle} />
-                  <View style={styles.calloutCard}>
-                    <View style={styles.cardHeader}>
-                      <Text style={styles.cardTitle}>GPS Tracker</Text>
-                      <View style={styles.badge}>
-                        <Text style={styles.badgeText}>
-                          ± {location.accuracy ?? 30} ม.
-                        </Text>
-                      </View>
-                    </View>
-
-                    <View style={styles.divider} />
-
-                    <View style={styles.row}>
-                      <Text style={styles.icon}>📅</Text>
-                      <Text style={styles.text}>
-                        {formatThaiDate(location.timestamp)}
-                      </Text>
-                    </View>
-
-                    <View style={styles.row}>
-                      <Text style={styles.icon}>🕒</Text>
-                      <Text style={styles.text}>
-                        {formatThaiTime(location.timestamp)}
-                      </Text>
-                    </View>
-
-                    <View style={styles.row}>
-                      <Text style={styles.icon}>📍</Text>
-                      <Text style={styles.monoText}>
-                        {location.latitude.toFixed(6)},{" "}
-                        {location.longitude.toFixed(6)}
-                      </Text>
-                    </View>
-
-                    <View style={styles.row}>
-                      <Text style={styles.icon}>📏</Text>
-                      <Text style={styles.boldText}>
-                        {accumulatedDistance.toFixed(1)} m
+            <Callout tooltip>
+              <View style={styles.calloutWrapper}>
+                <View style={styles.calloutHandle} />
+                <View style={styles.calloutCard}>
+                  <View style={styles.cardHeader}>
+                    <Text style={styles.cardTitle}>GPS Tracker</Text>
+                    <View style={styles.badge}>
+                      <Text style={styles.badgeText}>
+                        ± {petLocation.accuracy ?? 30} ม.
                       </Text>
                     </View>
                   </View>
+
+                  <View style={styles.divider} />
+
+                  <View style={styles.row}>
+                    <Text style={styles.icon}>📅</Text>
+                    <Text style={styles.text}>
+                      {formatThaiDate(petLocation.timestamp)}
+                    </Text>
+                  </View>
+
+                  <View style={styles.row}>
+                    <Text style={styles.icon}>🕒</Text>
+                    <Text style={styles.text}>
+                      {formatThaiTime(petLocation.timestamp)}
+                    </Text>
+                  </View>
+
+                  <View style={styles.row}>
+                    <Text style={styles.icon}>📍</Text>
+                    <Text style={styles.monoText}>
+                      {petLocation.latitude.toFixed(6)},{" "}
+                      {petLocation.longitude.toFixed(6)}
+                    </Text>
+                  </View>
+
+                  <View style={styles.row}>
+                    <Text style={styles.icon}>📏</Text>
+                    <Text style={styles.boldText}>
+                      {accumulatedDistance.toFixed(1)} m
+                    </Text>
+                  </View>
                 </View>
-              </Callout>
-            </Marker>
-          </>
+              </View>
+            </Callout>
+          </Marker>
         )}
       </MapView>
 
-      {/* 🔴 GEOFENCE FAB */}
+      {/* ===== FABs ===== */}
       <TouchableOpacity
         style={styles.geofenceFab}
         onPress={() => {
@@ -377,34 +449,29 @@ export default function MapTracker() {
         <MaterialIcons name="location-searching" size={26} color="#fff" />
       </TouchableOpacity>
 
-      {/* ➕ Add Device */}
       <TouchableOpacity
         style={styles.addFab}
-        onPress={() => {
-          setTempCode("");
-          setModalVisible(true);
-        }}
+        onPress={() => setModalVisible(true)}
       >
         <MaterialIcons name="add-circle-outline" size={30} color="#fff" />
       </TouchableOpacity>
 
-      {/* 📍 Locate */}
       <TouchableOpacity
         style={[
           styles.fab,
           { backgroundColor: deviceCode ? "#0b1d51" : "#aaa" },
         ]}
-        disabled={!deviceCode || loading}
+        disabled={!deviceCode}
         onPress={() => {
           if (!deviceCode) return;
           setIsTracking(true);
           fetchLocation(deviceCode);
+
         }}
       >
         <MaterialIcons name="my-location" size={26} color="#fff" />
       </TouchableOpacity>
 
-      {/* ===== GEOFENCE UI ===== */}
       {showGeofenceUI && (
         <View style={styles.geofencePanel}>
           <Text style={styles.geofenceTitle}>
@@ -412,27 +479,35 @@ export default function MapTracker() {
           </Text>
 
           <Slider
-            minimumValue={50}
-            maximumValue={1000}
-            step={16}
+            minimumValue={1}
+            maximumValue={100}
+            step={1}
             value={geofenceRadius}
             onValueChange={setGeofenceRadius}
-            minimumTrackTintColor="#975800"
-            maximumTrackTintColor="#ccc"
           />
 
-          <TouchableOpacity
-            style={styles.confirmBtn}
-            onPress={() => setShowGeofenceUI(false)}
-          >
-            <Text style={{ color: "#fff", fontWeight: "600" }}>
-              ยืนยัน
-            </Text>
-          </TouchableOpacity>
+          <View style={styles.geofenceActionRow}>
+            {/* ยกเลิก */}
+            <TouchableOpacity
+              style={[styles.geofenceBtn, styles.geofenceCancelBtn]}
+              onPress={cancelGeofence}
+            >
+              <Text style={styles.geofenceCancelText}>ยกเลิก</Text>
+            </TouchableOpacity>
+
+            {/* ยืนยัน */}
+            <TouchableOpacity
+              style={[styles.geofenceBtn, styles.geofenceConfirmBtn]}
+              onPress={() => setShowGeofenceUI(false)}
+            >
+              <Text style={styles.geofenceConfirmText}>ยืนยัน</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       )}
 
-      {/* 🔐 Add Device Modal */}
+
+      {/* ===== ADD DEVICE MODAL ===== */}
       <Modal visible={modalVisible} transparent animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={styles.modalBox}>
@@ -451,26 +526,15 @@ export default function MapTracker() {
                 style={[styles.submitBtn, { backgroundColor: "#aaa" }]}
                 onPress={() => setModalVisible(false)}
               >
-                <Text style={{ color: "#fff", fontSize: 16 }}>ยกเลิก</Text>
+                <Text style={styles.submitText}>ยกเลิก</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
                 style={styles.submitBtn}
                 disabled={loading}
-                onPress={async () => {
-                  const code = tempCode.trim().toUpperCase();
-                  if (!code) return;
-
-                  const ok = await fetchLocation(code);
-                  if (!ok) return;
-
-                  await AsyncStorage.setItem("activeDevice", code);
-                  setDeviceCode(code);
-                  setIsTracking(true);
-                  setModalVisible(false);
-                }}
+                onPress={confirmAddDevice}
               >
-                <Text style={{ color: "#fff", fontSize: 16 }}>ยืนยัน</Text>
+                <Text style={styles.submitText}>ยืนยัน</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -494,11 +558,7 @@ const styles = StyleSheet.create({
     borderWidth: 3,
     borderColor: "#fff",
   },
-  petImage: {
-    width: 46,
-    height: 46,
-    borderRadius: 23,
-  },
+  petImage: { width: 46, height: 46, borderRadius: 23 },
   pawMarker: {
     width: 56,
     height: 56,
@@ -549,8 +609,8 @@ const styles = StyleSheet.create({
     left: 20,
     right: 20,
     backgroundColor: "#fff",
-    borderRadius: 16,
     padding: 16,
+    borderRadius: 16,
     elevation: 12,
   },
   geofenceTitle: {
@@ -558,53 +618,47 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     marginBottom: 8,
   },
-  confirmBtn: {
-    marginTop: 12,
-    backgroundColor: "#1a73e8",
+
+  geofenceActionRow: {
+    flexDirection: "row",
+    gap: 10,
+    marginTop: 14,
+  },
+
+  geofenceBtn: {
+    flex: 1,
     paddingVertical: 12,
     borderRadius: 10,
     alignItems: "center",
   },
 
-  calloutWrapper: { alignItems: "center" },
-  calloutHandle: {
-    width: 48,
-    height: 5,
-    borderRadius: 3,
-    backgroundColor: "#e0e0e0",
-    marginBottom: 8,
+  geofenceCancelBtn: {
+    backgroundColor: "#E5E7EB",
   },
-  calloutCard: {
-    backgroundColor: "#fff",
-    borderRadius: 18,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    minWidth: 280,
-    elevation: 6,
+
+  geofenceConfirmBtn: {
+    backgroundColor: "#905b0dff",
   },
-  cardHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
+
+  geofenceCancelText: {
+    color: "#374151",
+    fontWeight: "600",
+  },
+
+  geofenceConfirmText: {
+    color: "#fff",
+    fontWeight: "600",
+  },
+
+  confirmBtn: {
+    marginTop: 12,
+    backgroundColor: "#1a73e8",
+    padding: 12,
+    borderRadius: 8,
     alignItems: "center",
   },
-  cardTitle: { fontSize: 16, fontWeight: "700" },
-  badge: {
-    backgroundColor: "#e8f0fe",
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 999,
-  },
-  badgeText: { color: "#1a73e8", fontSize: 12, fontWeight: "600" },
-  divider: { height: 1, backgroundColor: "#eee", marginVertical: 10 },
-  row: { flexDirection: "row", alignItems: "center", marginTop: 6 },
-  icon: { fontSize: 16, marginRight: 8 },
-  text: { fontSize: 14.5, color: "#333" },
-  monoText: {
-    fontSize: 14,
-    color: "#444",
-    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
-  },
-  boldText: { fontSize: 15, fontWeight: "700", color: "#111" },
+
+  calloutWrapper: { alignItems: "center" }, calloutHandle: { width: 48, height: 5, borderRadius: 3, backgroundColor: "#e0e0e0", marginBottom: 8, }, calloutCard: { backgroundColor: "#fff", borderRadius: 18, paddingHorizontal: 16, paddingVertical: 14, minWidth: 280, elevation: 6, }, cardHeader: { flexDirection: "row", justifyContent: "space-between", }, cardTitle: { fontSize: 16, fontWeight: "700" }, badge: { backgroundColor: "#e8f0fe", paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999, }, badgeText: { color: "#1a73e8", fontSize: 12, fontWeight: "600" }, divider: { height: 1, backgroundColor: "#eee", marginVertical: 10 }, row: { flexDirection: "row", alignItems: "center", marginTop: 6 }, icon: { fontSize: 16, marginRight: 8 }, text: { fontSize: 14.5, color: "#333" }, monoText: { fontSize: 14, color: "#444", fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace", }, boldText: { fontSize: 15, fontWeight: "700", color: "#111" },
 
   modalOverlay: {
     flex: 1,
@@ -618,7 +672,6 @@ const styles = StyleSheet.create({
     padding: 20,
     borderRadius: 12,
   },
-  modalRow: { flexDirection: "row", gap: 10 },
   modalTitle: {
     fontSize: 18,
     marginBottom: 12,
@@ -632,6 +685,7 @@ const styles = StyleSheet.create({
     padding: 12,
     marginBottom: 12,
   },
+  modalRow: { flexDirection: "row", gap: 10 },
   submitBtn: {
     flex: 1,
     backgroundColor: "#905b0d",
@@ -639,4 +693,5 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     alignItems: "center",
   },
-}); 
+  submitText: { color: "#fff", fontSize: 16 },
+});

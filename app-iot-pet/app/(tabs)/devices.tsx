@@ -105,7 +105,7 @@ export default function Devices() {
   const fetchLocation = async (code: string) => {
     try {
       setLoading(true);
-      const res = await fetch("http://localhost:3000/api/device/location", {
+      const res = await fetch("http://192.168.31.135:3000/api/device/location", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ deviceCode: code }),

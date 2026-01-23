@@ -158,7 +158,7 @@ export default function HomeScreen() {
   const fetchLastLocation = async (code: string) => {
     try {
       setLocationLoading(true);
-      const res = await fetch("http://localhost:3000/api/device/location", {
+      const res = await fetch("http://192.168.31.135:3000/api/device/location", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ deviceCode: code }),
@@ -375,7 +375,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     marginHorizontal: 5,
-    marginTop: 10,
+    marginTop: 20,
   },
   avatar: { 
     width: 44, 

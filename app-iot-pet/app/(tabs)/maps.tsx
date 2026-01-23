@@ -28,7 +28,7 @@ import { rtdb } from "../../firebase/firebase";
 import { ref as dbRef, push } from "firebase/database";
 
 /* ================= CONFIG ================= */
-const BACKEND_URL = "http://localhost:3000";
+const BACKEND_URL = "http://192.168.31.135:3000";
 const MIN_MOVE_DISTANCE = 5;
 
 /* ================= TYPES ================= */

@@ -2,7 +2,6 @@ import React, { useEffect, useState } from "react";
 import {
   Text,
   StyleSheet,
-  SafeAreaView,
   View,
   TouchableOpacity,
   Image,
@@ -10,6 +9,7 @@ import {
   ScrollView,
   Pressable,
 } from "react-native";
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import ParallaxScrollView from "@/components/ParallaxScrollView";

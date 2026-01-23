@@ -2,13 +2,13 @@ import React, { useEffect, useState } from "react";
 import {
   Text,
   StyleSheet,
-  SafeAreaView,
   View,
   TouchableOpacity,
   Image,
   Alert,
   Pressable,
 } from "react-native";
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from "expo-router";
 import FontAwesome6 from "@expo/vector-icons/FontAwesome6";
 import { MaterialIcons, Ionicons } from "@expo/vector-icons";

@@ -24,6 +24,8 @@ import { useFocusEffect } from "@react-navigation/native";
 import { auth, db } from "../../firebase/firebase";
 import { doc, onSnapshot } from "firebase/firestore";
 import Slider from "@react-native-community/slider";
+import { rtdb } from "../../firebase/firebase";
+import { ref as dbRef, push } from "firebase/database";
 
 /* ================= CONFIG ================= */
 const BACKEND_URL = "http://localhost:3000";
@@ -111,6 +113,8 @@ export default function MapTracker() {
   } | null>(null);
   const [geofenceRadius, setGeofenceRadius] = useState(300);
   const [showGeofenceUI, setShowGeofenceUI] = useState(false);
+  const [isInsideGeofence, setIsInsideGeofence] = useState<boolean | null>(null);
+
 
   /* ================= LOAD PET IMAGE ================= */
   useEffect(() => {
@@ -210,6 +214,35 @@ export default function MapTracker() {
 
       setLocation(current);
       setPetLocation(current);
+
+      // ===== GEOFENCE CHECK =====
+if (geofenceCenter) {
+  const distFromCenter = distanceInMeters(
+    geofenceCenter.latitude,
+    geofenceCenter.longitude,
+    current.latitude,
+    current.longitude
+  );
+
+  const inside = distFromCenter <= geofenceRadius;
+
+  // เคยอยู่ข้างใน → ออกนอก
+  if (isInsideGeofence === true && !inside) {
+    sendGeofenceAlert("exit", distFromCenter);
+    setIsInsideGeofence(false);
+  }
+
+  // เคยอยู่นอก → กลับเข้า
+  if (isInsideGeofence === false && inside) {
+    sendGeofenceAlert("enter", distFromCenter);
+    setIsInsideGeofence(true);
+  }
+
+  // ครั้งแรก
+  if (isInsideGeofence === null) {
+    setIsInsideGeofence(inside);
+  }
+}
 
       appendPoint({
         latitude: current.latitude,
@@ -323,7 +356,37 @@ export default function MapTracker() {
     // บังคับ redraw marker
     setMarkerReady(false);
     setPetMarkerKey((k) => k + 1);
+    setIsInsideGeofence(null);
+
   };
+
+  const sendGeofenceAlert = async (type: "exit" | "enter", distance: number) => {
+  if (!deviceCode) return;
+
+  const now = new Date();
+  const atUtc = now.toISOString();
+  const atTh = now.toLocaleString("th-TH", {
+    dateStyle: "long",
+    timeStyle: "medium",
+  });
+
+  const message =
+    type === "exit"
+      ? `สัตว์เลี้ยงออกนอกพื้นที่ (${Math.round(distance)} ม.)`
+      : `สัตว์เลี้ยงกลับเข้าพื้นที่`;
+
+  await push(
+    dbRef(rtdb, `devices/${deviceCode}/alerts`),
+    {
+      type,
+      message,
+      atUtc,
+      atTh,
+      radiusKm: geofenceRadius / 1000,
+      device: deviceCode,
+    }
+  );
+};
 
 
   /* ================= UI ================= */

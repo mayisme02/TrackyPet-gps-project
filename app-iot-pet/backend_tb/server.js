@@ -14,18 +14,13 @@ const {
   TB_PASSWORD,
 } = process.env;
 
-/* ===============================
-   DEVICE CODE → DEVICE ID MAP
-================================ */
+// DEVICE CODE → DEVICE ID MAP
 const DEVICE_MAP = {
   "PET-M3238-N3466": "84c3afd0-ebf4-11f0-b6de-09388ec431d8",
-  // เพิ่มได้อีก
-  // "PET-002": "xxxx-xxxx"
+  // เป็นรหัสที่กำหนดไว้เพื่อเรียกใช้ api ผ่าน deviceID จาก thingsboard
 };
 
-/* ===============================
-   LOGIN THINGSBOARD (JWT)
-================================ */
+// LOGIN THINGSBOARD (JWT)
 async function loginThingsBoard() {
   const res = await axios.post(`${TB_BASE_URL}/api/auth/login`, {
     username: TB_USERNAME,
@@ -34,9 +29,7 @@ async function loginThingsBoard() {
   return res.data.token;
 }
 
-/* ===============================
-   FETCH GPS
-================================ */
+// FETCH GPS
 app.get("/", (req, res) => {
   res.json({
     status: "OK",
@@ -94,9 +87,7 @@ app.post("/api/device/location", async (req, res) => {
   }
 });
 
-/* ===============================
-   START SERVER
-================================ */
+// START SERVER
 app.listen(PORT || 3000, () => {
   console.log(`🚀 Backend running on http://localhost:${PORT || 3000}`);
 });

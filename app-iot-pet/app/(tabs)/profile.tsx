@@ -128,7 +128,6 @@ const styles = StyleSheet.create({
   profileSection: {
     alignItems: "center",
     marginTop: 20,
-    marginBottom: 10,
   },
   profileImage: {
     width: 150,

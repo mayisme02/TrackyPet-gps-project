@@ -15,12 +15,12 @@ import {
   Alert,
   Image,
 } from "react-native";
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { rtdb, auth, db } from "../../firebase/firebase";
 import { ref as dbRef, onValue, remove } from "firebase/database";
 import { doc, onSnapshot } from "firebase/firestore";
+import ProfileHeader from "@/components/ProfileHeader";
 
 /* ================= TYPES ================= */
 type AlertItem = {
@@ -56,15 +56,9 @@ export default function NotificationScreen() {
     return onSnapshot(
       doc(db, "users", auth.currentUser.uid, "deviceMatches", deviceId),
       (snap) => {
-        if (!snap.exists()) {
-          setPet(null);
-          return;
-        }
+        if (!snap.exists()) return setPet(null);
         const d = snap.data();
-        setPet({
-          petName: d.petName,
-          photoURL: d.photoURL ?? null,
-        });
+        setPet({ petName: d.petName, photoURL: d.photoURL ?? null });
       }
     );
   }, [deviceId]);
@@ -72,7 +66,6 @@ export default function NotificationScreen() {
   /* ================= LOAD READ MAP ================= */
   useEffect(() => {
     if (!deviceId) return;
-
     AsyncStorage.getItem(`notification_read_${deviceId}`).then((v) =>
       setReadMap(v ? JSON.parse(v) : {})
     );
@@ -103,7 +96,6 @@ export default function NotificationScreen() {
         return tb - ta;
       });
 
-      // กรองไม่ให้ซ้ำ type ติดกัน
       const filtered: AlertItem[] = [];
       for (const a of rows) {
         const last = filtered[filtered.length - 1];
@@ -123,32 +115,22 @@ export default function NotificationScreen() {
     }, [load])
   );
 
-  /* =====================================================
-     ✅ FIX หลัก: MARK ALL AS READ (TIMESTAMP)
-     → ทำให้ badge หายทันทีเมื่อเข้าแท็บแจ้งเตือน
-  ===================================================== */
+  /* ================= MARK ALL AS READ ================= */
   useFocusEffect(
     useCallback(() => {
       if (!deviceId) return;
-
-      const now = Date.now();
       AsyncStorage.setItem(
         `notification_last_read_${deviceId}`,
-        String(now)
+        String(Date.now())
       );
     }, [deviceId])
   );
 
-  /* ================= MARK ALL AS READ (KEY MAP) ================= */
   useFocusEffect(
     useCallback(() => {
       if (!deviceId || alerts.length === 0) return;
-
-      const updated: Record<string, boolean> = { ...readMap };
-      alerts.forEach((a) => {
-        if (a.key) updated[a.key] = true;
-      });
-
+      const updated = { ...readMap };
+      alerts.forEach((a) => a.key && (updated[a.key] = true));
       setReadMap(updated);
       AsyncStorage.setItem(
         `notification_read_${deviceId}`,
@@ -169,9 +151,9 @@ export default function NotificationScreen() {
         onPress: async () => {
           await Promise.all(
             alerts.map((a) =>
-              remove(
-                dbRef(rtdb, `devices/${deviceId}/alerts/${a.key}`)
-              ).catch(() => null)
+              remove(dbRef(rtdb, `devices/${deviceId}/alerts/${a.key}`)).catch(
+                () => null
+              )
             )
           );
         },
@@ -182,7 +164,6 @@ export default function NotificationScreen() {
   /* ================= BUILD LIST ================= */
   const listData: ListItem[] = useMemo(() => {
     if (!alerts.length) return [];
-
     const unread = alerts.filter((a) => !readMap[a.key!]);
     const read = alerts.filter((a) => readMap[a.key!]);
 
@@ -200,12 +181,11 @@ export default function NotificationScreen() {
 
   /* ================= RENDER ================= */
   const renderItem = ({ item }: { item: ListItem }) => {
-    if (item.kind === "section") {
+    if (item.kind === "section")
       return <Text style={styles.sectionTitle}>{item.title}</Text>;
-    }
 
-    const alert = item.data;
-    const isExit = alert.type === "exit";
+    const a = item.data;
+    const isExit = a.type === "exit";
     const petName = pet?.petName ?? "สัตว์เลี้ยง";
 
     return (
@@ -227,9 +207,7 @@ export default function NotificationScreen() {
             {petName}
             {isExit ? " ออกนอกพื้นที่" : " กลับเข้าพื้นที่"}
           </Text>
-          <Text style={styles.time}>
-            {alert.atTh || alert.atUtc}
-          </Text>
+          <Text style={styles.time}>{a.atTh || a.atUtc}</Text>
         </View>
       </View>
     );
@@ -237,17 +215,14 @@ export default function NotificationScreen() {
 
   return (
     <>
-      <SafeAreaView style={styles.safeArea}>
-        <View style={styles.header}>
-          <Text style={styles.headerTitle}>การแจ้งเตือน</Text>
-          <TouchableOpacity
-            style={styles.headerRight}
-            onPress={clearAll}
-          >
-            <Ionicons name="trash-outline" size={24} />
+      <ProfileHeader
+        title="การแจ้งเตือน"
+        right={
+          <TouchableOpacity onPress={clearAll}>
+            <Ionicons name="trash-outline" size={22} />
           </TouchableOpacity>
-        </View>
-      </SafeAreaView>
+        }
+      />
 
       {loading ? (
         <ActivityIndicator style={{ marginTop: 40 }} />
@@ -272,15 +247,6 @@ export default function NotificationScreen() {
 
 /* ================= STYLES ================= */
 const styles = StyleSheet.create({
-  safeArea: { backgroundColor: "#f2bb14" },
-  header: {
-    height: 56,
-    backgroundColor: "#f2bb14",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  headerTitle: { fontSize: 20, fontWeight: "700" },
-  headerRight: { position: "absolute", right: 16 },
   sectionTitle: {
     fontSize: 15,
     fontWeight: "700",

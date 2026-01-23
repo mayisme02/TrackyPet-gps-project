@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import {
   View,
   Text,
@@ -9,7 +9,6 @@ import {
   ActivityIndicator,
   Alert,
 } from "react-native";
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import * as ImageManipulator from "expo-image-manipulator";
@@ -21,6 +20,7 @@ import { collection, addDoc, serverTimestamp } from "firebase/firestore";
 import { uploadToCloudinary } from "../../cloud/uploadToCloudinary";
 import { SelectCountry } from "react-native-element-dropdown";
 import { breedData } from "../../assets/constants/breedData";
+import ProfileHeader from "@/components/ProfileHeader";
 
 export default function AddPet() {
   const router = useRouter();
@@ -33,7 +33,7 @@ export default function AddPet() {
   const [image, setImage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  // เลือกรูปจากคลัง
+  /* ================= PICK IMAGE ================= */
   const pickImage = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
@@ -52,7 +52,7 @@ export default function AddPet() {
     }
   };
 
-  // เพิ่มสัตว์เลี้ยง
+  /* ================= ADD PET ================= */
   const handleAddPet = async () => {
     if (!petName || !breed) {
       Alert.alert("ผิดพลาด", "กรุณากรอกข้อมูลให้ครบ");
@@ -71,12 +71,11 @@ export default function AddPet() {
         cloudinaryPublicId = uploadResult.public_id;
       }
 
-      const user = auth.currentUser;
-      if (!user) {
+      if (!auth.currentUser) {
         await signInAnonymously(auth);
       }
 
-      const petsRef = collection(db, "users", auth.currentUser?.uid!, "pets");
+      const petsRef = collection(db, "users", auth.currentUser!.uid, "pets");
 
       await addDoc(petsRef, {
         name: petName,
@@ -91,7 +90,7 @@ export default function AddPet() {
       });
 
       Alert.alert("สำเร็จ", "เพิ่มสัตว์เลี้ยงเรียบร้อยแล้ว");
-      router.push("/(modals)/pet");
+      router.back();
     } catch (error) {
       console.error("Error adding pet:", error);
       Alert.alert("ผิดพลาด", "ไม่สามารถเพิ่มข้อมูลได้");
@@ -102,17 +101,17 @@ export default function AddPet() {
 
   return (
     <>
-      {/* Header */}
-      <SafeAreaView style={styles.headerContainer}>
-        <View style={styles.headerContent}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-            <Ionicons name="arrow-back" size={26} color="black" />
+      {/* ===== HEADER ===== */}
+      <ProfileHeader
+        title="เพิ่มสัตว์เลี้ยง"
+        left={
+          <TouchableOpacity onPress={() => router.back()}>
+            <Ionicons name="arrow-back" size={26} color="#000" />
           </TouchableOpacity>
-          <Text style={styles.topHeaderTitle}>เพิ่มสัตว์เลี้ยง</Text>
-        </View>
-      </SafeAreaView>
+        }
+      />
 
-      {/* Body */}
+      {/* ===== BODY ===== */}
       <View style={styles.container}>
         {/* รูปสัตว์ */}
         <View style={styles.imagePickerWrapper}>
@@ -120,7 +119,7 @@ export default function AddPet() {
             {image ? (
               <Image source={{ uri: image }} style={styles.inputImg} />
             ) : (
-              <FontAwesome6 name="file-image" size={60} color={"lightgray"} />
+              <FontAwesome6 name="file-image" size={60} color="lightgray" />
             )}
           </TouchableOpacity>
         </View>
@@ -173,39 +172,25 @@ export default function AddPet() {
           <View style={styles.gridItem}>
             <Text style={styles.InputTitle}>เพศ</Text>
             <View style={styles.genderBox}>
-              <TouchableOpacity
-                style={[
-                  styles.genderOption,
-                  gender === "เพศผู้" && styles.genderOptionSelected,
-                ]}
-                onPress={() => setGender("เพศผู้")}
-              >
-                <Text
+              {["เพศผู้", "เพศเมีย"].map((g) => (
+                <TouchableOpacity
+                  key={g}
                   style={[
-                    styles.genderLabel,
-                    gender === "เพศผู้" && styles.genderLabelSelected,
+                    styles.genderOption,
+                    gender === g && styles.genderOptionSelected,
                   ]}
+                  onPress={() => setGender(g as any)}
                 >
-                  เพศผู้
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[
-                  styles.genderOption,
-                  gender === "เพศเมีย" && styles.genderOptionSelected,
-                ]}
-                onPress={() => setGender("เพศเมีย")}
-              >
-                <Text
-                  style={[
-                    styles.genderLabel,
-                    gender === "เพศเมีย" && styles.genderLabelSelected,
-                  ]}
-                >
-                  เพศเมีย
-                </Text>
-              </TouchableOpacity>
+                  <Text
+                    style={[
+                      styles.genderLabel,
+                      gender === g && styles.genderLabelSelected,
+                    ]}
+                  >
+                    {g}
+                  </Text>
+                </TouchableOpacity>
+              ))}
             </View>
           </View>
 
@@ -263,29 +248,6 @@ export default function AddPet() {
 }
 
 const styles = StyleSheet.create({
-  headerContainer: {
-    paddingHorizontal: 16,
-    paddingTop: 18,
-    backgroundColor: "#f2bb14",
-    height: 120,
-  },
-  headerContent: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    height: 60,
-    position: "relative",
-  },
-  backButton: {
-    position: "absolute",
-    left: 10,
-    padding: 8,
-  },
-  topHeaderTitle: {
-    fontSize: 20,
-    fontWeight: "700",
-    color: "black",
-  },
   container: {
     padding: 20,
   },
@@ -331,21 +293,17 @@ const styles = StyleSheet.create({
   selectedTextStyle: {
     fontSize: 15,
     color: "#333",
-    marginLeft: 5
+    marginLeft: 5,
   },
   dropdownContainer: {
     backgroundColor: "#fff",
     borderRadius: 12,
     elevation: 3,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
   },
   dropdownItemContainer: {
     borderBottomWidth: 0.5,
     borderColor: "#eee",
-    paddingVertical: 4, // เพิ่ม padding บน-ล่าง
+    paddingVertical: 4,
   },
   dropdownItemText: {
     fontSize: 15,
@@ -355,7 +313,7 @@ const styles = StyleSheet.create({
     width: 28,
     height: 28,
     borderRadius: 14,
-    marginLeft: 5
+    marginLeft: 5,
   },
   infoGrid: {
     flexDirection: "row",

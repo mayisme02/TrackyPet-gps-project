@@ -10,7 +10,6 @@ import {
   Modal,
   TextInput,
 } from "react-native";
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from "@react-navigation/native";
 import { useRouter } from "expo-router";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -18,6 +17,7 @@ import { auth, db } from "../../firebase/firebase";
 import { collection, onSnapshot, deleteDoc, doc } from "firebase/firestore";
 import { MaterialIcons } from "@expo/vector-icons";
 import { DEVICE_TYPES } from "../../assets/constants/deviceData";
+import ProfileHeader from "@/components/ProfileHeader";
 
 type Device = {
   id: string;
@@ -101,7 +101,7 @@ export default function Devices() {
     ]);
   };
 
-  /* ================= ADD DEVICE (SAME AS MAPTRACKER) ================= */
+  /* ================= ADD DEVICE ================= */
   const fetchLocation = async (code: string) => {
     try {
       setLoading(true);
@@ -182,7 +182,9 @@ export default function Devices() {
               <TouchableOpacity onPress={() => deleteDevice(item)}>
                 <View style={styles.disconnectRow}>
                   <MaterialIcons name="link-off" size={14} color="#DC2626" />
-                  <Text style={styles.disconnectText}>ยกเลิกการเชื่อมต่อ</Text>
+                  <Text style={styles.disconnectText}>
+                    ยกเลิกการเชื่อมต่อ
+                  </Text>
                 </View>
               </TouchableOpacity>
             ) : (
@@ -207,20 +209,15 @@ export default function Devices() {
 
   return (
     <>
-      {/* ===== HEADER ===== */}
-      <SafeAreaView style={styles.safeArea}>
-        <View style={styles.header}>
-          <View style={{ width: 32 }} />{/* spacer */}
-          <Text style={styles.headerTitle}>อุปกรณ์</Text>
-
-          <TouchableOpacity
-            style={styles.addHeaderBtn}
-            onPress={() => setModalVisible(true)}
-          >
+      {/* ===== HEADER (Component) ===== */}
+      <ProfileHeader
+        title="อุปกรณ์"
+        right={
+          <TouchableOpacity onPress={() => setModalVisible(true)}>
             <MaterialIcons name="add" size={26} color="#000" />
           </TouchableOpacity>
-        </View>
-      </SafeAreaView>
+        }
+      />
 
       <FlatList
         data={devices}
@@ -271,23 +268,6 @@ export default function Devices() {
 
 /* ================= STYLES ================= */
 const styles = StyleSheet.create({
-  safeArea: { backgroundColor: "#f2bb14" },
-
-  header: {
-    padding: 16,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: "700",
-  },
-  addHeaderBtn: {
-    width: 32,
-    alignItems: "flex-end",
-  },
-
   card: {
     backgroundColor: "#fff",
     borderRadius: 16,
@@ -297,7 +277,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 12,
   },
-
   deviceImage: { width: 56, height: 56, borderRadius: 12 },
   deviceName: { fontSize: 17, fontWeight: "700" },
 

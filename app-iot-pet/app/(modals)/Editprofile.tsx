@@ -138,7 +138,7 @@ export default function EditProfile() {
         title="แก้ไขโปรไฟล์"
         left={
           <TouchableOpacity onPress={() => router.replace("/(tabs)/profile")}>
-            <Ionicons name="arrow-back" size={26} color="#000" />
+            <Ionicons name="chevron-back" size={26} color="#000" />
           </TouchableOpacity>
         }
       />

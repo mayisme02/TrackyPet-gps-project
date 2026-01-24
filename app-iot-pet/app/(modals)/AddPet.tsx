@@ -106,7 +106,7 @@ export default function AddPet() {
         title="เพิ่มสัตว์เลี้ยง"
         left={
           <TouchableOpacity onPress={() => router.back()}>
-            <Ionicons name="arrow-back" size={26} color="#000" />
+            <Ionicons name="chevron-back" size={26} color="#000" />
           </TouchableOpacity>
         }
       />

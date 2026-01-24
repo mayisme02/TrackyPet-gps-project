@@ -97,7 +97,7 @@ export default function EditPet() {
         title="แก้ไขข้อมูล"
         left={
           <TouchableOpacity onPress={() => router.back()}>
-            <Ionicons name="arrow-back" size={26} color="#000" />
+            <Ionicons name="chevron-back" size={26} color="#000" />
           </TouchableOpacity>
         }
       />

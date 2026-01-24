@@ -2,7 +2,6 @@ import React, { useEffect, useState } from "react";
 import {
   Text,
   StyleSheet,
-  SafeAreaView,
   View,
   TouchableOpacity,
   Image,
@@ -10,6 +9,7 @@ import {
   ScrollView,
   Pressable,
 } from "react-native";
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import ParallaxScrollView from "@/components/ParallaxScrollView";
@@ -158,7 +158,7 @@ export default function HomeScreen() {
   const fetchLastLocation = async (code: string) => {
     try {
       setLocationLoading(true);
-      const res = await fetch("http://localhost:3000/api/device/location", {
+      const res = await fetch("http://192.168.31.135:3000/api/device/location", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ deviceCode: code }),
@@ -361,20 +361,32 @@ export default function HomeScreen() {
   );
 }
 
-/* ================= STYLES ================= */
-
 const styles = StyleSheet.create({
-  loading: { flex: 1, justifyContent: "center", alignItems: "center" },
-
-  header: { height: 175, justifyContent: "center", paddingHorizontal: 20 },
+  loading: { 
+    flex: 1, 
+    justifyContent: "center", 
+    alignItems: "center" 
+  },
+  header: { 
+    justifyContent: "center", 
+    paddingHorizontal: 20 
+  },
   headerRow: {
     flexDirection: "row",
     alignItems: "center",
-    marginHorizontal: 20,
+    marginHorizontal: 5,
+    marginTop: 20,
   },
-  avatar: { width: 44, height: 44, borderRadius: 22 },
-  greeting: { fontSize: 20, fontWeight: "700", marginLeft: 12 },
-
+  avatar: { 
+    width: 44, 
+    height: 44, 
+    borderRadius: 22 
+  },
+  greeting: { 
+    fontSize: 20, 
+    fontWeight: "700", 
+    marginLeft: 12 
+  },
   sectionHeader: {
     marginTop: 20,
     marginHorizontal: 20,

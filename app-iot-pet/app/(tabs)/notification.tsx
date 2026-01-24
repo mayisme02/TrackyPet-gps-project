@@ -1,149 +1,282 @@
-import { useRouter, useFocusEffect } from 'expo-router';
-import React, { useCallback, useEffect, useState } from 'react';
-import { View, Text, SafeAreaView, StyleSheet, TouchableOpacity, FlatList, ActivityIndicator, Alert } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { rtdb } from '../../firebase/firebase'; 
-import { ref as dbRef, onValue, remove } from 'firebase/database';
+import { useFocusEffect } from "expo-router";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  FlatList,
+  ActivityIndicator,
+  Alert,
+  Image,
+} from "react-native";
+import { Ionicons, MaterialIcons } from "@expo/vector-icons";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { rtdb, auth, db } from "../../firebase/firebase";
+import { ref as dbRef, onValue, remove } from "firebase/database";
+import { doc, onSnapshot } from "firebase/firestore";
+import ProfileHeader from "@/components/ProfileHeader";
 
-const DEVICE_ID = 'DEVICE-01';
-
+/* ================= TYPES ================= */
 type AlertItem = {
-  key?: string;        
-  type: 'exit' | 'enter';
-  message: string;
-  atTh?: string;       // เวลาไทย (จากบอร์ด)
-  atUtc?: string;      // สำรอง UTC
-  radiusKm?: number;
-  device?: string;
+  key?: string;
+  type: "exit" | "enter";
+  atTh?: string;
+  atUtc?: string;
 };
 
+type MatchedPet = {
+  petName: string;
+  photoURL?: string | null;
+};
+
+type ListItem =
+  | { kind: "section"; title: string }
+  | { kind: "alert"; data: AlertItem };
+
 export default function NotificationScreen() {
-  const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [alerts, setAlerts] = useState<AlertItem[]>([]);
+  const [deviceId, setDeviceId] = useState<string | null>(null);
+  const [pet, setPet] = useState<MatchedPet | null>(null);
+  const [readMap, setReadMap] = useState<Record<string, boolean>>({});
 
-  const handleBack = () => {
-    router.back();
-  };
+  /* ================= LOAD MATCHED PET ================= */
+  useEffect(() => {
+    if (!auth.currentUser || !deviceId) {
+      setPet(null);
+      return;
+    }
 
-  const load = useCallback(() => {
-    const ref = dbRef(rtdb, `devices/${DEVICE_ID}/alerts`);
+    return onSnapshot(
+      doc(db, "users", auth.currentUser.uid, "deviceMatches", deviceId),
+      (snap) => {
+        if (!snap.exists()) return setPet(null);
+        const d = snap.data();
+        setPet({ petName: d.petName, photoURL: d.photoURL ?? null });
+      }
+    );
+  }, [deviceId]);
+
+  /* ================= LOAD READ MAP ================= */
+  useEffect(() => {
+    if (!deviceId) return;
+    AsyncStorage.getItem(`notification_read_${deviceId}`).then((v) =>
+      setReadMap(v ? JSON.parse(v) : {})
+    );
+  }, [deviceId]);
+
+  /* ================= LOAD ALERTS ================= */
+  const load = useCallback(async () => {
+    const active = await AsyncStorage.getItem("activeDevice");
+    if (!active) {
+      setAlerts([]);
+      setLoading(false);
+      return () => {};
+    }
+
+    setDeviceId(active);
+    const ref = dbRef(rtdb, `devices/${active}/alerts`);
+
     return onValue(ref, (snap) => {
       const v = snap.val() || {};
-      // map เป็น array + sort เวลาใหม่อยู่บน
-      const rows: AlertItem[] = Object.keys(v).map(k => ({ key: k, ...v[k] }));
+      const rows: AlertItem[] = Object.keys(v).map((k) => ({
+        key: k,
+        ...v[k],
+      }));
+
       rows.sort((a, b) => {
         const ta = a.atUtc ? Date.parse(a.atUtc) : 0;
         const tb = b.atUtc ? Date.parse(b.atUtc) : 0;
         return tb - ta;
       });
-      setAlerts(rows);
+
+      const filtered: AlertItem[] = [];
+      for (const a of rows) {
+        const last = filtered[filtered.length - 1];
+        if (!last || last.type !== a.type) filtered.push(a);
+      }
+
+      setAlerts(filtered);
       setLoading(false);
     });
   }, []);
 
   useFocusEffect(
     useCallback(() => {
-      const off = load();
+      let off: any;
+      load().then((u) => (off = u));
       return () => off && off();
     }, [load])
   );
 
+  /* ================= MARK ALL AS READ ================= */
+  useFocusEffect(
+    useCallback(() => {
+      if (!deviceId) return;
+      AsyncStorage.setItem(
+        `notification_last_read_${deviceId}`,
+        String(Date.now())
+      );
+    }, [deviceId])
+  );
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!deviceId || alerts.length === 0) return;
+      const updated = { ...readMap };
+      alerts.forEach((a) => a.key && (updated[a.key] = true));
+      setReadMap(updated);
+      AsyncStorage.setItem(
+        `notification_read_${deviceId}`,
+        JSON.stringify(updated)
+      );
+    }, [deviceId, alerts])
+  );
+
+  /* ================= CLEAR ================= */
   const clearAll = () => {
-    if (!alerts.length) return;
-    Alert.alert('ลบการแจ้งเตือนทั้งหมด?', 'คุณต้องการลบทั้งหมดหรือไม่', [
-      { text: 'ยกเลิก', style: 'cancel' },
+    if (!deviceId || alerts.length === 0) return;
+
+    Alert.alert("ลบการแจ้งเตือนทั้งหมด?", "คุณต้องการลบทั้งหมดหรือไม่", [
+      { text: "ยกเลิก", style: "cancel" },
       {
-        text: 'ลบทั้งหมด',
-        style: 'destructive',
+        text: "ลบทั้งหมด",
+        style: "destructive",
         onPress: async () => {
           await Promise.all(
-            alerts.map(a => remove(dbRef(rtdb, `devices/${DEVICE_ID}/alerts/${a.key}`)).catch(() => null))
+            alerts.map((a) =>
+              remove(dbRef(rtdb, `devices/${deviceId}/alerts/${a.key}`)).catch(
+                () => null
+              )
+            )
           );
-        }
-      }
+        },
+      },
     ]);
   };
 
-  const renderItem = ({ item }: { item: AlertItem }) => {
-    const isExit = item.type === 'exit';
+  /* ================= BUILD LIST ================= */
+  const listData: ListItem[] = useMemo(() => {
+    if (!alerts.length) return [];
+    const unread = alerts.filter((a) => !readMap[a.key!]);
+    const read = alerts.filter((a) => readMap[a.key!]);
+
+    const out: ListItem[] = [];
+    if (unread.length) {
+      out.push({ kind: "section", title: "ล่าสุด" });
+      unread.forEach((a) => out.push({ kind: "alert", data: a }));
+    }
+    if (read.length) {
+      out.push({ kind: "section", title: "ก่อนหน้านี้" });
+      read.forEach((a) => out.push({ kind: "alert", data: a }));
+    }
+    return out;
+  }, [alerts, readMap]);
+
+  /* ================= RENDER ================= */
+  const renderItem = ({ item }: { item: ListItem }) => {
+    if (item.kind === "section")
+      return <Text style={styles.sectionTitle}>{item.title}</Text>;
+
+    const a = item.data;
+    const isExit = a.type === "exit";
+    const petName = pet?.petName ?? "สัตว์เลี้ยง";
+
     return (
-      <View style={[styles.card, isExit ? styles.exitCard : styles.enterCard]}>
-        <View style={styles.row}>
-          <Ionicons
-            name={isExit ? 'alert-circle' : 'checkmark-circle'}
-            size={22}
-            color={isExit ? '#b00020' : '#2e7d32'}
-            style={{ marginRight: 8 }}
-          />
-          <Text style={[styles.title, { color: isExit ? '#b00020' : '#2e7d32' }]}>
-            {isExit ? 'ออกนอกพื้นที่' : 'กลับเข้าพื้นที่'}
-          </Text>
+      <View style={styles.card}>
+        <View style={styles.avatarWrap}>
+          {pet?.photoURL ? (
+            <Image source={{ uri: pet.photoURL }} style={styles.avatar} />
+          ) : (
+            <MaterialIcons name="pets" size={22} color="#7A4A00" />
+          )}
         </View>
-        {!!item.message && <Text style={styles.message}>{item.message}</Text>}
-        <Text style={styles.time}>{item.atTh || item.atUtc}</Text>
+        <View style={{ flex: 1 }}>
+          <Text
+            style={[
+              styles.title,
+              { color: isExit ? "#b00020" : "#2e7d32" },
+            ]}
+          >
+            {petName}
+            {isExit ? " ออกนอกพื้นที่" : " กลับเข้าพื้นที่"}
+          </Text>
+          <Text style={styles.time}>{a.atTh || a.atUtc}</Text>
+        </View>
       </View>
     );
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.backBtn} onPress={handleBack}>
-          <Ionicons name="chevron-back" size={24} color="#fff" />
-        </TouchableOpacity>
-        <Text style={styles.headerText}>การแจ้งเตือน</Text>
-        <TouchableOpacity style={styles.clearBtn} onPress={clearAll}>
-          <Ionicons name="trash-outline" size={20} color="#fff" />
-        </TouchableOpacity>
-      </View>
+    <>
+      <ProfileHeader
+        title="การแจ้งเตือน"
+        right={
+          <TouchableOpacity onPress={clearAll}>
+            <Ionicons name="trash-outline" size={22} />
+          </TouchableOpacity>
+        }
+      />
 
-      {/* Body */}
-      <View style={styles.body}>
-        {loading ? (
-          <ActivityIndicator />
-        ) : alerts.length === 0 ? (
-          <Text style={[{ color: '#666' }, styles.State]}>ยังไม่มีการแจ้งเตือน</Text>
-        ) : (
-          <FlatList
-            contentContainerStyle={{ padding: 16 }}
-            data={alerts}
-            renderItem={renderItem}
-            keyExtractor={(it) => it.key!}
-          />
-        )}
-      </View>
-    </SafeAreaView>
+      {loading ? (
+        <ActivityIndicator style={{ marginTop: 40 }} />
+      ) : (
+        <FlatList
+          data={listData}
+          renderItem={renderItem}
+          keyExtractor={(item, i) =>
+            item.kind === "section"
+              ? `section-${i}`
+              : item.data.key!
+          }
+          contentContainerStyle={{ padding: 16 }}
+          ListEmptyComponent={
+            <Text style={styles.empty}>ยังไม่มีการแจ้งเตือน</Text>
+          }
+        />
+      )}
+    </>
   );
 }
 
+/* ================= STYLES ================= */
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff' },
-
-  header: {
-    height: 120,
-    backgroundColor: '#f2bb14',
+  sectionTitle: {
+    fontSize: 15,
+    fontWeight: "700",
+    marginVertical: 12,
+  },
+  empty: {
+    textAlign: "center",
+    marginTop: 80,
+    fontSize: 16,
+    color: "#666",
+  },
+  card: {
+    flexDirection: "row",
+    gap: 12,
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#F1F1F1",
+    backgroundColor: "#fff",
+    marginBottom: 6,
+  },
+  avatarWrap: {
+    width: 50,
+    height: 50,
+    borderRadius: 26,
+    backgroundColor: "#F5E6C8",
     justifyContent: "center",
     alignItems: "center",
   },
-  backBtn: { padding: 4, position: 'absolute', left: 16, top: 70 },
-  clearBtn: { padding: 4,position: 'absolute', right: 16, top: 70 },
-  headerText: { fontSize: 20, fontWeight: 'bold', color: 'black',top: 27 },
-  body: { flex: 1 },
-  card: {
-    padding: 12,
-    borderRadius: 12,
-    backgroundColor: '#fff',
-    borderWidth: 1,
-    marginBottom: 10,
-  },
-  State: { textAlign: 'center', marginTop: 100, fontSize: 16 },
-  exitCard: { borderColor: '#ffcccb', backgroundColor: '#fff8f8' },
-  enterCard: { borderColor: '#cde7d6', backgroundColor: '#f7fffa' },
-
-  row: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
-  title: { fontSize: 16, fontWeight: '700' },
-  message: { color: '#333', marginBottom: 6 },
-  time: { color: '#666', fontSize: 12 },
+  avatar: { width: 50, height: 50, borderRadius: 26 },
+  title: { fontSize: 16, fontWeight: "700" },
+  time: { fontSize: 12, color: "#777", marginTop: 6 },
 });

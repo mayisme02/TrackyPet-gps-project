@@ -1,10 +1,21 @@
 import React, { useEffect, useState } from "react";
-import { View, Text,StyleSheet,Image,TouchableOpacity,SafeAreaView,ActivityIndicator,Alert,ScrollView} from "react-native";
+import {
+  View,
+  Text,
+  StyleSheet,
+  Image,
+  TouchableOpacity,
+  ActivityIndicator,
+  Alert,
+  ScrollView,
+} from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { auth, db } from "../../firebase/firebase";
 import { doc, onSnapshot } from "firebase/firestore";
 import ParallaxScrollView from "@/components/ParallaxScrollView";
+import ProfileHeader from "@/components/ProfileHeader";
 
 export default function profile() {
   const [profile, setProfile] = useState<any>(null);
@@ -59,14 +70,10 @@ export default function profile() {
   return (
     <ParallaxScrollView
       headerBackgroundColor={{ light: "#f2bb14", dark: "#f2bb14" }}
-      headerImage={
-        <SafeAreaView style={styles.headerContainer}>
-          <Text style={styles.headerText}>บัญชีผู้ใช้</Text>
-        </SafeAreaView>
-      }
+      headerImage={<ProfileHeader title="บัญชีผู้ใช้" />}
     >
       <ScrollView showsVerticalScrollIndicator={false}>
-        {/* ส่วนโปรไฟล์ */}
+        {/* โปรไฟล์ */}
         <View style={styles.profileSection}>
           {avatar ? (
             <Image source={{ uri: avatar }} style={styles.profileImage} />
@@ -78,7 +85,7 @@ export default function profile() {
           <Text style={styles.username}>{name}</Text>
         </View>
 
-        {/* การ์ดข้อมูลผู้ใช้ */}
+        {/* การ์ดข้อมูล */}
         <View style={styles.card}>
           <View style={styles.infoRow}>
             <MaterialIcons name="email" size={20} color="#555" />
@@ -91,7 +98,7 @@ export default function profile() {
           </View>
         </View>
 
-        {/* Section ด้านล่าง */}
+        {/* ปุ่มล่าง */}
         <View style={styles.bottomSection}>
           <TouchableOpacity style={styles.optionCard} onPress={handleEditProfile}>
             <Ionicons name="create-outline" size={22} color="#4a3b2d" />
@@ -101,7 +108,9 @@ export default function profile() {
 
           <TouchableOpacity style={styles.optionCard} onPress={handleLogout}>
             <Ionicons name="log-out-outline" size={22} color="#c0392b" />
-            <Text style={[styles.optionText, { color: "#c0392b" }]}>ออกจากระบบ</Text>
+            <Text style={[styles.optionText, { color: "#c0392b" }]}>
+              ออกจากระบบ
+            </Text>
             <Ionicons name="chevron-forward" size={20} color="#c0392b" />
           </TouchableOpacity>
         </View>
@@ -111,25 +120,14 @@ export default function profile() {
 }
 
 const styles = StyleSheet.create({
-  center: { 
-    flex: 1, 
-    justifyContent: "center", 
-    alignItems: "center" 
-  },
-  headerContainer: {
-    height: 175,
+  center: {
+    flex: 1,
     justifyContent: "center",
     alignItems: "center",
-  },
-  headerText: { 
-    fontSize: 20, 
-    fontWeight: "bold", 
-    color: "black" 
   },
   profileSection: {
     alignItems: "center",
     marginTop: 20,
-    marginBottom: 10,
   },
   profileImage: {
     width: 150,
@@ -145,10 +143,10 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-  username: { 
-    fontSize: 22, 
-    fontWeight: "600", 
-    marginVertical: 12 
+  username: {
+    fontSize: 22,
+    fontWeight: "600",
+    marginVertical: 12,
   },
   card: {
     backgroundColor: "#fff",
@@ -165,10 +163,11 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginVertical: 8,
   },
-  infoText: { 
-    fontSize: 16, 
-    marginLeft: 10, 
-    color: "#333" 
+  infoText: {
+    fontSize: 16,
+    marginLeft: 10,
+    color: "#333",
+    fontWeight: 500,
   },
   bottomSection: {
     marginTop: 20,
@@ -185,10 +184,7 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     shadowColor: "#000",
     shadowOpacity: 0.05,
-    shadowOffset: { 
-      width: 0, 
-      height: 1 
-    },
+    shadowOffset: { width: 0, height: 1 },
     elevation: 2,
   },
   optionText: {

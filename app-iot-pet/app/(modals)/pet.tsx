@@ -2,7 +2,6 @@ import React, { useEffect, useState } from "react";
 import {
   Text,
   StyleSheet,
-  SafeAreaView,
   View,
   TouchableOpacity,
   Image,
@@ -22,6 +21,7 @@ import {
   doc,
 } from "firebase/firestore";
 import { SwipeListView } from "react-native-swipe-list-view";
+import ProfileHeader from "@/components/ProfileHeader";
 
 interface Pet {
   id: string;
@@ -56,15 +56,13 @@ export default function Pets() {
       orderBy("createdAt", "asc")
     );
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
+    return onSnapshot(q, (snapshot) => {
       const data = snapshot.docs.map((doc) => ({
         id: doc.id,
         ...(doc.data() as Omit<Pet, "id">),
       }));
       setPets(data);
     });
-
-    return () => unsubscribe();
   }, []);
 
   /* ================= LOAD DEVICE MATCH ================= */
@@ -107,18 +105,11 @@ export default function Pets() {
     rowKey: string,
     petId: string
   ) => {
-    try {
-      if (!auth.currentUser) return;
-      const uid = auth.currentUser.uid;
+    if (!auth.currentUser) return;
+    const uid = auth.currentUser.uid;
 
-      await deleteDoc(doc(db, "users", uid, "pets", petId));
-
-      if (rowMap[rowKey]) {
-        rowMap[rowKey].closeRow();
-      }
-    } catch (error) {
-      console.error("Error deleting pet:", error);
-    }
+    await deleteDoc(doc(db, "users", uid, "pets", petId));
+    rowMap[rowKey]?.closeRow();
   };
 
   /* ================= RENDER ITEM ================= */
@@ -135,7 +126,6 @@ export default function Pets() {
           })
         }
       >
-        {/* Image */}
         <View>
           {item.photoURL ? (
             <Image source={{ uri: item.photoURL }} style={styles.petImage} />
@@ -144,19 +134,15 @@ export default function Pets() {
               <MaterialIcons name="pets" size={32} color="#aaa" />
             </View>
           )}
-
-          {/* ONLINE DOT (NO ICON) */}
           {device && <View style={styles.connectedBadge} />}
         </View>
 
-        {/* Info */}
         <View style={styles.info}>
           <Text style={styles.petName}>{item.name}</Text>
           <Text style={styles.petDetail}>
             {item.breed} • {item.age} ปี • {item.gender}
           </Text>
 
-          {/* DEVICE STATUS PILL */}
           {device && (
             <View style={styles.deviceTag}>
               <Text style={styles.deviceTagText}>
@@ -187,28 +173,24 @@ export default function Pets() {
 
   return (
     <>
-      {/* ================= HEADER ================= */}
-      <SafeAreaView style={styles.safeArea}>
-        <View style={styles.header}>
-          <TouchableOpacity
-            style={styles.headerLeft}
-            onPress={() => router.back()}
-          >
+      {/* ===== HEADER (Component) ===== */}
+      <ProfileHeader
+        title="สัตว์เลี้ยงของคุณ"
+        left={
+          <TouchableOpacity onPress={() => router.back()}>
             <Ionicons name="chevron-back" size={28} color="#000" />
           </TouchableOpacity>
-
-          <Text style={styles.headerTitle}>สัตว์เลี้ยงของคุณ</Text>
-
+        }
+        right={
           <TouchableOpacity
-            style={styles.headerRight}
             onPress={() => router.push("/(modals)/AddPet")}
           >
             <MaterialIcons name="add" size={28} color="#000" />
           </TouchableOpacity>
-        </View>
-      </SafeAreaView>
+        }
+      />
 
-      {/* ================= CONTENT ================= */}
+      {/* ===== CONTENT ===== */}
       {pets.length === 0 ? (
         <View style={styles.emptyContainer}>
           <FontAwesome6 name="dog" size={100} color="lightgray" />
@@ -237,29 +219,6 @@ export default function Pets() {
 /* ================= STYLES ================= */
 
 const styles = StyleSheet.create({
-  safeArea: {
-    backgroundColor: "#f2bb14",
-  },
-
-  header: {
-    height: 56,
-    backgroundColor: "#f2bb14",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: "700",
-  },
-  headerLeft: {
-    position: "absolute",
-    left: 16,
-  },
-  headerRight: {
-    position: "absolute",
-    right: 16,
-  },
-
   emptyContainer: {
     marginTop: 50,
     alignItems: "center",
@@ -293,7 +252,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
 
-  /* ===== ONLINE DOT ===== */
   connectedBadge: {
     position: "absolute",
     right: 2,

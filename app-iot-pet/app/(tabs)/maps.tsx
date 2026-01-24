@@ -16,6 +16,7 @@ import MapView, {
   Callout,
   Polyline,
   MapPressEvent,
+  Polygon,
 } from "react-native-maps";
 import { MaterialIcons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -114,14 +115,9 @@ export default function MapTracker() {
   const [geofenceRadius, setGeofenceRadius] = useState(300);
   const [showGeofenceUI, setShowGeofenceUI] = useState(false);
   const [isInsideGeofence, setIsInsideGeofence] = useState<boolean | null>(null);
-  const [geofencePoints, setGeofencePoints] = useState<
-    { latitude: number; longitude: number }[]
-  >([]);
-
-  const [geofencePath, setGeofencePath] = useState<
-    { latitude: number; longitude: number }[]
-  >([]);
-
+  const [geofencePoints, setGeofencePoints] = useState<{ latitude: number; longitude: number }[]>([]);
+  const [geofencePath, setGeofencePath] = useState<{ latitude: number; longitude: number }[]>([]);
+  const [savedGeofence, setSavedGeofence] = useState<{ latitude: number; longitude: number }[] | null>(null);
 
   const insets = useSafeAreaInsets();
 
@@ -435,37 +431,26 @@ export default function MapTracker() {
     );
   };
 
-  const saveGeofence = async () => {
-    if (!deviceCode) {
-      Alert.alert("ยังไม่ได้เลือกอุปกรณ์");
-      return;
-    }
-
+  const saveGeofence = () => {
     if (geofencePoints.length < 3) {
-      Alert.alert("Geofence ไม่สมบูรณ์", "ต้องมีอย่างน้อย 3 จุด");
+      Alert.alert("ต้องมีอย่างน้อย 3 จุด");
       return;
     }
 
-    try {
-      await push(
-        dbRef(rtdb, `devices/${deviceCode}/geofence/history`),
-        {
-          type: "polygon",
-          points: geofencePoints,
-          createdAt: new Date().toISOString(),
-        }
-      );
+    // ปิด polygon ให้เป็น loop
+    const polygon = [...geofencePoints];
 
-      Alert.alert("บันทึกสำเร็จ", "Geofence ถูกบันทึกแล้ว");
+    setSavedGeofence(polygon);
+    setGeofencePoints([]);
+    setGeofencePath([]);
 
-      // ออกจากโหมดวาด
-      setIsGeofenceMode(false);
-      setShowGeofenceUI(false);
-      setIsInsideGeofence(null);
-    } catch (e) {
-      Alert.alert("เกิดข้อผิดพลาด", "ไม่สามารถบันทึก Geofence");
-    }
+    // reset state geofence logic
+    setIsInsideGeofence(null);
+
+    // ปิดโหมด geofence
+    setIsGeofenceMode(false);
   };
+
 
   return (
     <View style={styles.container}>
@@ -475,6 +460,29 @@ export default function MapTracker() {
         initialRegion={initialRegion}
         onPress={onMapPress}
       >
+        {/* ✅ SAVED GEOFENCE (FILLED) */}
+        {savedGeofence && savedGeofence.length >= 3 && (
+          <Polygon
+            coordinates={savedGeofence}
+            strokeColor="#A100CE"
+            strokeWidth={3}
+            fillColor="rgba(150, 23, 185, 0.21)"
+            zIndex={1}
+          />
+        )}
+
+        {/* drawing geofence */}
+        {isGeofenceMode && geofencePoints.length > 1 && (
+          <Polyline
+            coordinates={geofencePoints}
+            strokeColor="#A100CE"
+            strokeWidth={3}
+            lineDashPattern={[8, 6]}
+            zIndex={4}
+          />
+        )}
+
+        {/* path tracking */}
         {displayPath.length > 1 && (
           <Polyline
             coordinates={displayPath}
@@ -484,13 +492,12 @@ export default function MapTracker() {
           />
         )}
 
-        {/* ===== GEOFENCE DRAW ===== */}
-        {geofencePoints.length > 1 && (
+        {displayPath.length > 1 && (
           <Polyline
-            coordinates={geofencePoints}
-            strokeColor="#2E7D32"
-            strokeWidth={3}
-            lineDashPattern={[8, 6]} // เส้นประ
+            coordinates={displayPath}
+            strokeColor="#875100"
+            strokeWidth={8}
+            zIndex={3}
           />
         )}
 
@@ -516,7 +523,7 @@ export default function MapTracker() {
               <MaterialIcons
                 name="radio-button-checked"
                 size={18}
-                color="#2E7D32"
+                color="#8F08B5"
               />
             </Marker>
           );
@@ -609,7 +616,7 @@ export default function MapTracker() {
           style={[
             styles.geoBottomSheet,
             {
-              bottom: 16 + insets.bottom + 56, 
+              bottom: 16 + insets.bottom + 56,
             },
           ]}
         >
@@ -620,8 +627,6 @@ export default function MapTracker() {
           <Text style={styles.geoSubtitle}>
             {geofencePoints.length} จุด · แตะบนแผนที่
           </Text>
-
-
 
           <View style={styles.geoActionRow}>
             {/* ยกเลิก */}
@@ -654,10 +659,11 @@ export default function MapTracker() {
                 geofencePoints.length < 3 && styles.geoSaveDisabled,
               ]}
               disabled={geofencePoints.length < 3}
+              onPress={saveGeofence}
             >
-
               <Text style={styles.geoSaveText}>บันทึก</Text>
             </TouchableOpacity>
+
           </View>
         </View>
       )}
@@ -671,7 +677,7 @@ export default function MapTracker() {
       >
         {/* Geofence */}
         <TouchableOpacity
-          style={[styles.topFab, { backgroundColor: "#c62828" }]}
+          style={[styles.topFab, { backgroundColor: "#8D04B3" }]}
           onPress={() => {
             setIsGeofenceMode(true);
           }}
@@ -752,16 +758,6 @@ export default function MapTracker() {
             </Text>
           </TouchableOpacity>
         </View>
-      )}
-
-      {geofencePath.length >= 2 && (
-        <Polyline
-          coordinates={geofencePath}
-          strokeColor="#2E7D32"
-          strokeWidth={3}
-          lineDashPattern={[8, 6]}
-          zIndex={4}
-        />
       )}
 
       {/* ===== ADD DEVICE MODAL ===== */}
@@ -914,8 +910,72 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
 
-  calloutWrapper: { alignItems: "center" }, calloutHandle: { width: 48, height: 5, borderRadius: 3, backgroundColor: "#e0e0e0", marginBottom: 8, }, calloutCard: { backgroundColor: "#fff", borderRadius: 18, paddingHorizontal: 16, paddingVertical: 14, minWidth: 280, elevation: 6, }, cardHeader: { flexDirection: "row", justifyContent: "space-between", }, cardTitle: { fontSize: 16, fontWeight: "700" }, badge: { backgroundColor: "#e8f0fe", paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999, }, badgeText: { color: "#1a73e8", fontSize: 12, fontWeight: "600" }, divider: { height: 1, backgroundColor: "#eee", marginVertical: 10 }, row: { flexDirection: "row", alignItems: "center", marginTop: 6 }, icon: { fontSize: 16, marginRight: 8 }, text: { fontSize: 14.5, color: "#333" }, monoText: { fontSize: 14, color: "#444", fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace", }, boldText: { fontSize: 15, fontWeight: "700", color: "#111" },
+  calloutWrapper: {
+    alignItems: "center"
+  },
 
+  calloutHandle: {
+    width: 48,
+    height: 5,
+    borderRadius: 3,
+    backgroundColor: "#e0e0e0",
+    marginBottom: 8,
+  },
+  calloutCard: {
+    backgroundColor: "#fff",
+    borderRadius: 18,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    minWidth: 280,
+    elevation: 6,
+  },
+  cardHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  cardTitle: {
+    fontSize: 16,
+    fontWeight: "700"
+  },
+  badge: {
+    backgroundColor: "#e8f0fe",
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+  },
+  badgeText: {
+    color: "#1a73e8",
+    fontSize: 12,
+    fontWeight: "600"
+  },
+  divider: {
+    height: 1,
+    backgroundColor: "#eee",
+    marginVertical: 10
+  },
+  row: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 6
+  },
+  icon: {
+    fontSize: 16,
+    marginRight: 8
+  },
+  text: {
+    fontSize: 14.5,
+    color: "#333"
+  },
+  monoText: {
+    fontSize: 14,
+    color: "#444",
+    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
+  },
+  boldText: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: "#111"
+  },
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.5)",
@@ -995,8 +1055,6 @@ const styles = StyleSheet.create({
 
   geoUndo: {
     backgroundColor: "#F3F4F6",
-    // borderWidth: 0.5,
-    // borderColor: "#D1D5DB",
   },
 
   geoCancelText: {

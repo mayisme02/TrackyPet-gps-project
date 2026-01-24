@@ -14,7 +14,6 @@ import MapView, {
   Marker,
   Region,
   Callout,
-  Circle,
   Polyline,
   MapPressEvent,
 } from "react-native-maps";
@@ -26,6 +25,7 @@ import { doc, onSnapshot } from "firebase/firestore";
 import Slider from "@react-native-community/slider";
 import { rtdb } from "../../firebase/firebase";
 import { ref as dbRef, push } from "firebase/database";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 /* ================= CONFIG ================= */
 const BACKEND_URL = "http://192.168.31.135:3000";
@@ -114,7 +114,16 @@ export default function MapTracker() {
   const [geofenceRadius, setGeofenceRadius] = useState(300);
   const [showGeofenceUI, setShowGeofenceUI] = useState(false);
   const [isInsideGeofence, setIsInsideGeofence] = useState<boolean | null>(null);
+  const [geofencePoints, setGeofencePoints] = useState<
+    { latitude: number; longitude: number }[]
+  >([]);
 
+  const [geofencePath, setGeofencePath] = useState<
+    { latitude: number; longitude: number }[]
+  >([]);
+
+
+  const insets = useSafeAreaInsets();
 
   /* ================= LOAD PET IMAGE ================= */
   useEffect(() => {
@@ -187,6 +196,12 @@ export default function MapTracker() {
     });
   };
 
+  const geoInstruction =
+    geofencePoints.length === 0
+      ? "แตะบนแผนที่เพื่อเพิ่มจุด"
+      : geofencePoints.length < 3
+        ? "เพิ่มจุดให้ครบอย่างน้อย 3 จุด"
+        : "ลากจุดเพื่อปรับตำแหน่ง หรือบันทึก";
 
   /* ================= FETCH ================= */
   const fetchLocation = async (
@@ -216,33 +231,33 @@ export default function MapTracker() {
       setPetLocation(current);
 
       // ===== GEOFENCE CHECK =====
-if (geofenceCenter) {
-  const distFromCenter = distanceInMeters(
-    geofenceCenter.latitude,
-    geofenceCenter.longitude,
-    current.latitude,
-    current.longitude
-  );
+      if (geofenceCenter) {
+        const distFromCenter = distanceInMeters(
+          geofenceCenter.latitude,
+          geofenceCenter.longitude,
+          current.latitude,
+          current.longitude
+        );
 
-  const inside = distFromCenter <= geofenceRadius;
+        const inside = distFromCenter <= geofenceRadius;
 
-  // เคยอยู่ข้างใน → ออกนอก
-  if (isInsideGeofence === true && !inside) {
-    sendGeofenceAlert("exit", distFromCenter);
-    setIsInsideGeofence(false);
-  }
+        // เคยอยู่ข้างใน → ออกนอก
+        if (isInsideGeofence === true && !inside) {
+          sendGeofenceAlert("exit", distFromCenter);
+          setIsInsideGeofence(false);
+        }
 
-  // เคยอยู่นอก → กลับเข้า
-  if (isInsideGeofence === false && inside) {
-    sendGeofenceAlert("enter", distFromCenter);
-    setIsInsideGeofence(true);
-  }
+        // เคยอยู่นอก → กลับเข้า
+        if (isInsideGeofence === false && inside) {
+          sendGeofenceAlert("enter", distFromCenter);
+          setIsInsideGeofence(true);
+        }
 
-  // ครั้งแรก
-  if (isInsideGeofence === null) {
-    setIsInsideGeofence(inside);
-  }
-}
+        // ครั้งแรก
+        if (isInsideGeofence === null) {
+          setIsInsideGeofence(inside);
+        }
+      }
 
       appendPoint({
         latitude: current.latitude,
@@ -264,9 +279,20 @@ if (geofenceCenter) {
   /* ================= MAP PRESS (GEOFENCE) ================= */
   const onMapPress = (e: MapPressEvent) => {
     if (!isGeofenceMode) return;
-    setGeofenceCenter(e.nativeEvent.coordinate);
-    setShowGeofenceUI(true);
-    setIsGeofenceMode(false);
+
+    const coord = e.nativeEvent.coordinate;
+    if (!coord) return;
+
+    setGeofencePoints((prev) => [...prev, { ...coord }]);
+  };
+
+  const undoGeofencePoint = () => {
+    setGeofencePoints((prev) => {
+      if (prev.length === 0) return prev;
+
+      return prev.slice(0, prev.length - 1);
+    });
+    setIsInsideGeofence(null);
   };
 
   /* ================= AUTO TRACK ================= */
@@ -305,6 +331,15 @@ if (geofenceCenter) {
       load();
     }, [])
   );
+
+  useEffect(() => {
+    if (geofencePoints.length >= 2) {
+      setGeofencePath([...geofencePoints]);
+    } else {
+      setGeofencePath([]);
+    }
+  }, [geofencePoints]);
+
 
   useEffect(() => {
     if (!restorePetCallout || !petLocation) return;
@@ -349,47 +384,89 @@ if (geofenceCenter) {
     setTempCode("");
   };
   const cancelGeofence = () => {
-    setShowGeofenceUI(false);
-    setGeofenceCenter(null);
-    setGeofenceRadius(10);
+    if (geofencePoints.length > 0) {
+      Alert.alert(
+        "ยกเลิกการตั้งค่า",
+        "ข้อมูลที่กำหนดไว้จะหายไป",
+        [
+          { text: "ไม่ยกเลิก", style: "cancel" },
+          {
+            text: "ยกเลิก",
+            style: "destructive",
+            onPress: () => {
+              setGeofencePoints([]);
+              setIsGeofenceMode(false);
+            },
+          },
+        ]
+      );
+      return;
+    }
 
-    // บังคับ redraw marker
-    setMarkerReady(false);
-    setPetMarkerKey((k) => k + 1);
-    setIsInsideGeofence(null);
-
+    setIsGeofenceMode(false);
   };
 
+
   const sendGeofenceAlert = async (type: "exit" | "enter", distance: number) => {
-  if (!deviceCode) return;
+    if (!deviceCode) return;
 
-  const now = new Date();
-  const atUtc = now.toISOString();
-  const atTh = now.toLocaleString("th-TH", {
-    dateStyle: "long",
-    timeStyle: "medium",
-  });
+    const now = new Date();
+    const atUtc = now.toISOString();
+    const atTh = now.toLocaleString("th-TH", {
+      dateStyle: "long",
+      timeStyle: "medium",
+    });
 
-  const message =
-    type === "exit"
-      ? `สัตว์เลี้ยงออกนอกพื้นที่ (${Math.round(distance)} ม.)`
-      : `สัตว์เลี้ยงกลับเข้าพื้นที่`;
+    const message =
+      type === "exit"
+        ? `สัตว์เลี้ยงออกนอกพื้นที่ (${Math.round(distance)} ม.)`
+        : `สัตว์เลี้ยงกลับเข้าพื้นที่`;
 
-  await push(
-    dbRef(rtdb, `devices/${deviceCode}/alerts`),
-    {
-      type,
-      message,
-      atUtc,
-      atTh,
-      radiusKm: geofenceRadius / 1000,
-      device: deviceCode,
+    await push(
+      dbRef(rtdb, `devices/${deviceCode}/alerts`),
+      {
+        type,
+        message,
+        atUtc,
+        atTh,
+        radiusKm: geofenceRadius / 1000,
+        device: deviceCode,
+      }
+    );
+  };
+
+  const saveGeofence = async () => {
+    if (!deviceCode) {
+      Alert.alert("ยังไม่ได้เลือกอุปกรณ์");
+      return;
     }
-  );
-};
 
+    if (geofencePoints.length < 3) {
+      Alert.alert("Geofence ไม่สมบูรณ์", "ต้องมีอย่างน้อย 3 จุด");
+      return;
+    }
 
-  /* ================= UI ================= */
+    try {
+      await push(
+        dbRef(rtdb, `devices/${deviceCode}/geofence/history`),
+        {
+          type: "polygon",
+          points: geofencePoints,
+          createdAt: new Date().toISOString(),
+        }
+      );
+
+      Alert.alert("บันทึกสำเร็จ", "Geofence ถูกบันทึกแล้ว");
+
+      // ออกจากโหมดวาด
+      setIsGeofenceMode(false);
+      setShowGeofenceUI(false);
+      setIsInsideGeofence(null);
+    } catch (e) {
+      Alert.alert("เกิดข้อผิดพลาด", "ไม่สามารถบันทึก Geofence");
+    }
+  };
+
   return (
     <View style={styles.container}>
       <MapView
@@ -407,31 +484,43 @@ if (geofenceCenter) {
           />
         )}
 
-        {geofenceCenter && (
-          <>
-            <Circle
-              center={geofenceCenter}
-              radius={geofenceRadius}
-              strokeColor="rgba(140,176,158,0.9)"
-              fillColor="rgba(203,223,225,0.55)"
-              zIndex={1}
-            />
-
-            <Marker
-              coordinate={geofenceCenter}
-              draggable
-              zIndex={4}
-              anchor={{ x: 0.5, y: 1 }}
-              onDragEnd={(e) =>
-                setGeofenceCenter(e.nativeEvent.coordinate)
-              }
-            >
-              <MaterialIcons name="location-on" size={42} color="#2E7D32" />
-            </Marker>
-          </>
+        {/* ===== GEOFENCE DRAW ===== */}
+        {geofencePoints.length > 1 && (
+          <Polyline
+            coordinates={geofencePoints}
+            strokeColor="#2E7D32"
+            strokeWidth={3}
+            lineDashPattern={[8, 6]} // เส้นประ
+          />
         )}
 
+        {geofencePoints.map((p, i) => {
+          if (!p || p.latitude == null || p.longitude == null) return null;
 
+          return (
+            <Marker
+              key={`gf-${i}`}
+              coordinate={p}
+              draggable
+              onDragEnd={(e) => {
+                const coord = e.nativeEvent.coordinate;
+                if (!coord) return;
+
+                setGeofencePoints((prev) => {
+                  const next = [...prev];
+                  next[i] = coord;
+                  return next;
+                });
+              }}
+            >
+              <MaterialIcons
+                name="radio-button-checked"
+                size={18}
+                color="#2E7D32"
+              />
+            </Marker>
+          );
+        })}
 
         {petLocation && (
           <Marker
@@ -515,39 +604,105 @@ if (geofenceCenter) {
         )}
       </MapView>
 
-      {/* ===== FABs ===== */}
-      <TouchableOpacity
-        style={styles.geofenceFab}
-        onPress={() => {
-          Alert.alert("ตั้งค่า Geofence", "แตะบนแผนที่เพื่อกำหนดตำแหน่ง");
-          setIsGeofenceMode(true);
-        }}
-      >
-        <MaterialIcons name="location-searching" size={26} color="#fff" />
-      </TouchableOpacity>
+      {isGeofenceMode && (
+        <View
+          style={[
+            styles.geoBottomSheet,
+            {
+              bottom: 16 + insets.bottom + 56, 
+            },
+          ]}
+        >
+          <Text style={styles.geoTitle}>
+            กำหนดพื้นที่ Geofence
+          </Text>
 
-      <TouchableOpacity
-        style={styles.addFab}
-        onPress={() => setModalVisible(true)}
-      >
-        <MaterialIcons name="add-circle-outline" size={30} color="#fff" />
-      </TouchableOpacity>
+          <Text style={styles.geoSubtitle}>
+            {geofencePoints.length} จุด · แตะบนแผนที่
+          </Text>
 
-      <TouchableOpacity
+
+
+          <View style={styles.geoActionRow}>
+            {/* ยกเลิก */}
+            <TouchableOpacity
+              style={[styles.geoBtn,
+              styles.geoCancel]}
+              onPress={cancelGeofence}
+            >
+              <Text style={styles.geoCancelText}>ยกเลิก</Text>
+            </TouchableOpacity>
+
+            {/* Undo */}
+            <TouchableOpacity
+              style={[
+                styles.geoBtn,
+                styles.geoUndo,
+                geofencePoints.length === 0 && { opacity: 0.5 },
+              ]}
+              disabled={geofencePoints.length === 0}
+              onPress={undoGeofencePoint}
+            >
+              <Text style={styles.geoUndoText}>Undo</Text>
+            </TouchableOpacity>
+
+            {/* Save */}
+            <TouchableOpacity
+              style={[
+                styles.geoBtn,
+                styles.geoSave,
+                geofencePoints.length < 3 && styles.geoSaveDisabled,
+              ]}
+              disabled={geofencePoints.length < 3}
+            >
+
+              <Text style={styles.geoSaveText}>บันทึก</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
+      {/* ===== TOP FAB STACK ===== */}
+      <View
         style={[
-          styles.fab,
-          { backgroundColor: deviceCode ? "#0b1d51" : "#aaa" },
+          styles.topFabContainer,
+          { top: insets.top + 12 },
         ]}
-        disabled={!deviceCode}
-        onPress={() => {
-          if (!deviceCode) return;
-          setIsTracking(true);
-          fetchLocation(deviceCode);
-
-        }}
       >
-        <MaterialIcons name="my-location" size={26} color="#fff" />
-      </TouchableOpacity>
+        {/* Geofence */}
+        <TouchableOpacity
+          style={[styles.topFab, { backgroundColor: "#c62828" }]}
+          onPress={() => {
+            setIsGeofenceMode(true);
+          }}
+        >
+          <MaterialIcons name="location-searching" size={24} color="#fff" />
+        </TouchableOpacity>
+
+        {/* Add device */}
+        <TouchableOpacity
+          style={[styles.topFab, { backgroundColor: "#905b0d" }]}
+          onPress={() => setModalVisible(true)}
+        >
+          <MaterialIcons name="add-circle-outline" size={26} color="#fff" />
+        </TouchableOpacity>
+
+        {/* Refresh */}
+        <TouchableOpacity
+          style={[
+            styles.topFab,
+            { backgroundColor: deviceCode ? "#0b1d51" : "#aaa" },
+          ]}
+          disabled={!deviceCode}
+          onPress={() => {
+            if (!deviceCode) return;
+            setIsTracking(true);
+            fetchLocation(deviceCode);
+          }}
+        >
+          <MaterialIcons name="my-location" size={24} color="#fff" />
+        </TouchableOpacity>
+      </View>
 
       {showGeofenceUI && (
         <View style={styles.geofencePanel}>
@@ -580,9 +735,34 @@ if (geofenceCenter) {
               <Text style={styles.geofenceConfirmText}>ยืนยัน</Text>
             </TouchableOpacity>
           </View>
+
+          <TouchableOpacity
+            style={[
+              styles.geofenceBtn,
+              {
+                backgroundColor:
+                  geofencePoints.length === 0 ? "#ddd" : "#E5E7EB",
+              },
+            ]}
+            disabled={geofencePoints.length === 0}
+            onPress={undoGeofencePoint}
+          >
+            <Text style={{ color: "#374151", fontWeight: "600" }}>
+              Undo จุดเส้นล่าสุด
+            </Text>
+          </TouchableOpacity>
         </View>
       )}
 
+      {geofencePath.length >= 2 && (
+        <Polyline
+          coordinates={geofencePath}
+          strokeColor="#2E7D32"
+          strokeWidth={3}
+          lineDashPattern={[8, 6]}
+          zIndex={4}
+        />
+      )}
 
       {/* ===== ADD DEVICE MODAL ===== */}
       <Modal visible={modalVisible} transparent animationType="fade">
@@ -770,4 +950,104 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   submitText: { color: "#fff", fontSize: 16 },
+
+  geoBottomSheet: {
+    position: "absolute",
+    left: 16,
+    right: 16,
+    backgroundColor: "#fff",
+    borderRadius: 18,
+    padding: 16,
+    paddingVertical: 20,
+    elevation: 12,
+    shadowColor: "#000",
+    shadowOpacity: 0.15,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+  },
+
+  geoTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    marginBottom: 2,
+    textAlign: "center",
+  },
+
+  geoActionRow: {
+    flexDirection: "row",
+    gap: 10,
+  },
+
+  geoBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 12,
+    alignItems: "center",
+  },
+
+  geoCancel: {
+    backgroundColor: "#E5E7EB",
+  },
+
+  geoSave: {
+    backgroundColor: "#905b0dff",
+  },
+
+  geoUndo: {
+    backgroundColor: "#F3F4F6",
+    // borderWidth: 0.5,
+    // borderColor: "#D1D5DB",
+  },
+
+  geoCancelText: {
+    color: "#374151",
+    fontWeight: "600",
+  },
+
+  geoUndoText: {
+    color: "#111827",
+    fontWeight: "600",
+  },
+
+  geoSaveText: {
+    color: "#fff",
+    fontWeight: "700",
+  },
+
+  topFabContainer: {
+    position: "absolute",
+    right: 16,
+    flexDirection: "column",
+    gap: 12,
+    zIndex: 20,
+  },
+
+  topFab: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    justifyContent: "center",
+    alignItems: "center",
+    elevation: 10,
+    shadowColor: "#000",
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 3 },
+  },
+
+  geoSubtitle: {
+    fontSize: 14,
+    color: "#6B7280",
+    textAlign: "center",
+    marginBottom: 10,
+  },
+  geoSaveDisabled: {
+    backgroundColor: "#AE9367",
+  },
+  geoHint: {
+    fontSize: 12,
+    color: "#DC2626",
+    textAlign: "center",
+    marginTop: 6,
+  },
 });

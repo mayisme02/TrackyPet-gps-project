@@ -27,6 +27,7 @@ import Slider from "@react-native-community/slider";
 import { rtdb } from "../../firebase/firebase";
 import { ref as dbRef, push } from "firebase/database";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { DEVICE_TYPES } from "../../assets/constants/deviceData";
 
 /* ================= CONFIG ================= */
 const BACKEND_URL = "http://192.168.31.135:3000";
@@ -113,11 +114,12 @@ export default function MapTracker() {
     longitude: number;
   } | null>(null);
   const [geofenceRadius, setGeofenceRadius] = useState(300);
-  const [showGeofenceUI, setShowGeofenceUI] = useState(false);
   const [isInsideGeofence, setIsInsideGeofence] = useState<boolean | null>(null);
   const [geofencePoints, setGeofencePoints] = useState<{ latitude: number; longitude: number }[]>([]);
   const [geofencePath, setGeofencePath] = useState<{ latitude: number; longitude: number }[]>([]);
   const [savedGeofence, setSavedGeofence] = useState<{ latitude: number; longitude: number }[] | null>(null);
+  const [petName, setPetName] = useState<string | null>(null);
+  const [deviceName, setDeviceName] = useState<string>("GPS Tracker");
 
   const insets = useSafeAreaInsets();
 
@@ -125,13 +127,22 @@ export default function MapTracker() {
   useEffect(() => {
     if (!auth.currentUser || !deviceCode) {
       setPetPhotoURL(null);
+      setPetName(null);
       return;
     }
 
     return onSnapshot(
       doc(db, "users", auth.currentUser.uid, "deviceMatches", deviceCode),
       (snap) => {
-        setPetPhotoURL(snap.exists() ? snap.data().photoURL ?? null : null);
+        if (!snap.exists()) {
+          setPetPhotoURL(null);
+          setPetName(null);
+          return;
+        }
+
+        const data = snap.data();
+        setPetPhotoURL(data.photoURL ?? null);
+        setPetName(data.petName ?? "สัตว์เลี้ยง");
       }
     );
   }, [deviceCode]);
@@ -308,22 +319,22 @@ export default function MapTracker() {
         const active = await AsyncStorage.getItem("activeDevice");
         if (!active) {
           setDeviceCode(null);
-          setLocation(null);
-          // ล้าง marker สัตว์เลี้ยง
-          setPetLocation(null);
-          setPetPhotoURL(null);
-          setMarkerReady(false);
-          // ล้างเส้นทาง
-          setRawPath([]);
-          setDisplayPath([]);
-          setAccumulatedDistance(0);
-          setIsTracking(false);
+          setDeviceName("GPS Tracker");
           return;
         }
-
         setDeviceCode(active);
+        const stored = await AsyncStorage.getItem("devices");
+        const list: Device[] = stored ? JSON.parse(stored) : [];
+        const device = list.find((d) => d.code === active);
+
+        if (device?.type && DEVICE_TYPES[device.type]) {
+          setDeviceName(DEVICE_TYPES[device.type].name);
+        } else {
+          setDeviceName("GPS Tracker");
+        }
         setIsTracking(false);
       };
+
       load();
     }, [])
   );
@@ -335,7 +346,6 @@ export default function MapTracker() {
       setGeofencePath([]);
     }
   }, [geofencePoints]);
-
 
   useEffect(() => {
     if (!restorePetCallout || !petLocation) return;
@@ -362,11 +372,9 @@ export default function MapTracker() {
     const ok = await fetchLocation(code);
     if (!ok) return;
 
-    const newDevice: Device = {
-      id: Date.now().toString(),
+    const newDevice = {
       code,
       type: "GPS_TRACKER_A7670",
-      name: "LilyGo A7670E",
       createdAt: new Date().toISOString(),
     };
 
@@ -401,7 +409,6 @@ export default function MapTracker() {
 
     setIsGeofenceMode(false);
   };
-
 
   const sendGeofenceAlert = async (type: "exit" | "enter", distance: number) => {
     if (!deviceCode) return;
@@ -451,7 +458,6 @@ export default function MapTracker() {
     setIsGeofenceMode(false);
   };
 
-
   return (
     <View style={styles.container}>
       <MapView
@@ -483,15 +489,6 @@ export default function MapTracker() {
         )}
 
         {/* path tracking */}
-        {displayPath.length > 1 && (
-          <Polyline
-            coordinates={displayPath}
-            strokeColor="#875100"
-            strokeWidth={8}
-            zIndex={3}
-          />
-        )}
-
         {displayPath.length > 1 && (
           <Polyline
             coordinates={displayPath}
@@ -566,10 +563,15 @@ export default function MapTracker() {
                 <View style={styles.calloutHandle} />
                 <View style={styles.calloutCard}>
                   <View style={styles.cardHeader}>
-                    <Text style={styles.cardTitle}>GPS Tracker</Text>
+                    {/* ชื่อสัตว์ */}
+                    <Text style={styles.cardTitle}>
+                      {petName ?? "สัตว์เลี้ยง"}
+                    </Text>
+
+                    {/* ชื่ออุปกรณ์ */}
                     <View style={styles.badge}>
                       <Text style={styles.badgeText}>
-                        ± {petLocation.accuracy ?? 30} ม.
+                        {deviceName}
                       </Text>
                     </View>
                   </View>
@@ -709,56 +711,6 @@ export default function MapTracker() {
           <MaterialIcons name="my-location" size={24} color="#fff" />
         </TouchableOpacity>
       </View>
-
-      {showGeofenceUI && (
-        <View style={styles.geofencePanel}>
-          <Text style={styles.geofenceTitle}>
-            รัศมี {geofenceRadius} เมตร
-          </Text>
-
-          <Slider
-            minimumValue={1}
-            maximumValue={100}
-            step={1}
-            value={geofenceRadius}
-            onValueChange={setGeofenceRadius}
-          />
-
-          <View style={styles.geofenceActionRow}>
-            {/* ยกเลิก */}
-            <TouchableOpacity
-              style={[styles.geofenceBtn, styles.geofenceCancelBtn]}
-              onPress={cancelGeofence}
-            >
-              <Text style={styles.geofenceCancelText}>ยกเลิก</Text>
-            </TouchableOpacity>
-
-            {/* ยืนยัน */}
-            <TouchableOpacity
-              style={[styles.geofenceBtn, styles.geofenceConfirmBtn]}
-              onPress={() => setShowGeofenceUI(false)}
-            >
-              <Text style={styles.geofenceConfirmText}>ยืนยัน</Text>
-            </TouchableOpacity>
-          </View>
-
-          <TouchableOpacity
-            style={[
-              styles.geofenceBtn,
-              {
-                backgroundColor:
-                  geofencePoints.length === 0 ? "#ddd" : "#E5E7EB",
-              },
-            ]}
-            disabled={geofencePoints.length === 0}
-            onPress={undoGeofencePoint}
-          >
-            <Text style={{ color: "#374151", fontWeight: "600" }}>
-              Undo จุดเส้นล่าสุด
-            </Text>
-          </TouchableOpacity>
-        </View>
-      )}
 
       {/* ===== ADD DEVICE MODAL ===== */}
       <Modal visible={modalVisible} transparent animationType="fade">

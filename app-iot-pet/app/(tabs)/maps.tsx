@@ -28,6 +28,7 @@ import { rtdb } from "../../firebase/firebase";
 import { ref as dbRef, push } from "firebase/database";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { DEVICE_TYPES } from "../../assets/constants/deviceData";
+import { setDoc } from "firebase/firestore";
 
 /* ================= CONFIG ================= */
 const BACKEND_URL = "http://192.168.31.135:3000";
@@ -126,26 +127,26 @@ export default function MapTracker() {
   /* ================= LOAD PET IMAGE ================= */
   useEffect(() => {
     if (!auth.currentUser || !deviceCode) {
-      setPetPhotoURL(null);
-      setPetName(null);
+      setSavedGeofence(null);
       return;
     }
 
     return onSnapshot(
-      doc(db, "users", auth.currentUser.uid, "deviceMatches", deviceCode),
+      doc(db, "users", auth.currentUser.uid, "geofences", deviceCode),
       (snap) => {
         if (!snap.exists()) {
-          setPetPhotoURL(null);
-          setPetName(null);
+          setSavedGeofence(null);
           return;
         }
 
         const data = snap.data();
-        setPetPhotoURL(data.photoURL ?? null);
-        setPetName(data.petName ?? "สัตว์เลี้ยง");
+        if (Array.isArray(data.points)) {
+          setSavedGeofence(data.points);
+        }
       }
     );
   }, [deviceCode]);
+
 
   /* ================= FORMAT ================= */
   const formatThaiDate = (iso: string) =>
@@ -438,24 +439,33 @@ export default function MapTracker() {
     );
   };
 
-  const saveGeofence = () => {
+  const saveGeofence = async () => {
+    if (!auth.currentUser || !deviceCode) return;
+
     if (geofencePoints.length < 3) {
       Alert.alert("ต้องมีอย่างน้อย 3 จุด");
       return;
     }
 
-    // ปิด polygon ให้เป็น loop
     const polygon = [...geofencePoints];
 
+    // 🔹 save local state
     setSavedGeofence(polygon);
     setGeofencePoints([]);
     setGeofencePath([]);
-
-    // reset state geofence logic
     setIsInsideGeofence(null);
-
-    // ปิดโหมด geofence
     setIsGeofenceMode(false);
+
+    // 🔹 save to Firestore
+    await setDoc(
+      doc(db, "users", auth.currentUser.uid, "geofences", deviceCode),
+      {
+        deviceCode,
+        type: "polygon",
+        points: polygon,
+        createdAt: new Date(),
+      }
+    );
   };
 
   return (

@@ -124,28 +124,38 @@ export default function MapTracker() {
 
   const insets = useSafeAreaInsets();
 
-  /* ================= LOAD PET IMAGE ================= */
+  /* ================= LOAD PET MATCH ================= */
   useEffect(() => {
     if (!auth.currentUser || !deviceCode) {
-      setSavedGeofence(null);
+      setPetName(null);
+      setPetPhotoURL(null);
       return;
     }
 
-    return onSnapshot(
-      doc(db, "users", auth.currentUser.uid, "geofences", deviceCode),
-      (snap) => {
-        if (!snap.exists()) {
-          setSavedGeofence(null);
-          return;
-        }
-
-        const data = snap.data();
-        if (Array.isArray(data.points)) {
-          setSavedGeofence(data.points);
-        }
-      }
+    const ref = doc(
+      db,
+      "users",
+      auth.currentUser.uid,
+      "deviceMatches",
+      deviceCode
     );
+
+    return onSnapshot(ref, (snap) => {
+      if (!snap.exists()) {
+        setPetName(null);
+        setPetPhotoURL(null);
+        return;
+      }
+
+      const data = snap.data();
+      setPetName(data.petName ?? null);
+      setPetPhotoURL(data.photoURL ?? null);
+
+      setPetMarkerKey((k) => k + 1);
+      setMarkerReady(false);
+    });
   }, [deviceCode]);
+
 
 
   /* ================= FORMAT ================= */

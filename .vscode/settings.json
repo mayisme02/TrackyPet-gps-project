@@ -18,5 +18,6 @@
         "cooldown",
         "firestore",
         "Pressable"
-    ]
+    ],
+    "C_Cpp.errorSquiggles": "enabled"
 }

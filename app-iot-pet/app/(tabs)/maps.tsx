@@ -23,7 +23,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useFocusEffect } from "@react-navigation/native";
 import { auth, db } from "../../firebase/firebase";
 import { doc, onSnapshot } from "firebase/firestore";
-import Slider from "@react-native-community/slider";
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { rtdb } from "../../firebase/firebase";
 import { ref as dbRef, push } from "firebase/database";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -107,6 +107,7 @@ export default function MapTracker() {
   const [petLocation, setPetLocation] = useState<DeviceLocation | null>(null);
   const [markerReady, setMarkerReady] = useState(false);
   const [petMarkerKey, setPetMarkerKey] = useState(0);
+  const [menuVisible, setMenuVisible] = useState(false);
 
   /* ================= GEOFENCE ================= */
   const [isGeofenceMode, setIsGeofenceMode] = useState(false);
@@ -632,6 +633,67 @@ export default function MapTracker() {
           </Marker>
         )}
       </MapView>
+      {/* ===== MENU / FILTER BOTTOM SHEET ===== */}
+      <Modal visible={menuVisible} transparent animationType="slide">
+        <View style={styles.sheetOverlay}>
+          {/* กดพื้นที่มืดเพื่อปิด */}
+          <TouchableOpacity
+            style={StyleSheet.absoluteFill}
+            activeOpacity={1}
+            onPress={() => setMenuVisible(false)}
+          />
+
+          <View style={[styles.sheet, { paddingBottom: 14 + insets.bottom }]}>
+            <View style={styles.sheetHandle} />
+            <Text style={styles.sheetTitle}>ตัวกรองแผนที่</Text>
+
+            {/* ✅ รายการ 1: Geofence (logic เดิม) */}
+            <TouchableOpacity
+              style={styles.sheetRow}
+              onPress={() => {
+                setMenuVisible(false);
+                setIsGeofenceMode(true); 
+              }}
+            >
+              <View style={styles.sheetIcon}>
+                <MaterialCommunityIcons name="border-style" size={22} color="#905b0d" />
+              </View>
+              <Text style={styles.sheetText}>กำหนดพื้นที่ (Geofence)</Text>
+              <MaterialIcons name="chevron-right" size={22} color="#9CA3AF" />
+            </TouchableOpacity>
+
+            {/* ✅ รายการ 2: Add device (logic เดิม) */}
+            <TouchableOpacity
+              style={styles.sheetRow}
+              onPress={() => {
+                setMenuVisible(false);
+                setModalVisible(true); 
+              }}
+            >
+              <View style={styles.sheetIcon}>
+                <MaterialIcons name="add-circle-outline" size={24} color="#905b0d" />
+              </View>
+              <Text style={styles.sheetText}>เพิ่มอุปกรณ์</Text>
+              <MaterialIcons name="chevron-right" size={22} color="#9CA3AF" />
+            </TouchableOpacity>
+
+            {/* ✅ รายการ 3: บันทึกเส้นทางย้อนหลัง */}
+            <TouchableOpacity
+              style={styles.sheetRow}
+              onPress={() => {
+                setMenuVisible(false);
+                setModalVisible(true); 
+              }}
+            >
+              <View style={styles.sheetIcon}>
+                <MaterialCommunityIcons name="map-clock-outline" size={24} color="#905b0d" />
+              </View>
+              <Text style={styles.sheetText}>บันทึกเส้นทาง</Text>
+              <MaterialIcons name="chevron-right" size={22} color="#9CA3AF" />
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
 
       {isGeofenceMode && (
         <View
@@ -690,32 +752,15 @@ export default function MapTracker() {
         </View>
       )}
 
-      {/* ===== TOP FAB STACK ===== */}
-      <View
-        style={[
-          styles.topFabContainer,
-          { top: insets.top + 12 },
-        ]}
-      >
-        {/* Geofence */}
+      {/* ===== TOP RIGHT CONTROLS ===== */}
+      <View style={[styles.topRightControls, { top: insets.top + 12 }]}>
         <TouchableOpacity
-          style={[styles.topFab, { backgroundColor: "#8D04B3" }]}
-          onPress={() => {
-            setIsGeofenceMode(true);
-          }}
+          style={[styles.topFab, { backgroundColor: "#FFFFFF" }]}
+          onPress={() => setMenuVisible(true)}
         >
-          <MaterialIcons name="location-searching" size={24} color="#fff" />
+          <MaterialIcons name="tune" size={24} color="#111827" />
         </TouchableOpacity>
 
-        {/* Add device */}
-        <TouchableOpacity
-          style={[styles.topFab, { backgroundColor: "#905b0d" }]}
-          onPress={() => setModalVisible(true)}
-        >
-          <MaterialIcons name="add-circle-outline" size={26} color="#fff" />
-        </TouchableOpacity>
-
-        {/* Refresh */}
         <TouchableOpacity
           style={[
             styles.topFab,
@@ -1079,5 +1124,67 @@ const styles = StyleSheet.create({
     color: "#DC2626",
     textAlign: "center",
     marginTop: 6,
+  },
+  topRightControls: {
+    position: "absolute",
+    right: 16,
+    flexDirection: "column",
+    gap: 12,
+    zIndex: 30,
+  },
+
+  sheetOverlay: {
+    flex: 1,
+    justifyContent: "flex-end",
+    backgroundColor: "rgba(0,0,0,0.35)",
+  },
+
+  sheet: {
+    backgroundColor: "#fff",
+    borderTopLeftRadius: 22,
+    borderTopRightRadius: 22,
+    paddingHorizontal: 18,
+    paddingTop: 10,
+  },
+
+  sheetHandle: {
+    alignSelf: "center",
+    width: 46,
+    height: 5,
+    borderRadius: 999,
+    backgroundColor: "#E5E7EB",
+    marginBottom: 10,
+  },
+
+  sheetTitle: {
+    fontSize: 20,
+    fontWeight: "800",
+    color: "#111827",
+    marginBottom: 10,
+  },
+
+  sheetRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 14,
+    gap: 12,
+    borderTopWidth: 1,
+    borderTopColor: "#F3F4F6",
+  },
+
+  sheetIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    backgroundColor: "#F9FAFB",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  sheetText: {
+    flex: 1,
+    fontSize: 16,
+    color: "#111827",
+    fontWeight: "700",
   },
 });

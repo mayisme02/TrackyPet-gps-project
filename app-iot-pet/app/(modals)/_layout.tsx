@@ -10,6 +10,7 @@ export default function AuthLayout() {
       <Stack.Screen name="PetDetail" />
       <Stack.Screen name="PetMatch" />
       <Stack.Screen name="RouteHistory" />
+      <Stack.Screen name="RouteHistoryList" />
     </Stack>
   );
 }

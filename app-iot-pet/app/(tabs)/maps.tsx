@@ -31,7 +31,7 @@ import { DEVICE_TYPES } from "../../assets/constants/deviceData";
 import { setDoc } from "firebase/firestore";
 
 /* ================= CONFIG ================= */
-const BACKEND_URL = "http://192.168.31.135:3000";
+const BACKEND_URL = "http://192.168.31.84:3000";
 const MIN_MOVE_DISTANCE = 5;
 
 /* ================= TYPES ================= */

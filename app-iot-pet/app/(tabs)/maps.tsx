@@ -22,16 +22,16 @@ import { MaterialIcons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useFocusEffect } from "@react-navigation/native";
 import { auth, db } from "../../firebase/firebase";
-import { doc, onSnapshot } from "firebase/firestore";
-import Slider from "@react-native-community/slider";
+import { doc, onSnapshot, setDoc } from "firebase/firestore";
+import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import { rtdb } from "../../firebase/firebase";
 import { ref as dbRef, push } from "firebase/database";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { DEVICE_TYPES } from "../../assets/constants/deviceData";
-import { setDoc } from "firebase/firestore";
+import DateTimePicker from "@react-native-community/datetimepicker";
 
 /* ================= CONFIG ================= */
-const BACKEND_URL = "http://192.168.31.135:3000";
+const BACKEND_URL = "http://192.168.31.84:3000";
 const MIN_MOVE_DISTANCE = 5;
 
 /* ================= TYPES ================= */
@@ -71,8 +71,8 @@ function distanceInMeters(
   const a =
     Math.sin(dLat / 2) ** 2 +
     Math.cos(toRad(lat1)) *
-    Math.cos(toRad(lat2)) *
-    Math.sin(dLon / 2) ** 2;
+      Math.cos(toRad(lat2)) *
+      Math.sin(dLon / 2) ** 2;
 
   return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
@@ -107,6 +107,11 @@ export default function MapTracker() {
   const [petLocation, setPetLocation] = useState<DeviceLocation | null>(null);
   const [markerReady, setMarkerReady] = useState(false);
   const [petMarkerKey, setPetMarkerKey] = useState(0);
+  const [menuVisible, setMenuVisible] = useState(false);
+
+  // ✅ Route modal state
+  const [routeModalVisible, setRouteModalVisible] = useState(false);
+  const [routePreset, setRoutePreset] = useState<"today" | "custom">("today");
 
   /* ================= GEOFENCE ================= */
   const [isGeofenceMode, setIsGeofenceMode] = useState(false);
@@ -116,9 +121,15 @@ export default function MapTracker() {
   } | null>(null);
   const [geofenceRadius, setGeofenceRadius] = useState(300);
   const [isInsideGeofence, setIsInsideGeofence] = useState<boolean | null>(null);
-  const [geofencePoints, setGeofencePoints] = useState<{ latitude: number; longitude: number }[]>([]);
-  const [geofencePath, setGeofencePath] = useState<{ latitude: number; longitude: number }[]>([]);
-  const [savedGeofence, setSavedGeofence] = useState<{ latitude: number; longitude: number }[] | null>(null);
+  const [geofencePoints, setGeofencePoints] = useState<
+    { latitude: number; longitude: number }[]
+  >([]);
+  const [geofencePath, setGeofencePath] = useState<
+    { latitude: number; longitude: number }[]
+  >([]);
+  const [savedGeofence, setSavedGeofence] = useState<
+    { latitude: number; longitude: number }[] | null
+  >(null);
   const [petName, setPetName] = useState<string | null>(null);
   const [deviceName, setDeviceName] = useState<string>("GPS Tracker");
 
@@ -132,13 +143,7 @@ export default function MapTracker() {
       return;
     }
 
-    const ref = doc(
-      db,
-      "users",
-      auth.currentUser.uid,
-      "deviceMatches",
-      deviceCode
-    );
+    const ref = doc(db, "users", auth.currentUser.uid, "deviceMatches", deviceCode);
 
     return onSnapshot(ref, (snap) => {
       if (!snap.exists()) {
@@ -155,8 +160,6 @@ export default function MapTracker() {
       setMarkerReady(false);
     });
   }, [deviceCode]);
-
-
 
   /* ================= FORMAT ================= */
   const formatThaiDate = (iso: string) =>
@@ -218,8 +221,8 @@ export default function MapTracker() {
     geofencePoints.length === 0
       ? "แตะบนแผนที่เพื่อเพิ่มจุด"
       : geofencePoints.length < 3
-        ? "เพิ่มจุดให้ครบอย่างน้อย 3 จุด"
-        : "ลากจุดเพื่อปรับตำแหน่ง หรือบันทึก";
+      ? "เพิ่มจุดให้ครบอย่างน้อย 3 จุด"
+      : "ลากจุดเพื่อปรับตำแหน่ง หรือบันทึก";
 
   /* ================= FETCH ================= */
   const fetchLocation = async (
@@ -307,7 +310,6 @@ export default function MapTracker() {
   const undoGeofencePoint = () => {
     setGeofencePoints((prev) => {
       if (prev.length === 0) return prev;
-
       return prev.slice(0, prev.length - 1);
     });
     setIsInsideGeofence(null);
@@ -398,23 +400,20 @@ export default function MapTracker() {
     setModalVisible(false);
     setTempCode("");
   };
+
   const cancelGeofence = () => {
     if (geofencePoints.length > 0) {
-      Alert.alert(
-        "ยกเลิกการตั้งค่า",
-        "ข้อมูลที่กำหนดไว้จะหายไป",
-        [
-          { text: "ไม่ยกเลิก", style: "cancel" },
-          {
-            text: "ยกเลิก",
-            style: "destructive",
-            onPress: () => {
-              setGeofencePoints([]);
-              setIsGeofenceMode(false);
-            },
+      Alert.alert("ยกเลิกการตั้งค่า", "ข้อมูลที่กำหนดไว้จะหายไป", [
+        { text: "ไม่ยกเลิก", style: "cancel" },
+        {
+          text: "ยกเลิก",
+          style: "destructive",
+          onPress: () => {
+            setGeofencePoints([]);
+            setIsGeofenceMode(false);
           },
-        ]
-      );
+        },
+      ]);
       return;
     }
 
@@ -436,17 +435,14 @@ export default function MapTracker() {
         ? `สัตว์เลี้ยงออกนอกพื้นที่ (${Math.round(distance)} ม.)`
         : `สัตว์เลี้ยงกลับเข้าพื้นที่`;
 
-    await push(
-      dbRef(rtdb, `devices/${deviceCode}/alerts`),
-      {
-        type,
-        message,
-        atUtc,
-        atTh,
-        radiusKm: geofenceRadius / 1000,
-        device: deviceCode,
-      }
-    );
+    await push(dbRef(rtdb, `devices/${deviceCode}/alerts`), {
+      type,
+      message,
+      atUtc,
+      atTh,
+      radiusKm: geofenceRadius / 1000,
+      device: deviceCode,
+    });
   };
 
   const saveGeofence = async () => {
@@ -467,15 +463,50 @@ export default function MapTracker() {
     setIsGeofenceMode(false);
 
     // 🔹 save to Firestore
-    await setDoc(
-      doc(db, "users", auth.currentUser.uid, "geofences", deviceCode),
-      {
-        deviceCode,
-        type: "polygon",
-        points: polygon,
-        createdAt: new Date(),
-      }
-    );
+    await setDoc(doc(db, "users", auth.currentUser.uid, "geofences", deviceCode), {
+      deviceCode,
+      type: "polygon",
+      points: polygon,
+      createdAt: new Date(),
+    });
+  };
+
+  /* ================= ROUTE MODAL (Today default + Custom + Cross-day + Single Picker) ================= */
+  const getTodayRange = () => {
+    const now = new Date();
+    const start = new Date(now);
+    start.setHours(0, 0, 0, 0);
+
+    const end = new Date(now);
+    end.setHours(23, 59, 0, 0);
+
+    return { start, end };
+  };
+
+  const [{ routeFrom, routeTo }, setRouteRange] = useState(() => {
+    const { start, end } = getTodayRange();
+    return { routeFrom: start, routeTo: end };
+  });
+
+  // ✅ picker ตัวเดียว
+  const [pickerVisible, setPickerVisible] = useState(false);
+  const [pickerMode, setPickerMode] = useState<"date" | "time">("time");
+  const [activeField, setActiveField] = useState<
+    "fromDate" | "fromTime" | "toDate" | "toTime"
+  >("fromTime");
+
+  const openPicker = (field: "fromDate" | "fromTime" | "toDate" | "toTime") => {
+    setActiveField(field);
+    setPickerMode(field.includes("Date") ? "date" : "time");
+    setPickerVisible(true);
+  };
+
+  // เปิด modal => reset เป็น "วันนี้"
+  const openRouteModal = () => {
+    const { start, end } = getTodayRange();
+    setRoutePreset("today");
+    setRouteRange({ routeFrom: start, routeTo: end });
+    setRouteModalVisible(true);
   };
 
   return (
@@ -557,23 +588,16 @@ export default function MapTracker() {
             tracksViewChanges={!markerReady}
             anchor={{ x: 0.5, y: 0.5 }}
           >
-
             {petPhotoURL ? (
-              <View
-                style={styles.petMarker}
-                onLayout={() => setMarkerReady(true)} // ⭐
-              >
+              <View style={styles.petMarker} onLayout={() => setMarkerReady(true)}>
                 <Image
                   source={{ uri: petPhotoURL }}
                   style={styles.petImage}
-                  onLoadEnd={() => setMarkerReady(true)} // ⭐
+                  onLoadEnd={() => setMarkerReady(true)}
                 />
               </View>
             ) : (
-              <View
-                style={styles.pawMarker}
-                onLayout={() => setMarkerReady(true)} // ⭐
-              >
+              <View style={styles.pawMarker} onLayout={() => setMarkerReady(true)}>
                 <MaterialIcons name="pets" size={26} color="#7A4A00" />
               </View>
             )}
@@ -583,16 +607,9 @@ export default function MapTracker() {
                 <View style={styles.calloutHandle} />
                 <View style={styles.calloutCard}>
                   <View style={styles.cardHeader}>
-                    {/* ชื่อสัตว์ */}
-                    <Text style={styles.cardTitle}>
-                      {petName ?? "สัตว์เลี้ยง"}
-                    </Text>
-
-                    {/* ชื่ออุปกรณ์ */}
+                    <Text style={styles.cardTitle}>{petName ?? "สัตว์เลี้ยง"}</Text>
                     <View style={styles.badge}>
-                      <Text style={styles.badgeText}>
-                        {deviceName}
-                      </Text>
+                      <Text style={styles.badgeText}>{deviceName}</Text>
                     </View>
                   </View>
 
@@ -633,6 +650,284 @@ export default function MapTracker() {
         )}
       </MapView>
 
+      {/* ===== MENU / FILTER BOTTOM SHEET ===== */}
+      <Modal visible={menuVisible} transparent animationType="slide">
+        <View style={styles.sheetOverlay}>
+          <TouchableOpacity
+            style={StyleSheet.absoluteFill}
+            activeOpacity={1}
+            onPress={() => setMenuVisible(false)}
+          />
+
+          <View style={[styles.sheet, { paddingBottom: 14 + insets.bottom }]}>
+            <View style={styles.sheetHandle} />
+            <Text style={styles.sheetTitle}>ตัวกรองแผนที่</Text>
+
+            {/* ✅ รายการ 1: Geofence */}
+            <TouchableOpacity
+              style={styles.sheetRow}
+              onPress={() => {
+                setMenuVisible(false);
+                setIsGeofenceMode(true);
+              }}
+            >
+              <View style={styles.sheetIcon}>
+                <MaterialCommunityIcons
+                  name="border-style"
+                  size={22}
+                  color="#905b0d"
+                />
+              </View>
+              <Text style={styles.sheetText}>กำหนดพื้นที่ (Geofence)</Text>
+              <MaterialIcons name="chevron-right" size={22} color="#9CA3AF" />
+            </TouchableOpacity>
+
+            {/* ✅ รายการ 2: Add device */}
+            <TouchableOpacity
+              style={styles.sheetRow}
+              onPress={() => {
+                setMenuVisible(false);
+                setModalVisible(true);
+              }}
+            >
+              <View style={styles.sheetIcon}>
+                <MaterialIcons
+                  name="add-circle-outline"
+                  size={24}
+                  color="#905b0d"
+                />
+              </View>
+              <Text style={styles.sheetText}>เพิ่มอุปกรณ์</Text>
+              <MaterialIcons name="chevron-right" size={22} color="#9CA3AF" />
+            </TouchableOpacity>
+
+            {/* ✅ รายการ 3: บันทึกเส้นทางย้อนหลัง */}
+            <TouchableOpacity
+              style={styles.sheetRow}
+              onPress={() => {
+                setMenuVisible(false);
+                openRouteModal();
+              }}
+            >
+              <View style={styles.sheetIcon}>
+                <MaterialCommunityIcons
+                  name="map-clock-outline"
+                  size={24}
+                  color="#905b0d"
+                />
+              </View>
+              <Text style={styles.sheetText}>บันทึกเส้นทาง</Text>
+              <MaterialIcons name="chevron-right" size={22} color="#9CA3AF" />
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ===== ROUTE SAVE MODAL (TODAY DEFAULT + CUSTOM + CROSS DAY) ===== */}
+      <Modal visible={routeModalVisible} transparent animationType="slide">
+        <View style={styles.sheetOverlay}>
+          <TouchableOpacity
+            style={StyleSheet.absoluteFill}
+            activeOpacity={1}
+            onPress={() => setRouteModalVisible(false)}
+          />
+
+          <View style={[styles.sheet, { paddingBottom: 14 + insets.bottom }]}>
+            <View style={styles.sheetHandle} />
+            <Text style={styles.sheetTitle}>บันทึกเส้นทาง</Text>
+
+            {/* ✅ เลือก "วันนี้" / "กำหนดเอง" */}
+            <View style={styles.presetRow}>
+              <TouchableOpacity
+                style={[
+                  styles.presetChip,
+                  routePreset === "today" && styles.presetChipActive,
+                ]}
+                onPress={() => {
+                  const { start, end } = getTodayRange();
+                  setRoutePreset("today");
+                  setRouteRange({ routeFrom: start, routeTo: end });
+                }}
+              >
+                <Text
+                  style={[
+                    styles.presetChipText,
+                    routePreset === "today" && styles.presetChipTextActive,
+                  ]}
+                >
+                  วันนี้
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.presetChip,
+                  routePreset === "custom" && styles.presetChipActive,
+                ]}
+                onPress={() => setRoutePreset("custom")}
+              >
+                <Text
+                  style={[
+                    styles.presetChipText,
+                    routePreset === "custom" && styles.presetChipTextActive,
+                  ]}
+                >
+                  กำหนดเอง
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* FROM / TO (รองรับข้ามวัน) */}
+            <View style={styles.timeRow}>
+              {/* FROM */}
+              <View style={{ flex: 1 }}>
+                <Text style={styles.timeLabel}>FROM (วัน)</Text>
+                <TouchableOpacity
+                  style={styles.timeBox}
+                  onPress={() => openPicker("fromDate")}
+                >
+                  <Text style={styles.timeValue}>
+                    {routeFrom.toLocaleDateString("th-TH", {
+                      day: "2-digit",
+                      month: "short",
+                      year: "numeric",
+                    })}
+                  </Text>
+                </TouchableOpacity>
+
+                <View style={{ height: 10 }} />
+
+                <Text style={styles.timeLabel}>FROM (เวลา)</Text>
+                <TouchableOpacity
+                  style={styles.timeBox}
+                  onPress={() => openPicker("fromTime")}
+                >
+                  <Text style={styles.timeValue}>
+                    {routeFrom.toLocaleTimeString("en-US", {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              <View style={{ width: 12 }} />
+
+              {/* TO */}
+              <View style={{ flex: 1 }}>
+                <Text style={styles.timeLabel}>TO (วัน)</Text>
+                <TouchableOpacity
+                  style={styles.timeBox}
+                  onPress={() => openPicker("toDate")}
+                >
+                  <Text style={styles.timeValue}>
+                    {routeTo.toLocaleDateString("th-TH", {
+                      day: "2-digit",
+                      month: "short",
+                      year: "numeric",
+                    })}
+                  </Text>
+                </TouchableOpacity>
+
+                <View style={{ height: 10 }} />
+
+                <Text style={styles.timeLabel}>TO (เวลา)</Text>
+                <TouchableOpacity
+                  style={styles.timeBox}
+                  onPress={() => openPicker("toTime")}
+                >
+                  <Text style={styles.timeValue}>
+                    {routeTo.toLocaleTimeString("en-US", {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {/* สรุปช่วงเวลา
+            <Text style={styles.routeHint}>
+              {routeFrom.toLocaleString("th-TH")} ถึง {routeTo.toLocaleString("th-TH")}
+              {routePreset === "today" ? " (วันนี้)" : ""}
+            </Text> */}
+
+            {/* ✅ DateTimePicker ตัวเดียว */}
+            {pickerVisible && (
+              <DateTimePicker
+                value={
+                  activeField === "fromDate" || activeField === "fromTime"
+                    ? routeFrom
+                    : routeTo
+                }
+                mode={pickerMode}
+                display={Platform.OS === "ios" ? "spinner" : "default"}
+                onChange={(e, selected) => {
+                  // Android: ปิดเมื่อเลือก/ยกเลิก
+                  if (Platform.OS !== "ios") setPickerVisible(false);
+                  if (!selected) return;
+
+                  const applyDate = (base: Date, picked: Date) => {
+                    const next = new Date(base);
+                    next.setFullYear(
+                      picked.getFullYear(),
+                      picked.getMonth(),
+                      picked.getDate()
+                    );
+                    return next;
+                  };
+
+                  const applyTime = (base: Date, picked: Date) => {
+                    const next = new Date(base);
+                    next.setHours(picked.getHours(), picked.getMinutes(), 0, 0);
+                    return next;
+                  };
+
+                  let nextFrom = routeFrom;
+                  let nextTo = routeTo;
+
+                  if (activeField === "fromDate") nextFrom = applyDate(routeFrom, selected);
+                  if (activeField === "fromTime") nextFrom = applyTime(routeFrom, selected);
+
+                  if (activeField === "toDate") nextTo = applyDate(routeTo, selected);
+                  if (activeField === "toTime") nextTo = applyTime(routeTo, selected);
+
+                  // ✅ รองรับข้ามวัน แต่ TO ต้อง "หลัง" FROM เสมอ
+                  if (nextTo.getTime() <= nextFrom.getTime()) {
+                    Alert.alert(
+                      "ช่วงเวลาไม่ถูกต้อง",
+                      "เวลา TO ต้องมากกว่า FROM (สามารถข้ามวันได้ แต่ TO ต้องหลัง FROM)"
+                    );
+                    return;
+                  }
+
+                  setRouteRange({ routeFrom: nextFrom, routeTo: nextTo });
+
+                  // ผู้ใช้เริ่มปรับเอง => custom
+                  if (routePreset !== "custom") setRoutePreset("custom");
+                }}
+              />
+            )}
+
+            {/* Continue */}
+            <TouchableOpacity
+              style={styles.continueBtn}
+              onPress={() => {
+                setRouteModalVisible(false);
+                Alert.alert(
+                  "บันทึกเส้นทาง",
+                  `ช่วงเวลา:\n${routeFrom.toLocaleString("th-TH")} \n ถึง ${routeTo.toLocaleString(
+                    "th-TH"
+                  )}`
+                );
+              }}
+            >
+              <Text style={styles.continueText}>บันทึก</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
       {isGeofenceMode && (
         <View
           style={[
@@ -642,9 +937,7 @@ export default function MapTracker() {
             },
           ]}
         >
-          <Text style={styles.geoTitle}>
-            กำหนดพื้นที่ Geofence
-          </Text>
+          <Text style={styles.geoTitle}>กำหนดพื้นที่ Geofence</Text>
 
           <Text style={styles.geoSubtitle}>
             {geofencePoints.length} จุด · แตะบนแผนที่
@@ -653,8 +946,7 @@ export default function MapTracker() {
           <View style={styles.geoActionRow}>
             {/* ยกเลิก */}
             <TouchableOpacity
-              style={[styles.geoBtn,
-              styles.geoCancel]}
+              style={[styles.geoBtn, styles.geoCancel]}
               onPress={cancelGeofence}
             >
               <Text style={styles.geoCancelText}>ยกเลิก</Text>
@@ -685,37 +977,19 @@ export default function MapTracker() {
             >
               <Text style={styles.geoSaveText}>บันทึก</Text>
             </TouchableOpacity>
-
           </View>
         </View>
       )}
 
-      {/* ===== TOP FAB STACK ===== */}
-      <View
-        style={[
-          styles.topFabContainer,
-          { top: insets.top + 12 },
-        ]}
-      >
-        {/* Geofence */}
+      {/* ===== TOP RIGHT CONTROLS ===== */}
+      <View style={[styles.topRightControls, { top: insets.top + 12 }]}>
         <TouchableOpacity
-          style={[styles.topFab, { backgroundColor: "#8D04B3" }]}
-          onPress={() => {
-            setIsGeofenceMode(true);
-          }}
+          style={[styles.topFab, { backgroundColor: "#FFFFFF" }]}
+          onPress={() => setMenuVisible(true)}
         >
-          <MaterialIcons name="location-searching" size={24} color="#fff" />
+          <MaterialIcons name="tune" size={24} color="#111827" />
         </TouchableOpacity>
 
-        {/* Add device */}
-        <TouchableOpacity
-          style={[styles.topFab, { backgroundColor: "#905b0d" }]}
-          onPress={() => setModalVisible(true)}
-        >
-          <MaterialIcons name="add-circle-outline" size={26} color="#fff" />
-        </TouchableOpacity>
-
-        {/* Refresh */}
         <TouchableOpacity
           style={[
             styles.topFab,
@@ -883,7 +1157,7 @@ const styles = StyleSheet.create({
   },
 
   calloutWrapper: {
-    alignItems: "center"
+    alignItems: "center",
   },
 
   calloutHandle: {
@@ -907,7 +1181,7 @@ const styles = StyleSheet.create({
   },
   cardTitle: {
     fontSize: 16,
-    fontWeight: "700"
+    fontWeight: "700",
   },
   badge: {
     backgroundColor: "#e8f0fe",
@@ -918,25 +1192,25 @@ const styles = StyleSheet.create({
   badgeText: {
     color: "#1a73e8",
     fontSize: 12,
-    fontWeight: "600"
+    fontWeight: "600",
   },
   divider: {
     height: 1,
     backgroundColor: "#eee",
-    marginVertical: 10
+    marginVertical: 10,
   },
   row: {
     flexDirection: "row",
     alignItems: "center",
-    marginTop: 6
+    marginTop: 6,
   },
   icon: {
     fontSize: 16,
-    marginRight: 8
+    marginRight: 8,
   },
   text: {
     fontSize: 14.5,
-    color: "#333"
+    color: "#333",
   },
   monoText: {
     fontSize: 14,
@@ -946,7 +1220,7 @@ const styles = StyleSheet.create({
   boldText: {
     fontSize: 15,
     fontWeight: "700",
-    color: "#111"
+    color: "#111",
   },
   modalOverlay: {
     flex: 1,
@@ -1079,5 +1353,146 @@ const styles = StyleSheet.create({
     color: "#DC2626",
     textAlign: "center",
     marginTop: 6,
+  },
+  topRightControls: {
+    position: "absolute",
+    right: 16,
+    flexDirection: "column",
+    gap: 12,
+    zIndex: 30,
+  },
+
+  sheetOverlay: {
+    flex: 1,
+    justifyContent: "flex-end",
+    backgroundColor: "rgba(0,0,0,0.35)",
+  },
+
+  sheet: {
+    backgroundColor: "#fff",
+    borderTopLeftRadius: 22,
+    borderTopRightRadius: 22,
+    paddingHorizontal: 18,
+    paddingTop: 10,
+  },
+
+  sheetHandle: {
+    alignSelf: "center",
+    width: 46,
+    height: 5,
+    borderRadius: 999,
+    backgroundColor: "#E5E7EB",
+    marginBottom: 10,
+  },
+
+  sheetTitle: {
+    fontSize: 20,
+    fontWeight: "800",
+    color: "#111827",
+    marginBottom: 10,
+  },
+
+  sheetRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 14,
+    gap: 12,
+    borderTopWidth: 1,
+    borderTopColor: "#F3F4F6",
+  },
+
+  sheetIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    backgroundColor: "#F9FAFB",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  sheetText: {
+    flex: 1,
+    fontSize: 16,
+    color: "#111827",
+    fontWeight: "700",
+  },
+
+  presetRow: {
+    flexDirection: "row",
+    gap: 10,
+    marginBottom: 14,
+  },
+
+  presetChip: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: "#F3F4F6",
+    alignItems: "center",
+  },
+
+  presetChipActive: {
+    backgroundColor: "#ffffff",
+    borderWidth: 1,
+    borderColor: "#905b0d",
+  },
+
+  presetChipText: {
+    fontSize: 14.5,
+    fontWeight: "700",
+    color: "#374151",
+  },
+
+  presetChipTextActive: {
+    color: "#905b0d",
+  },
+
+  timeRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    marginBottom: 10,
+  },
+
+  timeLabel: {
+    fontSize: 12,
+    color: "#6B7280",
+    fontWeight: "800",
+    marginBottom: 6,
+  },
+
+  timeBox: {
+    backgroundColor: "#F9FAFB",
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+    alignItems: "center",
+  },
+
+  timeValue: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#111827",
+  },
+
+  routeHint: {
+    fontSize: 13,
+    color: "#6B7280",
+    marginBottom: 14,
+    fontWeight: "700",
+  },
+
+  continueBtn: {
+    backgroundColor: "#905b0dff",
+    paddingVertical: 14,
+    borderRadius: 14,
+    alignItems: "center",
+  },
+
+  continueText: {
+    fontSize: 18,
+    fontWeight: "900",
+    color: "#ffffff",
   },
 });

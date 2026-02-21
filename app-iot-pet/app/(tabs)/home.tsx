@@ -158,7 +158,7 @@ export default function HomeScreen() {
   const fetchLastLocation = async (code: string) => {
     try {
       setLocationLoading(true);
-      const res = await fetch("http://192.168.31.135:3000/api/device/location", {
+      const res = await fetch("http://192.168.31.84:3000/api/device/location", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ deviceCode: code }),
@@ -282,6 +282,26 @@ export default function HomeScreen() {
         </ScrollView>
       </View>
 
+      <TouchableOpacity
+        style={styles.routeCard}
+        onPress={() => router.push("/(modals)/RouteHistoryList")}
+      >
+        {/* ซ้ายสุด = รูปภาพ */}
+        <Image
+          source={require('../../assets/images/distance.png')}
+          style={styles.routeImage}
+        />
+
+        <View style={styles.routeContent}>
+          <Text style={styles.routeTitle}>เส้นทางย้อนหลัง</Text>
+        </View>
+
+       
+        <View style={styles.arrowCircle}>
+          <Ionicons name="chevron-forward" size={22} color="#fff" />
+        </View> 
+      </TouchableOpacity>
+
       {/* ===== DEVICE SECTION (เดิมทั้งหมด) ===== */}
       <View style={styles.sectionHeader}>
         <Text style={styles.sectionTitle}>อุปกรณ์</Text>
@@ -362,14 +382,14 @@ export default function HomeScreen() {
 }
 
 const styles = StyleSheet.create({
-  loading: { 
-    flex: 1, 
-    justifyContent: "center", 
-    alignItems: "center" 
+  loading: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center"
   },
-  header: { 
-    justifyContent: "center", 
-    paddingHorizontal: 20 
+  header: {
+    justifyContent: "center",
+    paddingHorizontal: 20
   },
   headerRow: {
     flexDirection: "row",
@@ -377,15 +397,15 @@ const styles = StyleSheet.create({
     marginHorizontal: 5,
     marginTop: 20,
   },
-  avatar: { 
-    width: 44, 
-    height: 44, 
-    borderRadius: 22 
+  avatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 22
   },
-  greeting: { 
-    fontSize: 20, 
-    fontWeight: "700", 
-    marginLeft: 12 
+  greeting: {
+    fontSize: 20,
+    fontWeight: "700",
+    marginLeft: 12
   },
   sectionHeader: {
     marginTop: 20,
@@ -418,10 +438,10 @@ const styles = StyleSheet.create({
   },
 
   petBox: { alignItems: "center", marginRight: 16 },
-  petImg: { 
-    width: 80, 
-    height: 80, 
-    borderRadius: 14, 
+  petImg: {
+    width: 80,
+    height: 80,
+    borderRadius: 14,
   },
   petPlaceholder: {
     width: 80,
@@ -517,4 +537,58 @@ const styles = StyleSheet.create({
 
   emptyCenter: { alignItems: "center", paddingVertical: 28 },
   emptyText: { color: "#aaa", fontSize: 15 },
+  routeCard: {
+    backgroundColor: '#FFFFFF',
+    marginHorizontal: 16,
+    marginTop: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 18,
+    borderRadius: 24,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+
+    // shadow (iOS)
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+
+    // shadow (Android)
+    elevation: 3,
+  },
+
+  routeContent: {
+  flex: 1,           
+  flexDirection: 'row',
+  alignItems: 'center',
+},
+
+  routeTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#000',
+  },
+
+  arrowCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#F5B400',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+
+  arrowText: {
+    color: '#FFF',
+    fontWeight: 'bold',
+    fontSize: 16,
+  },
+  routeImage: {
+    width: 60,
+    height: 60,
+    marginRight: 16,
+    borderRadius: 8,
+  },
+
 });

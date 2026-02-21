@@ -31,7 +31,7 @@ export default function Devices() {
   const router = useRouter();
 
   const [devices, setDevices] = useState<Device[]>([]);
-  const [deviceMatches, setDeviceMatches] = useState<any>({});
+  const [deviceMatches, setDeviceMatches] = useState<Record<string, any>>({});
 
   /* ===== ADD DEVICE ===== */
   const [modalVisible, setModalVisible] = useState(false);
@@ -42,7 +42,34 @@ export default function Devices() {
   const loadDevices = async () => {
     try {
       const stored = await AsyncStorage.getItem("devices");
-      setDevices(stored ? JSON.parse(stored) : []);
+      const parsed: any[] = stored ? JSON.parse(stored) : [];
+
+      // ✅ Normalize + migrate old data + remove invalid items
+      const normalized: Device[] = parsed
+        .map((d) => {
+          const code = String(d?.code ?? "").trim().toUpperCase();
+          if (!code) return null;
+
+          return {
+            id: String(d?.id ?? code), // fallback id = code
+            code,
+            name: String(d?.name ?? "LilyGo A7670E"),
+            type: String(d?.type ?? "GPS_TRACKER_A7670"),
+            createdAt: String(d?.createdAt ?? new Date().toISOString()),
+          } as Device;
+        })
+        .filter(Boolean) as Device[];
+
+      // ✅ De-duplicate by code
+      const seen = new Set<string>();
+      const deduped = normalized.filter((d) => {
+        if (seen.has(d.code)) return false;
+        seen.add(d.code);
+        return true;
+      });
+
+      setDevices(deduped);
+      await AsyncStorage.setItem("devices", JSON.stringify(deduped));
     } catch {
       setDevices([]);
     }
@@ -53,16 +80,13 @@ export default function Devices() {
     if (!auth.currentUser) return;
     const uid = auth.currentUser.uid;
 
-    return onSnapshot(
-      collection(db, "users", uid, "deviceMatches"),
-      (snap) => {
-        const map: any = {};
-        snap.docs.forEach((doc) => {
-          map[doc.id] = doc.data();
-        });
-        setDeviceMatches(map);
-      }
-    );
+    return onSnapshot(collection(db, "users", uid, "deviceMatches"), (snap) => {
+      const map: Record<string, any> = {};
+      snap.docs.forEach((d) => {
+        map[d.id] = d.data();
+      });
+      setDeviceMatches(map);
+    });
   };
 
   useFocusEffect(
@@ -81,7 +105,7 @@ export default function Devices() {
         text: "ยืนยัน",
         style: "destructive",
         onPress: async () => {
-          const updated = devices.filter((d) => d.id !== device.id);
+          const updated = devices.filter((d) => d.code !== device.code);
           await AsyncStorage.setItem("devices", JSON.stringify(updated));
           setDevices(updated);
 
@@ -92,9 +116,7 @@ export default function Devices() {
 
           if (auth.currentUser) {
             const uid = auth.currentUser.uid;
-            await deleteDoc(
-              doc(db, "users", uid, "deviceMatches", device.code)
-            );
+            await deleteDoc(doc(db, "users", uid, "deviceMatches", device.code));
           }
         },
       },
@@ -105,11 +127,14 @@ export default function Devices() {
   const fetchLocation = async (code: string) => {
     try {
       setLoading(true);
-      const res = await fetch("http://192.168.31.135:3000/api/device/location", {
+
+      // ⚠️ โปรดักชันจริงให้ใช้โดเมน https://api.yourapp.com แทน IP LAN
+      const res = await fetch("http://192.168.31.84:3000/api/device/location", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ deviceCode: code }),
       });
+
       if (!res.ok) throw new Error();
       return true;
     } catch {
@@ -125,9 +150,9 @@ export default function Devices() {
     if (!code) return;
 
     const stored = await AsyncStorage.getItem("devices");
-    const list = stored ? JSON.parse(stored) : [];
+    const list: Device[] = stored ? JSON.parse(stored) : [];
 
-    if (list.some((d: any) => d.code === code)) {
+    if (list.some((d: any) => String(d?.code ?? "").toUpperCase() === code)) {
       Alert.alert("อุปกรณ์ถูกเพิ่มแล้ว");
       return;
     }
@@ -136,7 +161,7 @@ export default function Devices() {
     if (!ok) return;
 
     const newDevice: Device = {
-      id: Date.now().toString(),
+      id: code, // ✅ ใช้ code เป็น id กันซ้ำ
       code,
       type: "GPS_TRACKER_A7670",
       name: "LilyGo A7670E",
@@ -144,6 +169,7 @@ export default function Devices() {
     };
 
     const updated = [...list, newDevice];
+
     await AsyncStorage.setItem("devices", JSON.stringify(updated));
     await AsyncStorage.setItem("activeDevice", code);
 
@@ -155,13 +181,14 @@ export default function Devices() {
   /* ================= RENDER ITEM ================= */
   const renderItem = ({ item }: { item: Device }) => {
     const match = deviceMatches[item.code];
+
     const deviceType =
       (item.type && DEVICE_TYPES[item.type]) ||
       DEVICE_TYPES["GPS_TRACKER_A7670"];
 
     return (
       <TouchableOpacity
-        activeOpacity={0.85}
+        activeOpacity={0.9}
         onPress={() =>
           router.push({
             pathname: "/PetMatch",
@@ -179,12 +206,17 @@ export default function Devices() {
             <Text style={styles.deviceName}>{item.name}</Text>
 
             {match ? (
-              <TouchableOpacity onPress={() => deleteDevice(item)}>
+              <TouchableOpacity
+                onPress={(e: any) => {
+                  // ✅ กันกดแล้วเด้งเข้า PetMatch
+                  e?.stopPropagation?.();
+                  deleteDevice(item);
+                }}
+                activeOpacity={0.85}
+              >
                 <View style={styles.disconnectRow}>
                   <MaterialIcons name="link-off" size={14} color="#DC2626" />
-                  <Text style={styles.disconnectText}>
-                    ยกเลิกการเชื่อมต่อ
-                  </Text>
+                  <Text style={styles.disconnectText}>ยกเลิกการเชื่อมต่อ</Text>
                 </View>
               </TouchableOpacity>
             ) : (
@@ -199,7 +231,7 @@ export default function Devices() {
             <Image source={{ uri: match.photoURL }} style={styles.petAvatar} />
           ) : (
             <View style={styles.emptyAvatar}>
-              <MaterialIcons name="pets" size={22} color="#999" />
+              <MaterialIcons name="pets" size={22} color="#9CA3AF" />
             </View>
           )}
         </View>
@@ -209,21 +241,33 @@ export default function Devices() {
 
   return (
     <>
-      {/* ===== HEADER (Component) ===== */}
-      <ProfileHeader
-        title="อุปกรณ์"
-        right={
-          <TouchableOpacity onPress={() => setModalVisible(true)}>
-            <MaterialIcons name="add" size={26} color="#000" />
-          </TouchableOpacity>
-        }
-      />
-
+      {/* ✅ ให้ FlatList เป็นตัว scroll หลักตัวเดียว */}
       <FlatList
         data={devices}
-        keyExtractor={(item) => item.id}
+        keyExtractor={(item) => item.code} // ✅ unique + stable
         renderItem={renderItem}
-        contentContainerStyle={{ padding: 16 }}
+        style={{ backgroundColor: "#F3F4F6" }}
+        contentContainerStyle={{
+          paddingHorizontal: 16,
+          paddingBottom: 24,
+          paddingTop: 12,
+        }}
+        ListHeaderComponent={
+          // ✅ ทำให้ header เต็มขอบจอ (แม้ list จะมี padding)
+          <View style={{ marginHorizontal: -16, marginTop: -12, marginBottom: 12 }}>
+            <ProfileHeader
+              title="อุปกรณ์"
+              right={
+                <TouchableOpacity
+                  onPress={() => setModalVisible(true)}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
+                  <MaterialIcons name="add" size={28} color="#111827" />
+                </TouchableOpacity>
+              }
+            />
+          </View>
+        }
         ListEmptyComponent={
           <Text style={styles.noDeviceText}>ยังไม่มีอุปกรณ์</Text>
         }
@@ -245,8 +289,9 @@ export default function Devices() {
 
             <View style={styles.modalRow}>
               <TouchableOpacity
-                style={[styles.submitBtn, { backgroundColor: "#aaa" }]}
+                style={[styles.submitBtn, { backgroundColor: "#9CA3AF" }]}
                 onPress={() => setModalVisible(false)}
+                disabled={loading}
               >
                 <Text style={styles.submitText}>ยกเลิก</Text>
               </TouchableOpacity>
@@ -256,7 +301,9 @@ export default function Devices() {
                 disabled={loading}
                 onPress={confirmAddDevice}
               >
-                <Text style={styles.submitText}>ยืนยัน</Text>
+                <Text style={styles.submitText}>
+                  {loading ? "กำลังตรวจสอบ..." : "ยืนยัน"}
+                </Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -270,24 +317,44 @@ export default function Devices() {
 const styles = StyleSheet.create({
   card: {
     backgroundColor: "#fff",
-    borderRadius: 16,
-    padding: 16,
+    borderRadius: 18,
+    padding: 14,
     marginBottom: 12,
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
+
+    // iOS shadow
+    shadowColor: "#000",
+    shadowOpacity: 0.06,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 6 },
+
+    // Android
+    elevation: 2,
   },
-  deviceImage: { width: 56, height: 56, borderRadius: 12 },
-  deviceName: { fontSize: 17, fontWeight: "700" },
+
+  deviceImage: {
+    width: 52,
+    height: 52,
+    borderRadius: 14,
+    backgroundColor: "#F3F4F6",
+  },
+
+  deviceName: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: "#111827",
+    marginBottom: 6,
+  },
 
   connectRow: {
     flexDirection: "row",
     alignItems: "center",
-    marginTop: 6,
-    backgroundColor: "#F1F5F9",
+    backgroundColor: "#F3F4F6",
     paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
+    paddingVertical: 6,
+    borderRadius: 999,
     alignSelf: "flex-start",
   },
   connectDot: {
@@ -295,42 +362,52 @@ const styles = StyleSheet.create({
     height: 8,
     borderRadius: 4,
     backgroundColor: "#9CA3AF",
-    marginRight: 6,
+    marginRight: 8,
   },
-  connectText: { fontSize: 13, color: "#6B7280" },
+  connectText: {
+    fontSize: 12.5,
+    color: "#6B7280",
+    fontWeight: "700",
+  },
 
   disconnectRow: {
     flexDirection: "row",
     alignItems: "center",
-    marginTop: 6,
     backgroundColor: "#FEE2E2",
     paddingHorizontal: 12,
-    paddingVertical: 4,
+    paddingVertical: 7,
     borderRadius: 999,
-    gap: 6,
+    gap: 8,
     alignSelf: "flex-start",
   },
   disconnectText: {
-    fontSize: 13,
+    fontSize: 12.5,
     color: "#DC2626",
-    fontWeight: "700",
+    fontWeight: "800",
   },
 
-  petAvatar: { width: 50, height: 50, borderRadius: 25 },
+  petAvatar: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    borderWidth: 2,
+    borderColor: "#fff",
+  },
   emptyAvatar: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    backgroundColor: "#e5e5e5",
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    backgroundColor: "#EEF2F7",
     justifyContent: "center",
     alignItems: "center",
   },
 
   noDeviceText: {
     textAlign: "center",
-    marginTop: 40,
-    fontSize: 16,
-    color: "#959595",
+    marginTop: 80,
+    fontSize: 15,
+    color: "#9CA3AF",
+    fontWeight: "700",
   },
 
   modalOverlay: {
@@ -340,31 +417,33 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   modalBox: {
-    width: "80%",
+    width: "84%",
     backgroundColor: "#fff",
     padding: 20,
-    borderRadius: 12,
+    borderRadius: 14,
   },
   modalTitle: {
     fontSize: 18,
     marginBottom: 12,
     textAlign: "center",
-    fontWeight: "600",
+    fontWeight: "800",
+    color: "#111827",
   },
   input: {
     borderWidth: 1,
-    borderColor: "#ccc",
-    borderRadius: 8,
+    borderColor: "#E5E7EB",
+    borderRadius: 10,
     padding: 12,
     marginBottom: 12,
+    backgroundColor: "#F9FAFB",
   },
   modalRow: { flexDirection: "row", gap: 10 },
   submitBtn: {
     flex: 1,
     backgroundColor: "#905b0d",
-    padding: 14,
-    borderRadius: 8,
+    paddingVertical: 14,
+    borderRadius: 10,
     alignItems: "center",
   },
-  submitText: { color: "#fff", fontSize: 16 },
+  submitText: { color: "#fff", fontSize: 15, fontWeight: "800" },
 });

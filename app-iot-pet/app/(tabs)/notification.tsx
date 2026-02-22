@@ -255,8 +255,9 @@ const styles = StyleSheet.create({
   empty: {
     textAlign: "center",
     marginTop: 80,
-    fontSize: 16,
-    color: "#666",
+    fontSize: 15,
+    color: "#9CA3AF",
+    fontWeight: "700",
   },
   card: {
     flexDirection: "row",

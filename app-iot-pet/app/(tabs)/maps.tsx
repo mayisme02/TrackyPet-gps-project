@@ -71,8 +71,8 @@ function distanceInMeters(
   const a =
     Math.sin(dLat / 2) ** 2 +
     Math.cos(toRad(lat1)) *
-      Math.cos(toRad(lat2)) *
-      Math.sin(dLon / 2) ** 2;
+    Math.cos(toRad(lat2)) *
+    Math.sin(dLon / 2) ** 2;
 
   return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
@@ -161,6 +161,25 @@ export default function MapTracker() {
     });
   }, [deviceCode]);
 
+  useEffect(() => {
+    if (!auth.currentUser || !deviceCode) return;
+
+    const gfRef = doc(db, "users", auth.currentUser.uid, "geofences", deviceCode);
+
+    return onSnapshot(gfRef, (snap) => {
+      if (!snap.exists()) return;
+
+      const data = snap.data();
+      const pts = data?.points;
+
+      if (Array.isArray(pts) && pts.length >= 3) {
+        setSavedGeofence(
+          pts.map((p: any) => ({ latitude: p.latitude, longitude: p.longitude }))
+        );
+      }
+    });
+  }, [deviceCode]);
+
   /* ================= FORMAT ================= */
   const formatThaiDate = (iso: string) =>
     new Date(iso).toLocaleDateString("th-TH", {
@@ -221,8 +240,8 @@ export default function MapTracker() {
     geofencePoints.length === 0
       ? "แตะบนแผนที่เพื่อเพิ่มจุด"
       : geofencePoints.length < 3
-      ? "เพิ่มจุดให้ครบอย่างน้อย 3 จุด"
-      : "ลากจุดเพื่อปรับตำแหน่ง หรือบันทึก";
+        ? "เพิ่มจุดให้ครบอย่างน้อย 3 จุด"
+        : "ลากจุดเพื่อปรับตำแหน่ง หรือบันทึก";
 
   /* ================= FETCH ================= */
   const fetchLocation = async (
@@ -446,8 +465,6 @@ export default function MapTracker() {
   };
 
   const saveGeofence = async () => {
-    if (!auth.currentUser || !deviceCode) return;
-
     if (geofencePoints.length < 3) {
       Alert.alert("ต้องมีอย่างน้อย 3 จุด");
       return;
@@ -455,20 +472,15 @@ export default function MapTracker() {
 
     const polygon = [...geofencePoints];
 
-    // 🔹 save local state
+    // ✅ วาด Polygon ให้ทันที (ไม่ต้องรอ auth/deviceCode)
     setSavedGeofence(polygon);
-    setGeofencePoints([]);
-    setGeofencePath([]);
+
+    // ✅ ออกจากโหมดวาด
     setIsInsideGeofence(null);
     setIsGeofenceMode(false);
+    setGeofencePoints([]);
+    setGeofencePath([]);
 
-    // 🔹 save to Firestore
-    await setDoc(doc(db, "users", auth.currentUser.uid, "geofences", deviceCode), {
-      deviceCode,
-      type: "polygon",
-      points: polygon,
-      createdAt: new Date(),
-    });
   };
 
   /* ================= ROUTE MODAL (Today default + Custom + Cross-day + Single Picker) ================= */
@@ -845,12 +857,6 @@ export default function MapTracker() {
                 </TouchableOpacity>
               </View>
             </View>
-
-            {/* สรุปช่วงเวลา
-            <Text style={styles.routeHint}>
-              {routeFrom.toLocaleString("th-TH")} ถึง {routeTo.toLocaleString("th-TH")}
-              {routePreset === "today" ? " (วันนี้)" : ""}
-            </Text> */}
 
             {/* ✅ DateTimePicker ตัวเดียว */}
             {pickerVisible && (

@@ -8,19 +8,14 @@ import {
   ActivityIndicator,
   ScrollView,
   Pressable,
+  Alert,
 } from "react-native";
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import ParallaxScrollView from "@/components/ParallaxScrollView";
 import { auth, db } from "../../firebase/firebase";
-import {
-  doc,
-  onSnapshot,
-  collection,
-  query,
-  orderBy,
-} from "firebase/firestore";
+import { doc, onSnapshot, collection, query, orderBy, deleteDoc } from "firebase/firestore";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useFocusEffect } from "@react-navigation/native";
 import { DEVICE_TYPES } from "../../assets/constants/deviceData";
@@ -48,10 +43,6 @@ interface MatchedPet {
   petName: string;
   photoURL?: string | null;
 }
-
-type DeviceMatch = {
-  petId: string;
-};
 
 export default function HomeScreen() {
   const [profile, setProfile] = useState<any>(null);
@@ -119,22 +110,19 @@ export default function HomeScreen() {
 
     const uid = auth.currentUser.uid;
 
-    return onSnapshot(
-      doc(db, "users", uid, "deviceMatches", device.code),
-      (snap) => {
-        if (!snap.exists()) {
-          setMatchedPet(null);
-          return;
-        }
-
-        const data = snap.data();
-        setMatchedPet({
-          petId: data.petId,
-          petName: data.petName,
-          photoURL: data.photoURL ?? null,
-        });
+    return onSnapshot(doc(db, "users", uid, "deviceMatches", device.code), (snap) => {
+      if (!snap.exists()) {
+        setMatchedPet(null);
+        return;
       }
-    );
+
+      const data = snap.data();
+      setMatchedPet({
+        petId: data.petId,
+        petName: data.petName,
+        photoURL: data.photoURL ?? null,
+      });
+    });
   }, [device]);
 
   /* ====== เพิ่ม listener สำหรับจุดเขียว ====== */
@@ -142,23 +130,20 @@ export default function HomeScreen() {
     if (!auth.currentUser) return;
     const uid = auth.currentUser.uid;
 
-    return onSnapshot(
-      collection(db, "users", uid, "deviceMatches"),
-      (snap) => {
-        const map: Record<string, boolean> = {};
-        snap.docs.forEach((d) => {
-          map[d.data().petId] = true;
-        });
-        setPetMatchMap(map);
-      }
-    );
+    return onSnapshot(collection(db, "users", uid, "deviceMatches"), (snap) => {
+      const map: Record<string, boolean> = {};
+      snap.docs.forEach((d) => {
+        map[d.data().petId] = true;
+      });
+      setPetMatchMap(map);
+    });
   }, []);
 
   /* ================= LOAD LAST LOCATION ================= */
   const fetchLastLocation = async (code: string) => {
     try {
       setLocationLoading(true);
-      const res = await fetch("http://192.168.31.84:3000/api/device/location", {
+      const res = await fetch("http://localhost:3000/api/device/location", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ deviceCode: code }),
@@ -181,6 +166,7 @@ export default function HomeScreen() {
   useEffect(() => {
     if (device?.code) fetchLastLocation(device.code);
     else setLastLocation(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [device]);
 
   const reverseGeocode = async (lat: number, lon: number) => {
@@ -207,6 +193,75 @@ export default function HomeScreen() {
       setProvinceName(null);
     }
   }, [lastLocation]);
+
+  /* ================== NEW: DISCONNECT (เหมือนหน้า Devices) ================== */
+  const disconnectActiveDevice = () => {
+    if (!device?.code) return;
+
+    Alert.alert("ยกเลิกการเชื่อมต่ออุปกรณ์", "", [
+      { text: "ยกเลิก", style: "cancel" },
+      {
+        text: "ยืนยัน",
+        style: "destructive",
+        onPress: async () => {
+          const targetCode = device.code;
+
+          // 1) เอาออกจาก devices (เหมือนหน้า Devices)
+          const stored = await AsyncStorage.getItem("devices");
+          const list = stored ? JSON.parse(stored) : [];
+          const updated = Array.isArray(list)
+            ? list.filter((d: any) => String(d?.code ?? "").toUpperCase() !== targetCode)
+            : [];
+
+          await AsyncStorage.setItem("devices", JSON.stringify(updated));
+
+          // 2) เคลียร์ activeDevice ถ้าเป็นตัวนี้
+          const active = await AsyncStorage.getItem("activeDevice");
+          if (active === targetCode) {
+            await AsyncStorage.removeItem("activeDevice");
+          }
+
+          // 3) ลบ match ใน Firestore
+          if (auth.currentUser) {
+            const uid = auth.currentUser.uid;
+            try {
+              await deleteDoc(doc(db, "users", uid, "deviceMatches", targetCode));
+            } catch {
+              // เงียบไว้ไม่ให้กระทบ UX (เหมือนเดิม)
+            }
+          }
+
+          // 4) เคลียร์ state หน้า Home ให้ UI อัปเดตทันที
+          setDevice(null);
+          setMatchedPet(null);
+          setLastLocation(null);
+          setDistrictName(null);
+          setProvinceName(null);
+        },
+      },
+    ]);
+  };
+
+  /* ================== NEW: NAVIGATE TO PetMatch on image/name ================== */
+  const goToPetMatch = () => {
+    if (!device) return;
+
+    // PetMatch เดิมรับ device เป็น JSON string
+    const deviceInfo = DEVICE_TYPES[device.type] || null;
+
+    router.push({
+      pathname: "/PetMatch",
+      params: {
+        device: JSON.stringify({
+          id: device.code,
+          code: device.code,
+          type: device.type,
+          name: deviceInfo?.name ?? "GPS Tracker",
+          createdAt: new Date().toISOString(),
+        }),
+      },
+    });
+  };
 
   if (loading) {
     return (
@@ -237,10 +292,7 @@ export default function HomeScreen() {
       }
     >
       {/* ===== PET SECTION ===== */}
-      <Pressable
-        style={styles.sectionHeader}
-        onPress={() => router.push("/(modals)/pet")}
-      >
+      <Pressable style={styles.sectionHeader} onPress={() => router.push("/(modals)/pet")}>
         <Text style={styles.sectionTitle}>สัตว์เลี้ยงของคุณ</Text>
         {pets.length > 0 && (
           <View style={styles.arrowBtn}>
@@ -265,14 +317,11 @@ export default function HomeScreen() {
                     </View>
                   )}
 
-                  {/* ===== GPS FIXED ===== */}
                   {isConnected && (
                     <View style={styles.gpsBadge}>
-                      {/* <MaterialIcons name="gps-fixed" size={14} color="#FFFFFF" /> */}
                       <Text style={styles.gpsText}>GPS</Text>
                     </View>
                   )}
-
                 </View>
 
                 <Text style={styles.petName}>{p.name}</Text>
@@ -282,27 +331,18 @@ export default function HomeScreen() {
         </ScrollView>
       </View>
 
-      <TouchableOpacity
-        style={styles.routeCard}
-        onPress={() => router.push("/(modals)/RouteHistoryList")}
-      >
-        {/* ซ้ายสุด = รูปภาพ */}
-        <Image
-          source={require('../../assets/images/distance.png')}
-          style={styles.routeImage}
-        />
-
+      <TouchableOpacity style={styles.routeCard} onPress={() => router.push("/(modals)/RouteHistoryList")}>
+        <Image source={require("../../assets/images/distance.png")} style={styles.routeImage} />
         <View style={styles.routeContent}>
           <Text style={styles.routeTitle}>เส้นทางย้อนหลัง</Text>
         </View>
 
-       
         <View style={styles.arrowCircle}>
           <Ionicons name="chevron-forward" size={22} color="#fff" />
-        </View> 
+        </View>
       </TouchableOpacity>
 
-      {/* ===== DEVICE SECTION (เดิมทั้งหมด) ===== */}
+      {/* ===== DEVICE SECTION ===== */}
       <View style={styles.sectionHeader}>
         <Text style={styles.sectionTitle}>อุปกรณ์</Text>
       </View>
@@ -310,14 +350,25 @@ export default function HomeScreen() {
       <View style={styles.card}>
         {device && deviceInfo ? (
           <View style={styles.deviceRow}>
-            <Image source={deviceInfo.image} style={styles.deviceImg} />
+            {/* ✅ กดรูปอุปกรณ์ -> ไป PetMatch */}
+            <TouchableOpacity activeOpacity={0.85} onPress={goToPetMatch}>
+              <Image source={deviceInfo.image} style={styles.deviceImg} />
+            </TouchableOpacity>
+
             <View style={{ flex: 1, marginLeft: 12 }}>
-              <Text style={styles.deviceName}>{deviceInfo.name}</Text>
+              {/* ✅ กดชื่ออุปกรณ์ -> ไป PetMatch */}
+              <TouchableOpacity activeOpacity={0.85} onPress={goToPetMatch}>
+                <Text style={styles.deviceName}>{deviceInfo.name}</Text>
+              </TouchableOpacity>
             </View>
-            <View style={styles.status}>
-              <View style={styles.dot} />
-              <Text style={styles.statusText}>เชื่อมต่ออยู่</Text>
-            </View>
+
+            {/* ✅ กดสถานะ -> ยกเลิกการเชื่อมต่อ */}
+            <TouchableOpacity activeOpacity={0.85} onPress={disconnectActiveDevice}>
+              <View style={styles.status}>
+                <View style={styles.dot} />
+                <Text style={styles.statusText}>เชื่อมต่ออยู่</Text>
+              </View>
+            </TouchableOpacity>
           </View>
         ) : (
           <View style={styles.emptyCenter}>
@@ -326,7 +377,7 @@ export default function HomeScreen() {
         )}
       </View>
 
-      {/* ===== LAST LOCATION (เดิมทั้งหมด) ===== */}
+      {/* ===== LAST LOCATION ===== */}
       <View style={styles.sectionHeader}>
         <Text style={styles.sectionTitle}>ตำแหน่งล่าสุด</Text>
       </View>
@@ -338,10 +389,7 @@ export default function HomeScreen() {
           <View style={styles.locationRow}>
             <View style={styles.petMarkerPreview}>
               {matchedPet.photoURL ? (
-                <Image
-                  source={{ uri: matchedPet.photoURL }}
-                  style={styles.markerPetImg}
-                />
+                <Image source={{ uri: matchedPet.photoURL }} style={styles.markerPetImg} />
               ) : (
                 <MaterialIcons name="pets" size={20} color="#7A4A00" />
               )}
@@ -351,22 +399,14 @@ export default function HomeScreen() {
             </View>
 
             <View style={{ flex: 1 }}>
-              <Text style={styles.locationText}>
-                {districtName ?? "ไม่ทราบอำเภอ"}
-              </Text>
-              <Text style={styles.locationSubText}>
-                {provinceName ?? "ไม่ทราบจังหวัด"}
-              </Text>
+              <Text style={styles.locationText}>{districtName ?? "ไม่ทราบอำเภอ"}</Text>
+              <Text style={styles.locationSubText}>{provinceName ?? "ไม่ทราบจังหวัด"}</Text>
               <Text style={styles.locationTime}>
-                อัปเดตล่าสุด:{" "}
-                {new Date(lastLocation.timestamp).toLocaleTimeString("th-TH")}
+                อัปเดตล่าสุด: {new Date(lastLocation.timestamp).toLocaleTimeString("th-TH")}
               </Text>
             </View>
 
-            <TouchableOpacity
-              style={styles.mapBtn}
-              onPress={() => router.push("/(tabs)/maps")}
-            >
+            <TouchableOpacity style={styles.mapBtn} onPress={() => router.push("/(tabs)/maps")}>
               <MaterialIcons name="map" size={20} color="#fff" />
               <Text style={styles.mapBtnText}>ดูแผนที่</Text>
             </TouchableOpacity>
@@ -385,11 +425,11 @@ const styles = StyleSheet.create({
   loading: {
     flex: 1,
     justifyContent: "center",
-    alignItems: "center"
+    alignItems: "center",
   },
   header: {
     justifyContent: "center",
-    paddingHorizontal: 20
+    paddingHorizontal: 20,
   },
   headerRow: {
     flexDirection: "row",
@@ -400,12 +440,12 @@ const styles = StyleSheet.create({
   avatar: {
     width: 44,
     height: 44,
-    borderRadius: 22
+    borderRadius: 22,
   },
   greeting: {
     fontSize: 20,
     fontWeight: "700",
-    marginLeft: 12
+    marginLeft: 12,
   },
   sectionHeader: {
     marginTop: 20,
@@ -470,6 +510,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: 600,
   },
+
   deviceRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -537,51 +578,50 @@ const styles = StyleSheet.create({
 
   emptyCenter: { alignItems: "center", paddingVertical: 28 },
   emptyText: { color: "#aaa", fontSize: 15 },
+
   routeCard: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: "#FFFFFF",
     marginHorizontal: 16,
     marginTop: 12,
     paddingVertical: 12,
     paddingHorizontal: 18,
     borderRadius: 24,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
 
-    // shadow (iOS)
-    shadowColor: '#000',
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
 
-    // shadow (Android)
     elevation: 3,
   },
 
   routeContent: {
-  flex: 1,           
-  flexDirection: 'row',
-  alignItems: 'center',
-},
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+  },
 
   routeTitle: {
     fontSize: 16,
-    fontWeight: '600',
-    color: '#000',
+    fontWeight: "600",
+    color: "#000",
   },
 
   arrowCircle: {
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: '#F5B400',
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: "#F5B400",
+    justifyContent: "center",
+    alignItems: "center",
   },
 
   arrowText: {
-    color: '#FFF',
-    fontWeight: 'bold',
+    color: "#FFF",
+    fontWeight: "bold",
     fontSize: 16,
   },
   routeImage: {
@@ -590,5 +630,4 @@ const styles = StyleSheet.create({
     marginRight: 16,
     borderRadius: 8,
   },
-
 });

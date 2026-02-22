@@ -31,7 +31,7 @@ import { DEVICE_TYPES } from "../../assets/constants/deviceData";
 import DateTimePicker from "@react-native-community/datetimepicker";
 
 /* ================= CONFIG ================= */
-const BACKEND_URL = "http://192.168.31.84:3000";
+const BACKEND_URL = "http://localhost:3000";
 const MIN_MOVE_DISTANCE = 5;
 
 /* ================= TYPES ================= */
@@ -178,6 +178,30 @@ export default function MapTracker() {
         );
       }
     });
+  }, [deviceCode]);
+
+  useEffect(() => {
+    if (deviceCode) return;
+
+    // ✅ clear map UI when no active device
+    setIsTracking(false);
+
+    setLocation(null);
+    setPetLocation(null);
+
+    setRawPath([]);
+    setDisplayPath([]);
+    setAccumulatedDistance(0);
+
+    setPetName(null);
+    setPetPhotoURL(null);
+
+    setSavedGeofence(null);
+    setGeofencePoints([]);
+    setGeofencePath([]);
+    setIsGeofenceMode(false);
+    setIsInsideGeofence(null);
+    setGeofenceCenter(null);
   }, [deviceCode]);
 
   /* ================= FORMAT ================= */
@@ -352,6 +376,15 @@ export default function MapTracker() {
         if (!active) {
           setDeviceCode(null);
           setDeviceName("GPS Tracker");
+
+          setIsTracking(false);
+          setLocation(null);
+          setPetLocation(null);
+          setRawPath([]);
+          setDisplayPath([]);
+          setAccumulatedDistance(0);
+          setSavedGeofence(null);
+
           return;
         }
         setDeviceCode(active);

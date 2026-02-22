@@ -848,10 +848,14 @@ export default function MapTracker() {
                   onPress={() => openPicker("fromTime")}
                 >
                   <Text style={styles.timeValue}>
-                    {routeFrom.toLocaleTimeString("en-US", {
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })}
+                    <Text style={styles.timeValue}>
+                      {routeFrom.toLocaleTimeString("th-TH", {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                        hour12: false,
+                      })}{" "}
+                      น.
+                    </Text>
                   </Text>
                 </TouchableOpacity>
               </View>
@@ -882,10 +886,12 @@ export default function MapTracker() {
                   onPress={() => openPicker("toTime")}
                 >
                   <Text style={styles.timeValue}>
-                    {routeTo.toLocaleTimeString("en-US", {
+                    {routeTo.toLocaleTimeString("th-TH", {
                       hour: "2-digit",
                       minute: "2-digit",
-                    })}
+                      hour12: false,
+                    })}{" "}
+                    น.
                   </Text>
                 </TouchableOpacity>
               </View>
@@ -955,9 +961,8 @@ export default function MapTracker() {
                 setRouteModalVisible(false);
                 Alert.alert(
                   "บันทึกเส้นทาง",
-                  `ช่วงเวลา:\n${routeFrom.toLocaleString("th-TH")} \n ถึง ${routeTo.toLocaleString(
-                    "th-TH"
-                  )}`
+                  `ช่วงเวลา:\n${routeFrom.toLocaleString("th-TH", { hour12: false })} \n ถึง ${routeTo.toLocaleString("th-TH",
+                    { hour12: false })}`
                 );
               }}
             >

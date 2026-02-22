@@ -21,14 +21,22 @@ import MapView, {
 import { MaterialIcons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useFocusEffect } from "@react-navigation/native";
-import { auth, db } from "../../firebase/firebase";
-import { doc, onSnapshot, setDoc } from "firebase/firestore";
+import { auth, db, rtdb } from "../../firebase/firebase";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
-import { rtdb } from "../../firebase/firebase";
 import { ref as dbRef, push } from "firebase/database";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { DEVICE_TYPES } from "../../assets/constants/deviceData";
 import DateTimePicker from "@react-native-community/datetimepicker";
+import {
+  doc,
+  onSnapshot,
+  collection,
+  addDoc,
+  serverTimestamp,
+  updateDoc,
+  orderBy,
+  query,
+} from "firebase/firestore";
 
 /* ================= CONFIG ================= */
 const BACKEND_URL = "http://localhost:3000";
@@ -71,8 +79,8 @@ function distanceInMeters(
   const a =
     Math.sin(dLat / 2) ** 2 +
     Math.cos(toRad(lat1)) *
-    Math.cos(toRad(lat2)) *
-    Math.sin(dLon / 2) ** 2;
+      Math.cos(toRad(lat2)) *
+      Math.sin(dLon / 2) ** 2;
 
   return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
@@ -101,12 +109,17 @@ export default function MapTracker() {
     { latitude: number; longitude: number }[]
   >([]);
   const [accumulatedDistance, setAccumulatedDistance] = useState(0);
+
   const [petPhotoURL, setPetPhotoURL] = useState<string | null>(null);
+  const [petName, setPetName] = useState<string | null>(null);
+  const [petId, setPetId] = useState<string | null>(null);
+
   const petMarkerRef = useRef<React.ElementRef<typeof Marker>>(null);
   const [restorePetCallout, setRestorePetCallout] = useState(false);
   const [petLocation, setPetLocation] = useState<DeviceLocation | null>(null);
   const [markerReady, setMarkerReady] = useState(false);
   const [petMarkerKey, setPetMarkerKey] = useState(0);
+
   const [menuVisible, setMenuVisible] = useState(false);
 
   // ✅ Route modal state
@@ -130,8 +143,14 @@ export default function MapTracker() {
   const [savedGeofence, setSavedGeofence] = useState<
     { latitude: number; longitude: number }[] | null
   >(null);
-  const [petName, setPetName] = useState<string | null>(null);
+
   const [deviceName, setDeviceName] = useState<string>("GPS Tracker");
+
+  /* ================= RECORDING (REALTIME) ================= */
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordId, setRecordId] = useState<string | null>(null);
+  const stopTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const startTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const insets = useSafeAreaInsets();
 
@@ -140,6 +159,7 @@ export default function MapTracker() {
     if (!auth.currentUser || !deviceCode) {
       setPetName(null);
       setPetPhotoURL(null);
+      setPetId(null);
       return;
     }
 
@@ -149,18 +169,21 @@ export default function MapTracker() {
       if (!snap.exists()) {
         setPetName(null);
         setPetPhotoURL(null);
+        setPetId(null);
         return;
       }
 
-      const data = snap.data();
+      const data: any = snap.data();
       setPetName(data.petName ?? null);
       setPetPhotoURL(data.photoURL ?? null);
+      setPetId(data.petId ?? null);
 
       setPetMarkerKey((k) => k + 1);
       setMarkerReady(false);
     });
   }, [deviceCode]);
 
+  /* ================= LOAD GEOFENCE ================= */
   useEffect(() => {
     if (!auth.currentUser || !deviceCode) return;
 
@@ -169,7 +192,7 @@ export default function MapTracker() {
     return onSnapshot(gfRef, (snap) => {
       if (!snap.exists()) return;
 
-      const data = snap.data();
+      const data: any = snap.data();
       const pts = data?.points;
 
       if (Array.isArray(pts) && pts.length >= 3) {
@@ -180,10 +203,16 @@ export default function MapTracker() {
     });
   }, [deviceCode]);
 
+  /* ================= RESET WHEN NO DEVICE ================= */
   useEffect(() => {
     if (deviceCode) return;
 
-    // ✅ clear map UI when no active device
+    // ✅ ถ้ากำลังอัดอยู่แล้ว device หาย -> ยกเลิก
+    if (isRecording) {
+      // fire-and-forget
+      void stopRecording("cancelled");
+    }
+
     setIsTracking(false);
 
     setLocation(null);
@@ -195,6 +224,7 @@ export default function MapTracker() {
 
     setPetName(null);
     setPetPhotoURL(null);
+    setPetId(null);
 
     setSavedGeofence(null);
     setGeofencePoints([]);
@@ -202,7 +232,15 @@ export default function MapTracker() {
     setIsGeofenceMode(false);
     setIsInsideGeofence(null);
     setGeofenceCenter(null);
-  }, [deviceCode]);
+  }, [deviceCode]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /* ================= CLEANUP TIMERS ON UNMOUNT ================= */
+  useEffect(() => {
+    return () => {
+      if (stopTimeoutRef.current) clearTimeout(stopTimeoutRef.current);
+      if (startTimeoutRef.current) clearTimeout(startTimeoutRef.current);
+    };
+  }, []);
 
   /* ================= FORMAT ================= */
   const formatThaiDate = (iso: string) =>
@@ -231,7 +269,6 @@ export default function MapTracker() {
           point.longitude
         );
 
-        // นับระยะเฉพาะเคลื่อนที่จริง
         if (dist >= MIN_MOVE_DISTANCE) {
           setAccumulatedDistance((d) => d + dist);
         } else {
@@ -260,12 +297,25 @@ export default function MapTracker() {
     });
   };
 
+  /* ================= SAVE POINT (FIRESTORE) ================= */
+  const savePoint = async (rid: string, point: TrackPoint) => {
+    if (!auth.currentUser) return;
+    const uid = auth.currentUser.uid;
+
+    await addDoc(collection(db, "users", uid, "routeHistories", rid, "points"), {
+      latitude: point.latitude,
+      longitude: point.longitude,
+      timestamp: point.timestamp,
+      createdAt: serverTimestamp(),
+    });
+  };
+
   const geoInstruction =
     geofencePoints.length === 0
       ? "แตะบนแผนที่เพื่อเพิ่มจุด"
       : geofencePoints.length < 3
-        ? "เพิ่มจุดให้ครบอย่างน้อย 3 จุด"
-        : "ลากจุดเพื่อปรับตำแหน่ง หรือบันทึก";
+      ? "เพิ่มจุดให้ครบอย่างน้อย 3 จุด"
+      : "ลากจุดเพื่อปรับตำแหน่ง หรือบันทึก";
 
   /* ================= FETCH ================= */
   const fetchLocation = async (
@@ -274,6 +324,7 @@ export default function MapTracker() {
   ): Promise<boolean> => {
     try {
       setLoading(true);
+
       const res = await fetch(`${BACKEND_URL}/api/device/location`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -305,29 +356,33 @@ export default function MapTracker() {
 
         const inside = distFromCenter <= geofenceRadius;
 
-        // เคยอยู่ข้างใน → ออกนอก
         if (isInsideGeofence === true && !inside) {
           sendGeofenceAlert("exit", distFromCenter);
           setIsInsideGeofence(false);
         }
 
-        // เคยอยู่นอก → กลับเข้า
         if (isInsideGeofence === false && inside) {
           sendGeofenceAlert("enter", distFromCenter);
           setIsInsideGeofence(true);
         }
 
-        // ครั้งแรก
         if (isInsideGeofence === null) {
           setIsInsideGeofence(inside);
         }
       }
 
-      appendPoint({
+      const p: TrackPoint = {
         latitude: current.latitude,
         longitude: current.longitude,
         timestamp,
-      });
+      };
+
+      appendPoint(p);
+
+      // ✅ ถ้ากำลัง recording ให้บันทึก point realtime (subcollection)
+      if (isRecording && recordId) {
+        void savePoint(recordId, p);
+      }
 
       return true;
     } catch {
@@ -337,6 +392,103 @@ export default function MapTracker() {
       return false;
     } finally {
       setLoading(false);
+    }
+  };
+
+  /* ================= AUTO TRACK (ONLY WHEN RECORDING) ================= */
+  useEffect(() => {
+    if (!deviceCode || !isTracking || !isRecording) return;
+
+    const timer = setInterval(
+      () => fetchLocation(deviceCode, { silent: true }),
+      5000
+    );
+
+    return () => clearInterval(timer);
+  }, [deviceCode, isTracking, isRecording]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /* ================= RECORDING CONTROL ================= */
+  const stopRecording = async (finalStatus: "completed" | "cancelled") => {
+    if (!auth.currentUser || !recordId) {
+      setIsRecording(false);
+      setIsTracking(false);
+      setRecordId(null);
+      return;
+    }
+    const uid = auth.currentUser.uid;
+    const rid = recordId;
+
+    if (stopTimeoutRef.current) {
+      clearTimeout(stopTimeoutRef.current);
+      stopTimeoutRef.current = null;
+    }
+    if (startTimeoutRef.current) {
+      clearTimeout(startTimeoutRef.current);
+      startTimeoutRef.current = null;
+    }
+
+    setIsRecording(false);
+    setIsTracking(false);
+    setRecordId(null);
+
+    try {
+      await updateDoc(doc(db, "users", uid, "routeHistories", rid), {
+        status: finalStatus,
+        endedAt: serverTimestamp(),
+        distanceMeters: Number(accumulatedDistance.toFixed(1)),
+      });
+    } catch {
+      // ไม่ต้องทำอะไรเพิ่ม
+    }
+  };
+
+  const startRecording = async (startAt: Date, stopAt: Date) => {
+    if (!auth.currentUser) {
+      Alert.alert("กรุณาเข้าสู่ระบบ");
+      return;
+    }
+    if (!deviceCode) {
+      Alert.alert("กรุณาเลือกอุปกรณ์");
+      return;
+    }
+    if (!petName || !petId) {
+      Alert.alert("ยังไม่ได้ผูกสัตว์เลี้ยงกับอุปกรณ์");
+      return;
+    }
+
+    const uid = auth.currentUser.uid;
+
+    // reset เส้นของรอบใหม่ (ไม่กระทบส่วนอื่น)
+    setRawPath([]);
+    setDisplayPath([]);
+    setAccumulatedDistance(0);
+
+    const ref = await addDoc(collection(db, "users", uid, "routeHistories"), {
+      deviceCode,
+      petId,
+      petName,
+      photoURL: petPhotoURL ?? null,
+
+      from: startAt.toISOString(),
+      to: stopAt.toISOString(),
+
+      status: "recording", // recording | completed | cancelled
+      createdAt: serverTimestamp(),
+      startedAt: serverTimestamp(),
+    });
+
+    setRecordId(ref.id);
+    setIsRecording(true);
+    setIsTracking(true);
+
+    const msToStop = stopAt.getTime() - Date.now();
+    if (msToStop > 0) {
+      stopTimeoutRef.current = setTimeout(() => {
+        void stopRecording("completed");
+      }, msToStop);
+    } else {
+      // ถ้าเวลา to ผ่านแล้ว ก็หยุดทันที
+      void stopRecording("completed");
     }
   };
 
@@ -358,16 +510,6 @@ export default function MapTracker() {
     setIsInsideGeofence(null);
   };
 
-  /* ================= AUTO TRACK ================= */
-  useEffect(() => {
-    if (!deviceCode || !isTracking) return;
-    const timer = setInterval(
-      () => fetchLocation(deviceCode, { silent: true }),
-      5000
-    );
-    return () => clearInterval(timer);
-  }, [deviceCode, isTracking]);
-
   /* ================= LOAD ACTIVE DEVICE ================= */
   useFocusEffect(
     useCallback(() => {
@@ -387,7 +529,9 @@ export default function MapTracker() {
 
           return;
         }
+
         setDeviceCode(active);
+
         const stored = await AsyncStorage.getItem("devices");
         const list: Device[] = stored ? JSON.parse(stored) : [];
         const device = list.find((d) => d.code === active);
@@ -397,10 +541,11 @@ export default function MapTracker() {
         } else {
           setDeviceName("GPS Tracker");
         }
+
         setIsTracking(false);
       };
 
-      load();
+      void load();
     }, [])
   );
 
@@ -505,18 +650,15 @@ export default function MapTracker() {
 
     const polygon = [...geofencePoints];
 
-    // ✅ วาด Polygon ให้ทันที (ไม่ต้องรอ auth/deviceCode)
     setSavedGeofence(polygon);
 
-    // ✅ ออกจากโหมดวาด
     setIsInsideGeofence(null);
     setIsGeofenceMode(false);
     setGeofencePoints([]);
     setGeofencePath([]);
-
   };
 
-  /* ================= ROUTE MODAL (Today default + Custom + Cross-day + Single Picker) ================= */
+  /* ================= ROUTE MODAL ================= */
   const getTodayRange = () => {
     const now = new Date();
     const start = new Date(now);
@@ -546,12 +688,62 @@ export default function MapTracker() {
     setPickerVisible(true);
   };
 
-  // เปิด modal => reset เป็น "วันนี้"
   const openRouteModal = () => {
     const { start, end } = getTodayRange();
     setRoutePreset("today");
     setRouteRange({ routeFrom: start, routeTo: end });
     setRouteModalVisible(true);
+  };
+
+  // ✅ เปลี่ยนจาก “ดึงย้อนหลัง” -> “เริ่มอัด realtime ตามช่วงเวลา”
+  const saveRouteHistory = async () => {
+    if (!deviceCode) {
+      Alert.alert("ไม่พบอุปกรณ์", "กรุณาเชื่อมต่ออุปกรณ์ก่อน");
+      return;
+    }
+    if (!petId || !petName) {
+      Alert.alert("ยังไม่ได้ผูกสัตว์เลี้ยง", "กรุณาเชื่อมต่ออุปกรณ์กับสัตว์เลี้ยงก่อน");
+      return;
+    }
+
+    const startAt = routeFrom;
+    const stopAt = routeTo;
+
+    if (stopAt.getTime() <= startAt.getTime()) {
+      Alert.alert("ช่วงเวลาไม่ถูกต้อง", "TO ต้องมากกว่า FROM");
+      return;
+    }
+
+    setRouteModalVisible(false);
+
+    // ถ้ากำลังอัดอยู่แล้ว -> ไม่ให้ซ้อน
+    if (isRecording) {
+      Alert.alert("กำลังบันทึกอยู่", "กรุณารอให้การบันทึกปัจจุบันจบก่อน");
+      return;
+    }
+
+    // ถ้าเริ่มในอนาคต -> ตั้งเวลารอเริ่ม
+    const now = Date.now();
+
+    if (startAt.getTime() > now) {
+      const msToStart = startAt.getTime() - now;
+
+      Alert.alert(
+        "ตั้งเวลาบันทึกแล้ว",
+        `จะเริ่มบันทึกตอน ${startAt.toLocaleString("th-TH", { hour12: false })}`
+      );
+
+      if (startTimeoutRef.current) clearTimeout(startTimeoutRef.current);
+      startTimeoutRef.current = setTimeout(() => {
+        void startRecording(startAt, stopAt);
+      }, msToStart);
+
+      return;
+    }
+
+    // ถ้า start เป็นอดีต/ตอนนี้ -> เริ่มทันที (เริ่มจริง = ตอนนี้)
+    const actualStart = new Date();
+    void startRecording(actualStart, stopAt);
   };
 
   return (
@@ -634,7 +826,10 @@ export default function MapTracker() {
             anchor={{ x: 0.5, y: 0.5 }}
           >
             {petPhotoURL ? (
-              <View style={styles.petMarker} onLayout={() => setMarkerReady(true)}>
+              <View
+                style={styles.petMarker}
+                onLayout={() => setMarkerReady(true)}
+              >
                 <Image
                   source={{ uri: petPhotoURL }}
                   style={styles.petImage}
@@ -642,7 +837,10 @@ export default function MapTracker() {
                 />
               </View>
             ) : (
-              <View style={styles.pawMarker} onLayout={() => setMarkerReady(true)}>
+              <View
+                style={styles.pawMarker}
+                onLayout={() => setMarkerReady(true)}
+              >
                 <MaterialIcons name="pets" size={26} color="#7A4A00" />
               </View>
             )}
@@ -768,7 +966,7 @@ export default function MapTracker() {
         </View>
       </Modal>
 
-      {/* ===== ROUTE SAVE MODAL (TODAY DEFAULT + CUSTOM + CROSS DAY) ===== */}
+      {/* ===== ROUTE SAVE MODAL ===== */}
       <Modal visible={routeModalVisible} transparent animationType="slide">
         <View style={styles.sheetOverlay}>
           <TouchableOpacity
@@ -822,7 +1020,7 @@ export default function MapTracker() {
               </TouchableOpacity>
             </View>
 
-            {/* FROM / TO (รองรับข้ามวัน) */}
+            {/* FROM / TO */}
             <View style={styles.timeRow}>
               {/* FROM */}
               <View style={{ flex: 1 }}>
@@ -848,14 +1046,12 @@ export default function MapTracker() {
                   onPress={() => openPicker("fromTime")}
                 >
                   <Text style={styles.timeValue}>
-                    <Text style={styles.timeValue}>
-                      {routeFrom.toLocaleTimeString("th-TH", {
-                        hour: "2-digit",
-                        minute: "2-digit",
-                        hour12: false,
-                      })}{" "}
-                      น.
-                    </Text>
+                    {routeFrom.toLocaleTimeString("th-TH", {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                      hour12: false,
+                    })}{" "}
+                    น.
                   </Text>
                 </TouchableOpacity>
               </View>
@@ -908,7 +1104,6 @@ export default function MapTracker() {
                 mode={pickerMode}
                 display={Platform.OS === "ios" ? "spinner" : "default"}
                 onChange={(e, selected) => {
-                  // Android: ปิดเมื่อเลือก/ยกเลิก
                   if (Platform.OS !== "ios") setPickerVisible(false);
                   if (!selected) return;
 
@@ -937,7 +1132,6 @@ export default function MapTracker() {
                   if (activeField === "toDate") nextTo = applyDate(routeTo, selected);
                   if (activeField === "toTime") nextTo = applyTime(routeTo, selected);
 
-                  // ✅ รองรับข้ามวัน แต่ TO ต้อง "หลัง" FROM เสมอ
                   if (nextTo.getTime() <= nextFrom.getTime()) {
                     Alert.alert(
                       "ช่วงเวลาไม่ถูกต้อง",
@@ -948,24 +1142,13 @@ export default function MapTracker() {
 
                   setRouteRange({ routeFrom: nextFrom, routeTo: nextTo });
 
-                  // ผู้ใช้เริ่มปรับเอง => custom
                   if (routePreset !== "custom") setRoutePreset("custom");
                 }}
               />
             )}
 
             {/* Continue */}
-            <TouchableOpacity
-              style={styles.continueBtn}
-              onPress={() => {
-                setRouteModalVisible(false);
-                Alert.alert(
-                  "บันทึกเส้นทาง",
-                  `ช่วงเวลา:\n${routeFrom.toLocaleString("th-TH", { hour12: false })} \n ถึง ${routeTo.toLocaleString("th-TH",
-                    { hour12: false })}`
-                );
-              }}
-            >
+            <TouchableOpacity style={styles.continueBtn} onPress={saveRouteHistory}>
               <Text style={styles.continueText}>บันทึก</Text>
             </TouchableOpacity>
           </View>
@@ -1043,7 +1226,7 @@ export default function MapTracker() {
           onPress={() => {
             if (!deviceCode) return;
             setIsTracking(true);
-            fetchLocation(deviceCode);
+            void fetchLocation(deviceCode);
           }}
         >
           <MaterialIcons name="my-location" size={24} color="#fff" />
@@ -1087,6 +1270,7 @@ export default function MapTracker() {
   );
 }
 
+/* ================= STYLES ================= */
 const styles = StyleSheet.create({
   container: { flex: 1 },
 

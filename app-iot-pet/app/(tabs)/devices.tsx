@@ -251,10 +251,13 @@ export default function Devices() {
           paddingHorizontal: 16,
           paddingBottom: 24,
           paddingTop: 12,
+          flexGrow: 1, // ✅ ทำให้ empty อยู่กลางได้
         }}
         ListHeaderComponent={
           // ✅ ทำให้ header เต็มขอบจอ (แม้ list จะมี padding)
-          <View style={{ marginHorizontal: -16, marginTop: -12, marginBottom: 12 }}>
+          <View
+            style={{ marginHorizontal: -16, marginTop: -12, marginBottom: 12 }}
+          >
             <ProfileHeader
               title="อุปกรณ์"
               right={
@@ -269,7 +272,14 @@ export default function Devices() {
           </View>
         }
         ListEmptyComponent={
-          <Text style={styles.noDeviceText}>ยังไม่มีอุปกรณ์</Text>
+          <View style={styles.emptyWrap}>
+            {/* ✅ ใช้ icon แบบเดียวกับ Tab */}
+            <MaterialIcons name="devices" size={90} color="#D1D5DB" />
+            <Text style={styles.emptyTitle}>ยังไม่มีอุปกรณ์</Text>
+            <Text style={styles.emptySub}>
+              กดปุ่ม + เพื่อเพิ่มอุปกรณ์ติดตาม
+            </Text>
+          </View>
         }
       />
 
@@ -402,11 +412,23 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
 
-  noDeviceText: {
-    textAlign: "center",
-    marginTop: 80,
-    fontSize: 15,
+  // ✅ NEW: empty state
+  emptyWrap: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingBottom: 80,
+  },
+  emptyTitle: {
+    marginTop: 10,
+    fontSize: 16,
     color: "#9CA3AF",
+    fontWeight: "800",
+  },
+  emptySub: {
+    marginTop: 6,
+    fontSize: 13,
+    color: "#C0C4CC",
     fontWeight: "700",
   },
 

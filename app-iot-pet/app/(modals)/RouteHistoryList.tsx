@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   Text,
   StyleSheet,
@@ -7,6 +7,7 @@ import {
   Image,
   Alert,
   Pressable,
+  SectionListData,
 } from "react-native";
 import { useRouter } from "expo-router";
 import FontAwesome6 from "@expo/vector-icons/FontAwesome6";
@@ -29,10 +30,10 @@ type RouteHistory = {
   petName: string;
   photoURL?: string | null;
 
-  from: string;
-  to: string;
+  from: string; // ISO
+  to: string; // ISO
 
-  createdAt?: any;
+  createdAt?: any; // Firestore Timestamp | undefined
 };
 
 export default function RouteHistoryList() {
@@ -53,19 +54,52 @@ export default function RouteHistoryList() {
       hour12: false,
     });
 
-  const formatRange = (from: string, to: string) => {
+  // ✅ เวลา “การ์ดนี้” ใช้เรียง (ล่าสุดขึ้นบน) : createdAt > to > from
+  const getSortMs = (r: RouteHistory) => {
+    const ca = r.createdAt;
+    const caMs =
+      ca && typeof ca?.toMillis === "function" ? (ca.toMillis() as number) : NaN;
+
+    const toMs = r.to ? new Date(r.to).getTime() : NaN;
+    const fromMs = r.from ? new Date(r.from).getTime() : NaN;
+
+    if (Number.isFinite(caMs)) return caMs;
+    if (Number.isFinite(toMs)) return toMs;
+    if (Number.isFinite(fromMs)) return fromMs;
+    return 0;
+  };
+
+  // ✅ แสดงเวลาในวันเดียว: 15:02 - 18:00 น.
+  // ✅ ถ้าข้ามวัน: 23 ก.พ. 15:02 น. - 24 ก.พ. 01:10 น.
+  const formatTimeRange = (from: string, to: string) => {
     const sameDay =
       new Date(from).toDateString() === new Date(to).toDateString();
 
     if (sameDay) {
-      return `${formatThaiDate(from)} • ${formatThaiTime(from)} น. - ${formatThaiTime(
-        to
-      )} น.`;
+      return `${formatThaiTime(from)} - ${formatThaiTime(to)} น.`;
     }
 
-    return `${formatThaiDate(from)} ${formatThaiTime(from)} น.\nถึง ${formatThaiDate(
+    return `${formatThaiDate(from)} ${formatThaiTime(from)} น. - ${formatThaiDate(
       to
     )} ${formatThaiTime(to)} น.`;
+  };
+
+  // ✅ สถานะบนการ์ด: กำลังบันทึก / เสร็จสิ้นแล้ว
+  // (เงื่อนไข: ถ้าเป็น "วันนี้" และตอนนี้อยู่ในช่วง from..to ให้เป็นกำลังบันทึก)
+  const getStatus = (from: string, to: string) => {
+    const now = Date.now();
+    const fromMs = new Date(from).getTime();
+    const toMs = new Date(to).getTime();
+
+    const isToday = new Date(from).toDateString() === new Date().toDateString();
+    const isInRange =
+      Number.isFinite(fromMs) &&
+      Number.isFinite(toMs) &&
+      now >= fromMs &&
+      now <= toMs;
+
+    if (isToday && isInRange) return "recording";
+    return "done";
   };
 
   useEffect(() => {
@@ -82,9 +116,55 @@ export default function RouteHistoryList() {
         const raw = d.data() as Omit<RouteHistory, "id">;
         return { id: d.id, ...raw };
       });
+
+      data.sort((a, b) => getSortMs(b) - getSortMs(a));
       setRoutes(data);
     });
   }, []);
+
+  /**
+   * ✅ GROUP BY วัน -> แสดงวันที่เป็นหัวข้อบนซ้ายครั้งเดียว
+   * ✅ ภายในวันเรียงตามเวลาล่าสุดก่อน
+   *
+   * NOTE:
+   * typings ของ SwipeListView บางเวอร์ชันล็อก Section เป็น DefaultSectionT
+   * เราเลยเก็บ title ไว้ใน section แบบ "แนบเพิ่ม" และ cast ตอนอ่านใน header
+   */
+  const sections: SectionListData<RouteHistory>[] = useMemo(() => {
+    const map = new Map<string, RouteHistory[]>();
+
+    for (const r of routes) {
+      const dateKey = r.from ? new Date(r.from).toDateString() : "Unknown";
+      const arr = map.get(dateKey) ?? [];
+      arr.push(r);
+      map.set(dateKey, arr);
+    }
+
+    const result: any[] = [];
+
+    for (const [dateKey, arr] of map.entries()) {
+      arr.sort((a, b) => getSortMs(b) - getSortMs(a));
+
+      const first = arr[0];
+      const title = first?.from ? formatThaiDate(first.from) : "ไม่ทราบวันที่";
+
+      // ✅ ใส่ title เพิ่ม (แต่ไม่บังคับ type ของ lib)
+      result.push({
+        key: dateKey,
+        title,
+        data: arr,
+      });
+    }
+
+    // sort กลุ่มวัน (ล่าสุดก่อน)
+    result.sort((a: any, b: any) => {
+      const aTop = a.data?.[0] ? getSortMs(a.data[0]) : 0;
+      const bTop = b.data?.[0] ? getSortMs(b.data[0]) : 0;
+      return bTop - aTop;
+    });
+
+    return result as SectionListData<RouteHistory>[];
+  }, [routes]);
 
   const confirmDelete = (
     rowMap: { [key: string]: any },
@@ -114,15 +194,33 @@ export default function RouteHistoryList() {
     rowMap[rowKey]?.closeRow();
   };
 
+  // ✅ FIX: ให้รับ type ตาม lib แล้วค่อยอ่าน title ผ่าน any
+  const renderSectionHeader = ({
+    section,
+  }: {
+    section: SectionListData<RouteHistory>;
+  }) => {
+    const title = (section as any).title as string | undefined;
+
+    return (
+      <View style={styles.sectionHeader}>
+        <Text style={styles.sectionHeaderText}>{title ?? "-"}</Text>
+      </View>
+    );
+  };
+
   const renderItem = ({ item }: { item: RouteHistory }) => {
+    const timeText = formatTimeRange(item.from, item.to);
+
+    const status = getStatus(item.from, item.to);
+    const statusText = status === "recording" ? "กำลังบันทึก" : "เสร็จสิ้นแล้ว";
+
     return (
       <Pressable
         style={styles.card}
         onPress={() =>
           router.push({
             pathname: "/(modals)/RouteHistory",
-            // ✅ ส่ง routeId ให้หน้า RouteHistory ใช้งานได้จริง
-            // ✅ ส่ง route ไปด้วย (optional) เพื่อให้โชว์ชื่อ/รูป/เวลาได้ทันที
             params: { routeId: item.id, route: JSON.stringify(item) },
           })
         }
@@ -138,8 +236,34 @@ export default function RouteHistoryList() {
         </View>
 
         <View style={styles.info}>
-          <Text style={styles.name}>{item.petName ?? "-"}</Text>
-          <Text style={styles.range}>{formatRange(item.from, item.to)}</Text>
+          <View style={styles.topRow}>
+            <Text style={styles.name} numberOfLines={1}>
+              {item.petName ?? "-"}
+            </Text>
+
+            {/* ✅ เปลี่ยนจาก "วันที่" เป็น "สถานะ" */}
+            <View
+              style={[
+                styles.statusPill,
+                status === "recording" ? styles.statusRecording : styles.statusDone,
+              ]}
+            >
+              <Text
+                style={[
+                  styles.statusText,
+                  status === "recording"
+                    ? styles.statusTextRecording
+                    : styles.statusTextDone,
+                ]}
+              >
+                {statusText}
+              </Text>
+            </View>
+          </View>
+
+          <Text style={styles.range} numberOfLines={2}>
+            {timeText}
+          </Text>
         </View>
 
         <View style={styles.chevronWrap}>
@@ -181,7 +305,9 @@ export default function RouteHistoryList() {
         </View>
       ) : (
         <SwipeListView
-          data={routes}
+          useSectionList
+          sections={sections}
+          renderSectionHeader={renderSectionHeader}
           renderItem={renderItem}
           renderHiddenItem={renderHiddenItem}
           keyExtractor={(item) => item.id}
@@ -190,7 +316,9 @@ export default function RouteHistoryList() {
           contentContainerStyle={{
             paddingHorizontal: 16,
             paddingVertical: 16,
+            paddingBottom: 24,
           }}
+          stickySectionHeadersEnabled={false}
         />
       )}
     </>
@@ -210,6 +338,16 @@ const styles = StyleSheet.create({
     color: "#888",
     fontWeight: "600",
     textAlign: "center",
+  },
+
+  sectionHeader: {
+    paddingTop: 8,
+    paddingBottom: 10,
+  },
+  sectionHeaderText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#0F172A",
   },
 
   card: {
@@ -235,11 +373,42 @@ const styles = StyleSheet.create({
 
   info: { flex: 1, marginLeft: 12 },
 
+  topRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+    marginBottom: 4,
+  },
+
   name: {
+    flex: 1,
     fontSize: 16,
     fontWeight: "800",
     color: "#111827",
-    marginBottom: 4,
+  },
+
+  // ✅ สถานะบนการ์ด
+  statusPill: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+  },
+  statusDone: {
+    backgroundColor: "#E8F7EE",
+  },
+  statusRecording: {
+    backgroundColor: "#FFF4E5",
+  },
+  statusText: {
+    fontSize: 12.5,
+    fontWeight: "900",
+  },
+  statusTextDone: {
+    color: "#166534",
+  },
+  statusTextRecording: {
+    color: "#9A3412",
   },
 
   range: {

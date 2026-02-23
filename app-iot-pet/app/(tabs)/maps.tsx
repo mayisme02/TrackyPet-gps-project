@@ -34,8 +34,6 @@ import {
   addDoc,
   serverTimestamp,
   updateDoc,
-  orderBy,
-  query,
 } from "firebase/firestore";
 
 /* ================= CONFIG ================= */
@@ -152,6 +150,13 @@ export default function MapTracker() {
   const stopTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const startTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // ✅ ล็อก context ตอนเริ่มอัด เพื่อกัน “สลับอุปกรณ์แล้วจุดไปลงผิดตัว”
+  const recordingCtxRef = useRef<{
+    deviceCode: string;
+    petId: string;
+    recordId: string;
+  } | null>(null);
+
   const insets = useSafeAreaInsets();
 
   /* ================= LOAD PET MATCH ================= */
@@ -163,7 +168,13 @@ export default function MapTracker() {
       return;
     }
 
-    const ref = doc(db, "users", auth.currentUser.uid, "deviceMatches", deviceCode);
+    const ref = doc(
+      db,
+      "users",
+      auth.currentUser.uid,
+      "deviceMatches",
+      deviceCode
+    );
 
     return onSnapshot(ref, (snap) => {
       if (!snap.exists()) {
@@ -209,7 +220,6 @@ export default function MapTracker() {
 
     // ✅ ถ้ากำลังอัดอยู่แล้ว device หาย -> ยกเลิก
     if (isRecording) {
-      // fire-and-forget
       void stopRecording("cancelled");
     }
 
@@ -241,6 +251,22 @@ export default function MapTracker() {
       if (startTimeoutRef.current) clearTimeout(startTimeoutRef.current);
     };
   }, []);
+
+  /* ================= BLOCK SWITCH DEVICE WHILE RECORDING ================= */
+  useEffect(() => {
+    if (!isRecording) return;
+
+    const locked = recordingCtxRef.current;
+    if (!locked) return;
+
+    if (deviceCode && deviceCode !== locked.deviceCode) {
+      Alert.alert(
+        "กำลังบันทึกเส้นทางอยู่",
+        "ไม่สามารถสลับอุปกรณ์ระหว่างบันทึกได้ ระบบจะยกเลิกการบันทึกปัจจุบัน"
+      );
+      void stopRecording("cancelled");
+    }
+  }, [deviceCode, isRecording]);
 
   /* ================= FORMAT ================= */
   const formatThaiDate = (iso: string) =>
@@ -380,8 +406,16 @@ export default function MapTracker() {
       appendPoint(p);
 
       // ✅ ถ้ากำลัง recording ให้บันทึก point realtime (subcollection)
-      if (isRecording && recordId) {
-        void savePoint(recordId, p);
+      if (isRecording) {
+        const locked = recordingCtxRef.current;
+
+        // ✅ กันบั๊ก: ถ้า context ไม่ตรง (สลับอุปกรณ์/recordId เปลี่ยน) ห้ามเซฟ
+        if (!locked || locked.deviceCode !== code) {
+          return true;
+        }
+
+        // ใช้ rid จาก ctx เป็นหลัก กัน state ค้าง/เปลี่ยน
+        void savePoint(locked.recordId, p);
       }
 
       return true;
@@ -397,26 +431,33 @@ export default function MapTracker() {
 
   /* ================= AUTO TRACK (ONLY WHEN RECORDING) ================= */
   useEffect(() => {
-    if (!deviceCode || !isTracking || !isRecording) return;
+    if (!isTracking || !isRecording) return;
 
-    const timer = setInterval(
-      () => fetchLocation(deviceCode, { silent: true }),
-      5000
-    );
+    const locked = recordingCtxRef.current;
+    if (!locked) return;
+
+    const timer = setInterval(() => {
+      void fetchLocation(locked.deviceCode, { silent: true });
+    }, 5000);
 
     return () => clearInterval(timer);
-  }, [deviceCode, isTracking, isRecording]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isTracking, isRecording]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ================= RECORDING CONTROL ================= */
   const stopRecording = async (finalStatus: "completed" | "cancelled") => {
-    if (!auth.currentUser || !recordId) {
+    // ใช้ ctx เป็นหลัก กัน recordId state เปลี่ยน/ค้าง
+    const locked = recordingCtxRef.current;
+    const rid = locked?.recordId ?? recordId;
+
+    if (!auth.currentUser || !rid) {
       setIsRecording(false);
       setIsTracking(false);
       setRecordId(null);
+      recordingCtxRef.current = null;
       return;
     }
+
     const uid = auth.currentUser.uid;
-    const rid = recordId;
 
     if (stopTimeoutRef.current) {
       clearTimeout(stopTimeoutRef.current);
@@ -430,6 +471,7 @@ export default function MapTracker() {
     setIsRecording(false);
     setIsTracking(false);
     setRecordId(null);
+    recordingCtxRef.current = null;
 
     try {
       await updateDoc(doc(db, "users", uid, "routeHistories", rid), {
@@ -481,13 +523,19 @@ export default function MapTracker() {
     setIsRecording(true);
     setIsTracking(true);
 
+    // ✅ ล็อก context ตอนเริ่มอัด
+    recordingCtxRef.current = {
+      deviceCode,
+      petId,
+      recordId: ref.id,
+    };
+
     const msToStop = stopAt.getTime() - Date.now();
     if (msToStop > 0) {
       stopTimeoutRef.current = setTimeout(() => {
         void stopRecording("completed");
       }, msToStop);
     } else {
-      // ถ้าเวลา to ผ่านแล้ว ก็หยุดทันที
       void stopRecording("completed");
     }
   };
@@ -702,7 +750,10 @@ export default function MapTracker() {
       return;
     }
     if (!petId || !petName) {
-      Alert.alert("ยังไม่ได้ผูกสัตว์เลี้ยง", "กรุณาเชื่อมต่ออุปกรณ์กับสัตว์เลี้ยงก่อน");
+      Alert.alert(
+        "ยังไม่ได้ผูกสัตว์เลี้ยง",
+        "กรุณาเชื่อมต่ออุปกรณ์กับสัตว์เลี้ยงก่อน"
+      );
       return;
     }
 
@@ -826,10 +877,7 @@ export default function MapTracker() {
             anchor={{ x: 0.5, y: 0.5 }}
           >
             {petPhotoURL ? (
-              <View
-                style={styles.petMarker}
-                onLayout={() => setMarkerReady(true)}
-              >
+              <View style={styles.petMarker} onLayout={() => setMarkerReady(true)}>
                 <Image
                   source={{ uri: petPhotoURL }}
                   style={styles.petImage}
@@ -837,10 +885,7 @@ export default function MapTracker() {
                 />
               </View>
             ) : (
-              <View
-                style={styles.pawMarker}
-                onLayout={() => setMarkerReady(true)}
-              >
+              <View style={styles.pawMarker} onLayout={() => setMarkerReady(true)}>
                 <MaterialIcons name="pets" size={26} color="#7A4A00" />
               </View>
             )}
@@ -860,31 +905,24 @@ export default function MapTracker() {
 
                   <View style={styles.row}>
                     <Text style={styles.icon}>📅</Text>
-                    <Text style={styles.text}>
-                      {formatThaiDate(petLocation.timestamp)}
-                    </Text>
+                    <Text style={styles.text}>{formatThaiDate(petLocation.timestamp)}</Text>
                   </View>
 
                   <View style={styles.row}>
                     <Text style={styles.icon}>🕒</Text>
-                    <Text style={styles.text}>
-                      {formatThaiTime(petLocation.timestamp)}
-                    </Text>
+                    <Text style={styles.text}>{formatThaiTime(petLocation.timestamp)}</Text>
                   </View>
 
                   <View style={styles.row}>
                     <Text style={styles.icon}>📍</Text>
                     <Text style={styles.monoText}>
-                      {petLocation.latitude.toFixed(6)},{" "}
-                      {petLocation.longitude.toFixed(6)}
+                      {petLocation.latitude.toFixed(6)}, {petLocation.longitude.toFixed(6)}
                     </Text>
                   </View>
 
                   <View style={styles.row}>
                     <Text style={styles.icon}>📏</Text>
-                    <Text style={styles.boldText}>
-                      {accumulatedDistance.toFixed(1)} m
-                    </Text>
+                    <Text style={styles.boldText}>{accumulatedDistance.toFixed(1)} m</Text>
                   </View>
                 </View>
               </View>
@@ -915,11 +953,7 @@ export default function MapTracker() {
               }}
             >
               <View style={styles.sheetIcon}>
-                <MaterialCommunityIcons
-                  name="border-style"
-                  size={22}
-                  color="#905b0d"
-                />
+                <MaterialCommunityIcons name="border-style" size={22} color="#905b0d" />
               </View>
               <Text style={styles.sheetText}>กำหนดพื้นที่ (Geofence)</Text>
               <MaterialIcons name="chevron-right" size={22} color="#9CA3AF" />
@@ -934,11 +968,7 @@ export default function MapTracker() {
               }}
             >
               <View style={styles.sheetIcon}>
-                <MaterialIcons
-                  name="add-circle-outline"
-                  size={24}
-                  color="#905b0d"
-                />
+                <MaterialIcons name="add-circle-outline" size={24} color="#905b0d" />
               </View>
               <Text style={styles.sheetText}>เพิ่มอุปกรณ์</Text>
               <MaterialIcons name="chevron-right" size={22} color="#9CA3AF" />
@@ -953,11 +983,7 @@ export default function MapTracker() {
               }}
             >
               <View style={styles.sheetIcon}>
-                <MaterialCommunityIcons
-                  name="map-clock-outline"
-                  size={24}
-                  color="#905b0d"
-                />
+                <MaterialCommunityIcons name="map-clock-outline" size={24} color="#905b0d" />
               </View>
               <Text style={styles.sheetText}>บันทึกเส้นทาง</Text>
               <MaterialIcons name="chevron-right" size={22} color="#9CA3AF" />
@@ -982,10 +1008,7 @@ export default function MapTracker() {
             {/* ✅ เลือก "วันนี้" / "กำหนดเอง" */}
             <View style={styles.presetRow}>
               <TouchableOpacity
-                style={[
-                  styles.presetChip,
-                  routePreset === "today" && styles.presetChipActive,
-                ]}
+                style={[styles.presetChip, routePreset === "today" && styles.presetChipActive]}
                 onPress={() => {
                   const { start, end } = getTodayRange();
                   setRoutePreset("today");
@@ -1025,10 +1048,7 @@ export default function MapTracker() {
               {/* FROM */}
               <View style={{ flex: 1 }}>
                 <Text style={styles.timeLabel}>FROM (วัน)</Text>
-                <TouchableOpacity
-                  style={styles.timeBox}
-                  onPress={() => openPicker("fromDate")}
-                >
+                <TouchableOpacity style={styles.timeBox} onPress={() => openPicker("fromDate")}>
                   <Text style={styles.timeValue}>
                     {routeFrom.toLocaleDateString("th-TH", {
                       day: "2-digit",
@@ -1041,10 +1061,7 @@ export default function MapTracker() {
                 <View style={{ height: 10 }} />
 
                 <Text style={styles.timeLabel}>FROM (เวลา)</Text>
-                <TouchableOpacity
-                  style={styles.timeBox}
-                  onPress={() => openPicker("fromTime")}
-                >
+                <TouchableOpacity style={styles.timeBox} onPress={() => openPicker("fromTime")}>
                   <Text style={styles.timeValue}>
                     {routeFrom.toLocaleTimeString("th-TH", {
                       hour: "2-digit",
@@ -1061,10 +1078,7 @@ export default function MapTracker() {
               {/* TO */}
               <View style={{ flex: 1 }}>
                 <Text style={styles.timeLabel}>TO (วัน)</Text>
-                <TouchableOpacity
-                  style={styles.timeBox}
-                  onPress={() => openPicker("toDate")}
-                >
+                <TouchableOpacity style={styles.timeBox} onPress={() => openPicker("toDate")}>
                   <Text style={styles.timeValue}>
                     {routeTo.toLocaleDateString("th-TH", {
                       day: "2-digit",
@@ -1077,10 +1091,7 @@ export default function MapTracker() {
                 <View style={{ height: 10 }} />
 
                 <Text style={styles.timeLabel}>TO (เวลา)</Text>
-                <TouchableOpacity
-                  style={styles.timeBox}
-                  onPress={() => openPicker("toTime")}
-                >
+                <TouchableOpacity style={styles.timeBox} onPress={() => openPicker("toTime")}>
                   <Text style={styles.timeValue}>
                     {routeTo.toLocaleTimeString("th-TH", {
                       hour: "2-digit",
@@ -1097,9 +1108,7 @@ export default function MapTracker() {
             {pickerVisible && (
               <DateTimePicker
                 value={
-                  activeField === "fromDate" || activeField === "fromTime"
-                    ? routeFrom
-                    : routeTo
+                  activeField === "fromDate" || activeField === "fromTime" ? routeFrom : routeTo
                 }
                 mode={pickerMode}
                 display={Platform.OS === "ios" ? "spinner" : "default"}
@@ -1109,11 +1118,7 @@ export default function MapTracker() {
 
                   const applyDate = (base: Date, picked: Date) => {
                     const next = new Date(base);
-                    next.setFullYear(
-                      picked.getFullYear(),
-                      picked.getMonth(),
-                      picked.getDate()
-                    );
+                    next.setFullYear(picked.getFullYear(), picked.getMonth(), picked.getDate());
                     return next;
                   };
 
@@ -1166,16 +1171,11 @@ export default function MapTracker() {
         >
           <Text style={styles.geoTitle}>กำหนดพื้นที่ Geofence</Text>
 
-          <Text style={styles.geoSubtitle}>
-            {geofencePoints.length} จุด · แตะบนแผนที่
-          </Text>
+          <Text style={styles.geoSubtitle}>{geofencePoints.length} จุด · แตะบนแผนที่</Text>
 
           <View style={styles.geoActionRow}>
             {/* ยกเลิก */}
-            <TouchableOpacity
-              style={[styles.geoBtn, styles.geoCancel]}
-              onPress={cancelGeofence}
-            >
+            <TouchableOpacity style={[styles.geoBtn, styles.geoCancel]} onPress={cancelGeofence}>
               <Text style={styles.geoCancelText}>ยกเลิก</Text>
             </TouchableOpacity>
 
@@ -1218,10 +1218,7 @@ export default function MapTracker() {
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={[
-            styles.topFab,
-            { backgroundColor: deviceCode ? "#0b1d51" : "#aaa" },
-          ]}
+          style={[styles.topFab, { backgroundColor: deviceCode ? "#0b1d51" : "#aaa" }]}
           disabled={!deviceCode}
           onPress={() => {
             if (!deviceCode) return;
@@ -1255,11 +1252,7 @@ export default function MapTracker() {
                 <Text style={styles.submitText}>ยกเลิก</Text>
               </TouchableOpacity>
 
-              <TouchableOpacity
-                style={styles.submitBtn}
-                disabled={loading}
-                onPress={confirmAddDevice}
-              >
+              <TouchableOpacity style={styles.submitBtn} disabled={loading} onPress={confirmAddDevice}>
                 <Text style={styles.submitText}>ยืนยัน</Text>
               </TouchableOpacity>
             </View>

@@ -6,8 +6,9 @@ import {
   TouchableOpacity,
   Image,
   Dimensions,
+  Platform,
 } from "react-native";
-import MapView, { Polyline, Marker, Region, LatLng } from "react-native-maps";
+import MapView, { Polyline, Marker, Region, LatLng, Callout } from "react-native-maps";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { auth, db } from "../../firebase/firebase";
@@ -17,7 +18,7 @@ import ProfileHeader from "@/components/ProfileHeader";
 type RoutePoint = {
   latitude: number;
   longitude: number;
-  timestamp: string;
+  timestamp: string; // ISO
 };
 
 type RouteHistoryDoc = {
@@ -32,8 +33,6 @@ type RouteHistoryDoc = {
 
 export default function RouteHistory() {
   const router = useRouter();
-
-  // ✅ รับได้ทั้ง routeId และ route (fallback)
   const { routeId, route: routeJson } = useLocalSearchParams<{
     routeId?: string;
     route?: string;
@@ -41,7 +40,12 @@ export default function RouteHistory() {
 
   const mapRef = useRef<MapView>(null);
 
-  // ✅ fallback จาก list (โชว์ได้ทันที)
+  // ✅ กัน MapView.onPress ปิดทันทีหลังแตะ marker
+  const suppressMapPressRef = useRef(false);
+
+  const startMarkerRef = useRef<React.ElementRef<typeof Marker>>(null);
+  const endMarkerRef = useRef<React.ElementRef<typeof Marker>>(null);
+
   const fallbackRoute: (RouteHistoryDoc & { id?: string }) | null = useMemo(() => {
     if (!routeJson) return null;
     try {
@@ -59,6 +63,8 @@ export default function RouteHistory() {
 
   const [points, setPoints] = useState<RoutePoint[]>([]);
 
+  const effectiveRouteId = routeId || (fallbackRoute as any)?.id;
+
   const formatThaiDate = (iso: string) =>
     new Date(iso).toLocaleDateString("th-TH", {
       day: "2-digit",
@@ -73,25 +79,6 @@ export default function RouteHistory() {
       hour12: false,
     });
 
-  const rangeText = useMemo(() => {
-    if (!route) return "";
-    const sameDay =
-      new Date(route.from).toDateString() === new Date(route.to).toDateString();
-
-    if (sameDay) {
-      return `${formatThaiDate(route.from)} • ${formatThaiTime(
-        route.from
-      )} - ${formatThaiTime(route.to)} น.`;
-    }
-
-    return `${formatThaiDate(route.from)} ${formatThaiTime(
-      route.from
-    )} น.\nถึง ${formatThaiDate(route.to)} ${formatThaiTime(route.to)} น.`;
-  }, [route]);
-
-  const effectiveRouteId = routeId || (fallbackRoute as any)?.id;
-
-  // ✅ โหลด route doc เพื่อให้ข้อมูลล่าสุดแน่นอน
   useEffect(() => {
     if (!auth.currentUser) return;
     if (!effectiveRouteId) return;
@@ -108,13 +95,11 @@ export default function RouteHistory() {
     });
   }, [effectiveRouteId]);
 
-  // ✅ โหลด points จาก subcollection
   useEffect(() => {
     if (!auth.currentUser) return;
     if (!effectiveRouteId) return;
 
     const uid = auth.currentUser.uid;
-
     const q = query(
       collection(db, "users", uid, "routeHistories", effectiveRouteId, "points"),
       orderBy("timestamp", "asc")
@@ -148,7 +133,6 @@ export default function RouteHistory() {
     };
   }, [points]);
 
-  // ✅ fit map เมื่อมีเส้น
   useEffect(() => {
     if (!mapRef.current) return;
     if (lineCoords.length < 2) return;
@@ -164,10 +148,113 @@ export default function RouteHistory() {
   }, [lineCoords]);
 
   const H = Dimensions.get("window").height;
-  const mapHeight = Math.min(520, H * 0.52); // ✅ ใกล้ดีไซน์ (map ใหญ่ขึ้น)
+  const mapHeight = Math.min(520, H * 0.52);
 
   const start = points.length > 0 ? points[0] : null;
   const end = points.length > 0 ? points[points.length - 1] : null;
+
+  // ✅ เวลาจริงจาก points (สำคัญ)
+  const startTs = start?.timestamp ?? null;
+  const endTs = end?.timestamp ?? null;
+
+  const topTimeTitle = useMemo(() => {
+    if (startTs && endTs) return `${formatThaiTime(startTs)} - ${formatThaiTime(endTs)} น.`;
+    if (route) return `${formatThaiTime(route.from)} - ${formatThaiTime(route.to)} น.`;
+    return "-";
+  }, [startTs, endTs, route]);
+
+  const topRangeLine = useMemo(() => {
+    if (startTs && endTs) return `${formatThaiDate(startTs)} • ${formatThaiTime(startTs)} - ${formatThaiTime(endTs)} น.`;
+    if (route)
+      return `${formatThaiDate(route.from)} • ${formatThaiTime(route.from)} - ${formatThaiTime(route.to)} น.`;
+    return "";
+  }, [startTs, endTs, route]);
+
+  const mapOnPress = () => {
+    // ✅ ถ้าเพิ่งกด marker มา ให้ปล่อยผ่าน ไม่ต้องทำอะไร
+    if (suppressMapPressRef.current) {
+      return;
+    }
+    // ถ้าจะทำอะไรตอนแตะแผนที่ (เช่น hideCallout) ทำได้ แต่ไม่จำเป็น
+    startMarkerRef.current?.hideCallout?.();
+    endMarkerRef.current?.hideCallout?.();
+  };
+
+  const onPressStartMarker = () => {
+    if (!start) return;
+    suppressMapPressRef.current = true;
+
+    startMarkerRef.current?.showCallout?.();
+
+    // ปลดล็อกหลังจาก event loop
+    setTimeout(() => {
+      suppressMapPressRef.current = false;
+    }, 250);
+  };
+
+  const onPressEndMarker = () => {
+    if (!end) return;
+    suppressMapPressRef.current = true;
+
+    endMarkerRef.current?.showCallout?.();
+
+    setTimeout(() => {
+      suppressMapPressRef.current = false;
+    }, 250);
+  };
+
+  // ✅ UI callout สไตล์เดียวกับ MapTracker (เหมือน Maps)
+  const InfoCallout = ({
+    title,
+    badge,
+    dateIso,
+    timeIso,
+    color,
+    coords,
+  }: {
+    title: string;
+    badge: string;
+    dateIso: string | null;
+    timeIso: string | null;
+    color: string;
+    coords: { latitude: number; longitude: number } | null;
+  }) => {
+    const dateText = dateIso ? formatThaiDate(dateIso) : "-";
+    const timeText = timeIso ? formatThaiTime(timeIso) : "-";
+    const coordText =
+      coords ? `${coords.latitude.toFixed(6)}, ${coords.longitude.toFixed(6)}` : "-";
+
+    return (
+      <View style={styles.calloutWrapper}>
+        <View style={styles.calloutHandle} />
+        <View style={styles.calloutCard}>
+          <View style={styles.cardHeader}>
+            <Text style={styles.cardTitle}>{title}</Text>
+            <View style={[styles.badge, { backgroundColor: color + "22" }]}>
+              <Text style={[styles.badgeText, { color }]}>{badge}</Text>
+            </View>
+          </View>
+
+          <View style={styles.divider} />
+
+          <View style={styles.rowLine}>
+            <Text style={styles.icon}>📅</Text>
+            <Text style={styles.text}>{dateText}</Text>
+          </View>
+
+          <View style={styles.rowLine}>
+            <Text style={styles.icon}>🕒</Text>
+            <Text style={styles.text}>{timeText} น.</Text>
+          </View>
+
+          <View style={styles.rowLine}>
+            <Text style={styles.icon}>📍</Text>
+            <Text style={styles.monoText}>{coordText}</Text>
+          </View>
+        </View>
+      </View>
+    );
+  };
 
   return (
     <View style={{ flex: 1, backgroundColor: "#F3F4F6" }}>
@@ -185,37 +272,71 @@ export default function RouteHistory() {
           ref={mapRef}
           style={StyleSheet.absoluteFill}
           initialRegion={initialRegion}
+          onPress={mapOnPress}
         >
           {lineCoords.length > 1 && (
-            <Polyline coordinates={lineCoords} strokeColor="#C59700" strokeWidth={8} />
+            <Polyline coordinates={lineCoords} strokeColor="#D19806" strokeWidth={8} />
           )}
 
           {start && (
             <Marker
+              ref={startMarkerRef}
               coordinate={{ latitude: start.latitude, longitude: start.longitude }}
-              title="เริ่มต้น"
+              onPress={onPressStartMarker}
+              anchor={{ x: 0, y: 0 }} // ให้ปลายหมุดแตะพื้น
             >
-              <MaterialIcons name="location-on" size={26} color="#16a34a" />
+              <Image
+                source={require("../../assets/images/location.png")}
+                style={styles.mapPin}
+                resizeMode="contain"
+              />
+
+              <Callout tooltip>
+                <InfoCallout
+                  title="เริ่มบันทึก"
+                  badge="เริ่มต้น"
+                  dateIso={startTs}
+                  timeIso={startTs}
+                  color="#16a34a"
+                  coords={{ latitude: start.latitude, longitude: start.longitude }}
+                />
+              </Callout>
             </Marker>
           )}
 
           {end && (
             <Marker
+              ref={endMarkerRef}
               coordinate={{ latitude: end.latitude, longitude: end.longitude }}
-              title="สิ้นสุด"
+              onPress={onPressEndMarker}
+              anchor={{ x: 0, y: 20 }}
             >
-              <MaterialIcons name="flag" size={24} color="#dc2626" />
+              <Image
+                source={require("../../assets/images/flag.png")}
+                style={styles.mapPin}
+                resizeMode="contain"
+              />
+
+              <Callout tooltip>
+                <InfoCallout
+                  title="สิ้นสุด"
+                  badge="สิ้นสุด"
+                  dateIso={endTs}
+                  timeIso={endTs}
+                  color="#dc2626"
+                  coords={{ latitude: end.latitude, longitude: end.longitude }}
+                />
+              </Callout>
             </Marker>
           )}
         </MapView>
       </View>
 
-      <View style={styles.card}>
-        <Text style={styles.timeTitle}>
-          {route ? `${formatThaiTime(route.from)} - ${formatThaiTime(route.to)} น.` : "-"}
-        </Text>
+      {/* ===== INFO CARD ===== */}
+      <View style={styles.bottomCard}>
+        <Text style={styles.timeTitle}>{topTimeTitle}</Text>
 
-        <View style={styles.row}>
+        <View style={styles.bottomRow}>
           {route?.photoURL ? (
             <Image source={{ uri: route.photoURL }} style={styles.avatar} />
           ) : (
@@ -226,7 +347,7 @@ export default function RouteHistory() {
 
           <View style={{ flex: 1 }}>
             <Text style={styles.petName}>{route?.petName ?? "-"}</Text>
-            <Text style={styles.range}>{route ? rangeText : ""}</Text>
+            <Text style={styles.range}>{topRangeLine}</Text>
 
             <Text style={styles.meta}>
               {points.length > 0 ? `จุดเส้นทาง: ${points.length} จุด` : "ไม่มีข้อมูลเส้นทาง"}
@@ -244,7 +365,77 @@ const styles = StyleSheet.create({
     backgroundColor: "#E5E7EB",
   },
 
-  card: {
+  // ===== Callout (เหมือน Maps) =====
+  calloutWrapper: {
+    alignItems: "center",
+  },
+  calloutHandle: {
+    width: 48,
+    height: 5,
+    borderRadius: 3,
+    backgroundColor: "#E5E7EB",
+    marginBottom: 8,
+  },
+  calloutCard: {
+    backgroundColor: "#fff",
+    borderRadius: 18,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    minWidth: 280,
+    maxWidth: 320,
+    shadowColor: "#000",
+    shadowOpacity: 0.16,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 6,
+  },
+  cardHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    gap: 10,
+    alignItems: "center",
+  },
+  cardTitle: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: "#111827",
+  },
+  badge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+  },
+  badgeText: {
+    fontSize: 12,
+    fontWeight: "800",
+  },
+  divider: {
+    height: 1,
+    backgroundColor: "#EEE",
+    marginVertical: 10,
+  },
+  rowLine: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 6,
+  },
+  icon: {
+    fontSize: 16,
+    marginRight: 8,
+  },
+  text: {
+    fontSize: 14.5,
+    color: "#333",
+    fontWeight: "700",
+  },
+  monoText: {
+    fontSize: 14,
+    color: "#444",
+    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
+    fontWeight: "600",
+  },
+
+  bottomCard: {
     marginHorizontal: 16,
     marginBottom: 16,
     backgroundColor: "#fff",
@@ -256,7 +447,6 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 6 },
     elevation: 2,
   },
-
   timeTitle: {
     textAlign: "center",
     fontSize: 16,
@@ -264,13 +454,11 @@ const styles = StyleSheet.create({
     color: "#111827",
     marginBottom: 10,
   },
-
-  row: {
+  bottomRow: {
     flexDirection: "row",
     gap: 12,
     alignItems: "center",
   },
-
   avatar: { width: 56, height: 56, borderRadius: 28 },
   placeholder: {
     width: 56,
@@ -280,8 +468,22 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-
   petName: { fontSize: 15.5, fontWeight: "900", color: "#111827" },
-  range: { marginTop: 2, fontSize: 13.5, color: "#6B7280", fontWeight: "700", lineHeight: 18 },
-  meta: { marginTop: 6, fontSize: 12.5, color: "#9CA3AF", fontWeight: "700" },
+  range: {
+    marginTop: 2,
+    fontSize: 13.5,
+    color: "#6B7280",
+    fontWeight: "700",
+    lineHeight: 18,
+  },
+  meta: {
+    marginTop: 6,
+    fontSize: 12.5,
+    color: "#9CA3AF",
+    fontWeight: "700"
+  },
+  mapPin: {
+    width: 28,
+    height: 28,
+  },
 });

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Text,
   StyleSheet,
@@ -20,6 +20,11 @@ import {
   orderBy,
   deleteDoc,
   doc,
+  where,
+  updateDoc,
+  serverTimestamp,
+  getDocs,
+  limit,
 } from "firebase/firestore";
 import { SwipeListView } from "react-native-swipe-list-view";
 import ProfileHeader from "@/components/ProfileHeader";
@@ -30,15 +35,34 @@ type RouteHistory = {
   petName: string;
   photoURL?: string | null;
 
-  from: string; // ISO
-  to: string; // ISO
+  from: string; // ISO (เวลาที่ตั้งไว้)
+  to: string; // ISO (เวลาที่ตั้งไว้)
 
-  createdAt?: any; // Firestore Timestamp | undefined
+  status?: string; 
+  deviceCode?: string | null;
+
+  createdAt?: any;
+  startedAt?: any; // Firestore Timestamp
+  endedAt?: any; // Firestore Timestamp
 };
+
+type RealTimeMap = Record<
+  string,
+  {
+    startIso?: string | null; // เวลาจริงจาก points[0]
+    endIso?: string | null; // เวลาจริงจาก points[last]
+  }
+>;
 
 export default function RouteHistoryList() {
   const router = useRouter();
   const [routes, setRoutes] = useState<RouteHistory[]>([]);
+
+  // ✅ map เก็บเวลาจริงของแต่ละ route (ดึงจาก points)
+  const [realTimes, setRealTimes] = useState<RealTimeMap>({});
+
+  // กันยิง getDocs ซ้ำซ้อน
+  const fetchingRef = useRef<Set<string>>(new Set());
 
   const formatThaiDate = (iso: string) =>
     new Date(iso).toLocaleDateString("th-TH", {
@@ -69,39 +93,110 @@ export default function RouteHistoryList() {
     return 0;
   };
 
-  // ✅ แสดงเวลาในวันเดียว: 15:02 - 18:00 น.
-  // ✅ ถ้าข้ามวัน: 23 ก.พ. 15:02 น. - 24 ก.พ. 01:10 น.
-  const formatTimeRange = (from: string, to: string) => {
+  const formatTimeRange = (fromIso: string, toIso: string) => {
     const sameDay =
-      new Date(from).toDateString() === new Date(to).toDateString();
+      new Date(fromIso).toDateString() === new Date(toIso).toDateString();
 
     if (sameDay) {
-      return `${formatThaiTime(from)} - ${formatThaiTime(to)} น.`;
+      return `${formatThaiTime(fromIso)} - ${formatThaiTime(toIso)} น.`;
     }
 
-    return `${formatThaiDate(from)} ${formatThaiTime(from)} น. - ${formatThaiDate(
-      to
-    )} ${formatThaiTime(to)} น.`;
+    return `${formatThaiDate(fromIso)} ${formatThaiTime(fromIso)} น. - ${formatThaiDate(
+      toIso
+    )} ${formatThaiTime(toIso)} น.`;
   };
 
-  // ✅ สถานะบนการ์ด: กำลังบันทึก / เสร็จสิ้นแล้ว
-  // (เงื่อนไข: ถ้าเป็น "วันนี้" และตอนนี้อยู่ในช่วง from..to ให้เป็นกำลังบันทึก)
-  const getStatus = (from: string, to: string) => {
-    const now = Date.now();
-    const fromMs = new Date(from).getTime();
-    const toMs = new Date(to).getTime();
+  /**
+   * ✅ normalize status ให้เป็น 2 ค่า: recording / done
+   * - สำคัญ: ถ้า status=recording แต่ยังไม่ถึงเวลา to -> ต้องเป็น recording เสมอ
+   * - ถ้าเลยเวลา to แล้ว -> done
+   */
+  const getStatus = (route: RouteHistory): "recording" | "done" => {
+    const s = (route.status ?? "").toString().trim().toLowerCase();
 
-    const isToday = new Date(from).toDateString() === new Date().toDateString();
+    const now = Date.now();
+    const toMs = route.to ? new Date(route.to).getTime() : NaN;
+
+    // 1) ถ้า DB บอก recording และยังไม่ถึงเวลาสิ้นสุด -> recording
+    if (
+      s === "recording" ||
+      s === "rec" ||
+      s === "in_progress" ||
+      s === "running"
+    ) {
+      // ถ้ามี to และเลยเวลาแล้ว -> ถือว่า done (กันกรณี timeout ไม่ยิง)
+      if (Number.isFinite(toMs) && now > toMs + 1000) return "done";
+      return "recording";
+    }
+
+    // 2) done (completed/cancelled/done/finished/stop)
+    if (
+      s === "done" ||
+      s === "finished" ||
+      s === "completed" ||
+      s === "cancelled" ||
+      s === "canceled" ||
+      s === "stop"
+    ) {
+      return "done";
+    }
+
+    // 3) fallback สำหรับเอกสารเก่ามากที่ไม่มี status:
+    // ถ้ายังอยู่ในช่วง from-to ของ "วันนี้" ให้มองว่า recording
+    const fromMs = route.from ? new Date(route.from).getTime() : NaN;
+    const isToday =
+      route.from &&
+      new Date(route.from).toDateString() === new Date().toDateString();
     const isInRange =
       Number.isFinite(fromMs) &&
       Number.isFinite(toMs) &&
       now >= fromMs &&
       now <= toMs;
 
-    if (isToday && isInRange) return "recording";
-    return "done";
+    return isToday && isInRange ? "recording" : "done";
   };
 
+  /**
+   * ✅ AUTO COMPLETE เฉพาะกรณี "เลยเวลา to" เท่านั้น
+   * (เอา logic ปิดเพราะ disconnected ออกทั้งหมด เพราะทำให้ปิดผิดตั้งแต่โหลดหน้า)
+   */
+  useEffect(() => {
+    if (!auth.currentUser) return;
+    const uid = auth.currentUser.uid;
+
+    const qRec = query(
+      collection(db, "users", uid, "routeHistories"),
+      where("status", "in", ["recording", "RECORDING", "Recording"])
+    );
+
+    return onSnapshot(qRec, async (snap) => {
+      if (snap.empty) return;
+
+      const now = Date.now();
+
+      for (const d of snap.docs) {
+        const data = d.data() as any;
+        const toIso: string | null = data?.to ?? null;
+        const toMs = toIso ? new Date(toIso).getTime() : NaN;
+
+        const passedStopTime = Number.isFinite(toMs) && now > toMs + 1000;
+
+        if (!passedStopTime) continue;
+
+        try {
+          await updateDoc(doc(db, "users", uid, "routeHistories", d.id), {
+            status: "completed",
+            endedAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          });
+        } catch (e) {
+          console.warn("Failed to auto-complete route:", d.id, e);
+        }
+      }
+    });
+  }, []);
+
+  // ✅ โหลดรายการ routeHistories
   useEffect(() => {
     if (!auth.currentUser) return;
     const uid = auth.currentUser.uid;
@@ -123,18 +218,80 @@ export default function RouteHistoryList() {
   }, []);
 
   /**
-   * ✅ GROUP BY วัน -> แสดงวันที่เป็นหัวข้อบนซ้ายครั้งเดียว
-   * ✅ ภายในวันเรียงตามเวลาล่าสุดก่อน
+   * ✅ ดึง "เวลาจริงเริ่ม/จบ" จาก subcollection points ของแต่ละ route
+   * - start = point แรก (orderBy timestamp asc, limit 1)
+   * - end = point สุดท้าย (orderBy timestamp desc, limit 1)
    *
-   * NOTE:
-   * typings ของ SwipeListView บางเวอร์ชันล็อก Section เป็น DefaultSectionT
-   * เราเลยเก็บ title ไว้ใน section แบบ "แนบเพิ่ม" และ cast ตอนอ่านใน header
+   * NOTE: ใช้ getDocs (ไม่ใช่ onSnapshot) เพื่อลด listener จำนวนมาก
    */
+  useEffect(() => {
+    if (!auth.currentUser) return;
+    const uid = auth.currentUser.uid;
+
+    let cancelled = false;
+
+    const fetchRealTimes = async () => {
+      for (const r of routes) {
+        if (!r?.id) continue;
+
+        // ถ้ามีแล้ว ไม่ต้องดึงซ้ำ
+        if (realTimes[r.id]?.startIso && realTimes[r.id]?.endIso) continue;
+
+        // กันซ้ำระหว่างรอบ
+        if (fetchingRef.current.has(r.id)) continue;
+        fetchingRef.current.add(r.id);
+
+        try {
+          const pointsCol = collection(
+            db,
+            "users",
+            uid,
+            "routeHistories",
+            r.id,
+            "points"
+          );
+
+          const qStart = query(pointsCol, orderBy("timestamp", "asc"), limit(1));
+          const qEnd = query(pointsCol, orderBy("timestamp", "desc"), limit(1));
+
+          const [startSnap, endSnap] = await Promise.all([
+            getDocs(qStart),
+            getDocs(qEnd),
+          ]);
+
+          const startIso = startSnap.docs[0]?.data()?.timestamp ?? null;
+          const endIso = endSnap.docs[0]?.data()?.timestamp ?? null;
+
+          if (cancelled) return;
+
+          setRealTimes((prev) => ({
+            ...prev,
+            [r.id]: { startIso, endIso },
+          }));
+        } catch {
+          // ไม่มี points หรือ permission ไม่ผ่าน -> fallback from/to
+        } finally {
+          fetchingRef.current.delete(r.id);
+        }
+      }
+    };
+
+    void fetchRealTimes();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [routes, realTimes]);
+
+  // ✅ group by วัน (ใช้ "วันของเวลาจริง" ถ้ามี ไม่งั้นใช้ from)
   const sections: SectionListData<RouteHistory>[] = useMemo(() => {
     const map = new Map<string, RouteHistory[]>();
 
     for (const r of routes) {
-      const dateKey = r.from ? new Date(r.from).toDateString() : "Unknown";
+      const realStart = realTimes[r.id]?.startIso ?? null;
+      const isoForDay = realStart || r.from;
+      const dateKey = isoForDay ? new Date(isoForDay).toDateString() : "Unknown";
+
       const arr = map.get(dateKey) ?? [];
       arr.push(r);
       map.set(dateKey, arr);
@@ -146,9 +303,10 @@ export default function RouteHistoryList() {
       arr.sort((a, b) => getSortMs(b) - getSortMs(a));
 
       const first = arr[0];
-      const title = first?.from ? formatThaiDate(first.from) : "ไม่ทราบวันที่";
+      const realStart = first ? realTimes[first.id]?.startIso ?? null : null;
+      const isoForTitle = realStart || first?.from;
+      const title = isoForTitle ? formatThaiDate(isoForTitle) : "ไม่ทราบวันที่";
 
-      // ✅ ใส่ title เพิ่ม (แต่ไม่บังคับ type ของ lib)
       result.push({
         key: dateKey,
         title,
@@ -156,7 +314,6 @@ export default function RouteHistoryList() {
       });
     }
 
-    // sort กลุ่มวัน (ล่าสุดก่อน)
     result.sort((a: any, b: any) => {
       const aTop = a.data?.[0] ? getSortMs(a.data[0]) : 0;
       const bTop = b.data?.[0] ? getSortMs(b.data[0]) : 0;
@@ -164,7 +321,7 @@ export default function RouteHistoryList() {
     });
 
     return result as SectionListData<RouteHistory>[];
-  }, [routes]);
+  }, [routes, realTimes]);
 
   const confirmDelete = (
     rowMap: { [key: string]: any },
@@ -192,9 +349,14 @@ export default function RouteHistoryList() {
 
     await deleteDoc(doc(db, "users", uid, "routeHistories", routeId));
     rowMap[rowKey]?.closeRow();
+
+    setRealTimes((prev) => {
+      const next = { ...prev };
+      delete next[routeId];
+      return next;
+    });
   };
 
-  // ✅ FIX: ให้รับ type ตาม lib แล้วค่อยอ่าน title ผ่าน any
   const renderSectionHeader = ({
     section,
   }: {
@@ -210,9 +372,16 @@ export default function RouteHistoryList() {
   };
 
   const renderItem = ({ item }: { item: RouteHistory }) => {
-    const timeText = formatTimeRange(item.from, item.to);
+    const rt = realTimes[item.id];
+    const realStart = rt?.startIso ?? null;
+    const realEnd = rt?.endIso ?? null;
 
-    const status = getStatus(item.from, item.to);
+    const timeText =
+      realStart && realEnd
+        ? formatTimeRange(realStart, realEnd)
+        : formatTimeRange(item.from, item.to);
+
+    const status = getStatus(item);
     const statusText = status === "recording" ? "กำลังบันทึก" : "เสร็จสิ้นแล้ว";
 
     return (
@@ -241,7 +410,6 @@ export default function RouteHistoryList() {
               {item.petName ?? "-"}
             </Text>
 
-            {/* ✅ เปลี่ยนจาก "วันที่" เป็น "สถานะ" */}
             <View
               style={[
                 styles.statusPill,
@@ -388,7 +556,6 @@ const styles = StyleSheet.create({
     color: "#111827",
   },
 
-  // ✅ สถานะบนการ์ด
   statusPill: {
     paddingHorizontal: 10,
     paddingVertical: 4,
@@ -398,7 +565,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#E8F7EE",
   },
   statusRecording: {
-    backgroundColor: "#FFF4E5",
+    backgroundColor: "#EAFEFF",
   },
   statusText: {
     fontSize: 12.5,
@@ -408,7 +575,7 @@ const styles = StyleSheet.create({
     color: "#166534",
   },
   statusTextRecording: {
-    color: "#9A3412",
+    color: "#126D9A",
   },
 
   range: {

@@ -8,7 +8,14 @@ import {
   Dimensions,
   Platform,
 } from "react-native";
-import MapView, { Polyline, Marker, Region, LatLng, Callout } from "react-native-maps";
+import MapView, {
+  Polyline,
+  Marker,
+  Region,
+  LatLng,
+  Callout,
+  Polygon,
+} from "react-native-maps";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { auth, db } from "../../firebase/firebase";
@@ -21,6 +28,9 @@ type RoutePoint = {
   timestamp: string; // ISO
 };
 
+type GeoPoint = { latitude: number; longitude: number };
+
+// ✅ รองรับหลายรูปแบบการเก็บ geofence ใน routeHistory doc (backward-compatible)
 type RouteHistoryDoc = {
   petId: string;
   petName: string;
@@ -29,6 +39,15 @@ type RouteHistoryDoc = {
   from: string;
   to: string;
   createdAt?: any;
+
+  // ✅ NEW (recommended): snapshot geofence ตอนเริ่มบันทึก (จาก MapTracker.startRecording)
+  geofence?: GeoPoint[] | null;
+
+  // ✅ เผื่อชื่ออื่น (legacy)
+  geofencePoints?: GeoPoint[] | null;
+
+  // ✅ เผื่อรูปแบบเป็น object (legacy)
+  geofenceSnapshot?: { points?: GeoPoint[]; savedAt?: any } | null;
 };
 
 export default function RouteHistory() {
@@ -63,7 +82,28 @@ export default function RouteHistory() {
 
   const [points, setPoints] = useState<RoutePoint[]>([]);
 
+  // ✅ geofence ที่จะแสดงจริงบนหน้านี้ (priority: routeDoc -> fallback device geofence)
+  const [savedGeofence, setSavedGeofence] = useState<GeoPoint[] | null>(null);
+
   const effectiveRouteId = routeId || (fallbackRoute as any)?.id;
+
+  // ---------- helpers ----------
+  const normalizeGeo = (poly: any): GeoPoint[] | null => {
+    if (!Array.isArray(poly) || poly.length < 3) return null;
+    const cleaned = poly
+      .map((p) => ({
+        latitude: Number(p?.latitude),
+        longitude: Number(p?.longitude),
+      }))
+      .filter(
+        (p) =>
+          Number.isFinite(p.latitude) &&
+          Number.isFinite(p.longitude) &&
+          Math.abs(p.latitude) <= 90 &&
+          Math.abs(p.longitude) <= 180
+      );
+    return cleaned.length >= 3 ? cleaned : null;
+  };
 
   const formatThaiDate = (iso: string) =>
     new Date(iso).toLocaleDateString("th-TH", {
@@ -79,6 +119,18 @@ export default function RouteHistory() {
       hour12: false,
     });
 
+  // ✅ helper: ดึง geofence จาก route doc แบบครอบคลุมหลาย key
+  const routeGeofenceSnapshot = useMemo(() => {
+    const pts =
+      route?.geofenceSnapshot?.points ??
+      route?.geofencePoints ??
+      route?.geofence ??
+      null;
+
+    return normalizeGeo(pts);
+  }, [route]);
+
+  // ---------- subscribe route doc ----------
   useEffect(() => {
     if (!auth.currentUser) return;
     if (!effectiveRouteId) return;
@@ -95,6 +147,7 @@ export default function RouteHistory() {
     });
   }, [effectiveRouteId]);
 
+  // ---------- subscribe points ----------
   useEffect(() => {
     if (!auth.currentUser) return;
     if (!effectiveRouteId) return;
@@ -111,18 +164,74 @@ export default function RouteHistory() {
     });
   }, [effectiveRouteId]);
 
-  const lineCoords: LatLng[] = useMemo(
-    () => points.map((p) => ({ latitude: p.latitude, longitude: p.longitude })),
-    [points]
-  );
+  /**
+   * ✅ IMPORTANT:
+   * 1) ถ้า route doc มี geofence snapshot -> ใช้อันนั้นทันที (ตรงกับตอนบันทึก)
+   * 2) ถ้าไม่มี -> fallback ไป geofences/{deviceCode}
+   */
+  useEffect(() => {
+    // (1) route snapshot มาก่อนเสมอ
+    if (routeGeofenceSnapshot && routeGeofenceSnapshot.length >= 3) {
+      setSavedGeofence(routeGeofenceSnapshot);
+      return;
+    }
 
+    // (2) fallback: device geofence ล่าสุด
+    if (!auth.currentUser) return;
+
+    const code = route?.deviceCode;
+    if (!code) {
+      setSavedGeofence(null);
+      return;
+    }
+
+    const uid = auth.currentUser.uid;
+    const gfRef = doc(db, "users", uid, "geofences", code);
+
+    return onSnapshot(gfRef, (snap) => {
+      if (!snap.exists()) {
+        setSavedGeofence(null);
+        return;
+      }
+
+      const data: any = snap.data();
+      const pts = normalizeGeo(data?.points);
+      setSavedGeofence(pts);
+    });
+  }, [route?.deviceCode, routeGeofenceSnapshot]);
+
+  // ---------- compute line coords ----------
+  const lineCoords: LatLng[] = useMemo(() => {
+    return points
+      .map((p) => ({
+        latitude: Number(p.latitude),
+        longitude: Number(p.longitude),
+      }))
+      .filter(
+        (p) =>
+          Number.isFinite(p.latitude) &&
+          Number.isFinite(p.longitude) &&
+          Math.abs(p.latitude) <= 90 &&
+          Math.abs(p.longitude) <= 180
+      );
+  }, [points]);
+
+  // ---------- initial region ----------
   const initialRegion: Region = useMemo(() => {
-    if (points.length > 0) {
+    if (lineCoords.length > 0) {
       return {
-        latitude: points[0].latitude,
-        longitude: points[0].longitude,
+        latitude: lineCoords[0].latitude,
+        longitude: lineCoords[0].longitude,
         latitudeDelta: 0.02,
         longitudeDelta: 0.02,
+      };
+    }
+    if (savedGeofence && savedGeofence.length >= 3) {
+      return {
+        latitude: savedGeofence[0].latitude,
+        longitude: savedGeofence[0].longitude,
+        latitudeDelta: 0.05,
+        longitudeDelta: 0.05,
       };
     }
     return {
@@ -131,21 +240,27 @@ export default function RouteHistory() {
       latitudeDelta: 0.2,
       longitudeDelta: 0.2,
     };
-  }, [points]);
+  }, [lineCoords, savedGeofence]);
 
+  // ✅ fit ให้ครอบคลุม “เส้นทาง + geofence” เพื่อให้สัมพันธ์กันจริง
   useEffect(() => {
     if (!mapRef.current) return;
-    if (lineCoords.length < 2) return;
+
+    const coordsToFit: LatLng[] = [];
+    if (savedGeofence && savedGeofence.length >= 3) coordsToFit.push(...savedGeofence);
+    if (lineCoords.length >= 2) coordsToFit.push(...lineCoords);
+
+    if (coordsToFit.length < 2) return;
 
     const t = setTimeout(() => {
-      mapRef.current?.fitToCoordinates(lineCoords, {
+      mapRef.current?.fitToCoordinates(coordsToFit, {
         edgePadding: { top: 60, right: 60, bottom: 60, left: 60 },
         animated: true,
       });
     }, 250);
 
     return () => clearTimeout(t);
-  }, [lineCoords]);
+  }, [lineCoords, savedGeofence]);
 
   const H = Dimensions.get("window").height;
   const mapHeight = Math.min(520, H * 0.52);
@@ -153,29 +268,24 @@ export default function RouteHistory() {
   const start = points.length > 0 ? points[0] : null;
   const end = points.length > 0 ? points[points.length - 1] : null;
 
-  // ✅ เวลาจริงจาก points (สำคัญ)
-  const startTs = start?.timestamp ?? null;
-  const endTs = end?.timestamp ?? null;
+  // ✅ เวลาจริงจาก points (ถ้ามี) ไม่งั้น fallback route.from/to
+  const startTs = start?.timestamp ?? route?.from ?? null;
+  const endTs = end?.timestamp ?? route?.to ?? null;
 
   const topTimeTitle = useMemo(() => {
     if (startTs && endTs) return `${formatThaiTime(startTs)} - ${formatThaiTime(endTs)} น.`;
-    if (route) return `${formatThaiTime(route.from)} - ${formatThaiTime(route.to)} น.`;
     return "-";
-  }, [startTs, endTs, route]);
+  }, [startTs, endTs]);
 
   const topRangeLine = useMemo(() => {
-    if (startTs && endTs) return `${formatThaiDate(startTs)} • ${formatThaiTime(startTs)} - ${formatThaiTime(endTs)} น.`;
-    if (route)
-      return `${formatThaiDate(route.from)} • ${formatThaiTime(route.from)} - ${formatThaiTime(route.to)} น.`;
+    if (startTs && endTs)
+      return `${formatThaiDate(startTs)} • ${formatThaiTime(startTs)} - ${formatThaiTime(endTs)} น.`;
     return "";
-  }, [startTs, endTs, route]);
+  }, [startTs, endTs]);
 
+  // ---------- map interactions ----------
   const mapOnPress = () => {
-    // ✅ ถ้าเพิ่งกด marker มา ให้ปล่อยผ่าน ไม่ต้องทำอะไร
-    if (suppressMapPressRef.current) {
-      return;
-    }
-    // ถ้าจะทำอะไรตอนแตะแผนที่ (เช่น hideCallout) ทำได้ แต่ไม่จำเป็น
+    if (suppressMapPressRef.current) return;
     startMarkerRef.current?.hideCallout?.();
     endMarkerRef.current?.hideCallout?.();
   };
@@ -183,27 +293,18 @@ export default function RouteHistory() {
   const onPressStartMarker = () => {
     if (!start) return;
     suppressMapPressRef.current = true;
-
     startMarkerRef.current?.showCallout?.();
-
-    // ปลดล็อกหลังจาก event loop
-    setTimeout(() => {
-      suppressMapPressRef.current = false;
-    }, 250);
+    setTimeout(() => (suppressMapPressRef.current = false), 250);
   };
 
   const onPressEndMarker = () => {
     if (!end) return;
     suppressMapPressRef.current = true;
-
     endMarkerRef.current?.showCallout?.();
-
-    setTimeout(() => {
-      suppressMapPressRef.current = false;
-    }, 250);
+    setTimeout(() => (suppressMapPressRef.current = false), 250);
   };
 
-  // ✅ UI callout สไตล์เดียวกับ MapTracker (เหมือน Maps)
+  // ✅ UI callout สไตล์เดียวกับ MapTracker
   const InfoCallout = ({
     title,
     badge,
@@ -221,8 +322,7 @@ export default function RouteHistory() {
   }) => {
     const dateText = dateIso ? formatThaiDate(dateIso) : "-";
     const timeText = timeIso ? formatThaiTime(timeIso) : "-";
-    const coordText =
-      coords ? `${coords.latitude.toFixed(6)}, ${coords.longitude.toFixed(6)}` : "-";
+    const coordText = coords ? `${coords.latitude.toFixed(6)}, ${coords.longitude.toFixed(6)}` : "-";
 
     return (
       <View style={styles.calloutWrapper}>
@@ -274,8 +374,19 @@ export default function RouteHistory() {
           initialRegion={initialRegion}
           onPress={mapOnPress}
         >
+          {/* ✅ Geofence (priority: snapshot ใน route -> fallback device geofence) */}
+          {savedGeofence && savedGeofence.length >= 3 && (
+            <Polygon
+              coordinates={savedGeofence}
+              strokeColor="#A100CE"
+              strokeWidth={3}
+              fillColor="rgba(150, 23, 185, 0.21)"
+              zIndex={1}
+            />
+          )}
+
           {lineCoords.length > 1 && (
-            <Polyline coordinates={lineCoords} strokeColor="#D19806" strokeWidth={8} />
+            <Polyline coordinates={lineCoords} strokeColor="#C88F00" strokeWidth={8} />
           )}
 
           {start && (
@@ -283,7 +394,7 @@ export default function RouteHistory() {
               ref={startMarkerRef}
               coordinate={{ latitude: start.latitude, longitude: start.longitude }}
               onPress={onPressStartMarker}
-              anchor={{ x: 0, y: 0 }} // ให้ปลายหมุดแตะพื้น
+              anchor={{ x: 0, y: 0 }}
             >
               <Image
                 source={require("../../assets/images/location.png")}
@@ -295,8 +406,8 @@ export default function RouteHistory() {
                 <InfoCallout
                   title="เริ่มบันทึก"
                   badge="เริ่มต้น"
-                  dateIso={startTs}
-                  timeIso={startTs}
+                  dateIso={start?.timestamp ?? null}
+                  timeIso={start?.timestamp ?? null}
                   color="#16a34a"
                   coords={{ latitude: start.latitude, longitude: start.longitude }}
                 />
@@ -321,8 +432,8 @@ export default function RouteHistory() {
                 <InfoCallout
                   title="สิ้นสุด"
                   badge="สิ้นสุด"
-                  dateIso={endTs}
-                  timeIso={endTs}
+                  dateIso={end?.timestamp ?? null}
+                  timeIso={end?.timestamp ?? null}
                   color="#dc2626"
                   coords={{ latitude: end.latitude, longitude: end.longitude }}
                 />
@@ -352,6 +463,10 @@ export default function RouteHistory() {
             <Text style={styles.meta}>
               {points.length > 0 ? `จุดเส้นทาง: ${points.length} จุด` : "ไม่มีข้อมูลเส้นทาง"}
             </Text>
+
+            <Text style={styles.meta}>
+              {savedGeofence && savedGeofence.length >= 3 ? "มี Geofence" : "ไม่มี Geofence"}
+            </Text>
           </View>
         </View>
       </View>
@@ -366,9 +481,7 @@ const styles = StyleSheet.create({
   },
 
   // ===== Callout (เหมือน Maps) =====
-  calloutWrapper: {
-    alignItems: "center",
-  },
+  calloutWrapper: { alignItems: "center" },
   calloutHandle: {
     width: 48,
     height: 5,
@@ -395,39 +508,13 @@ const styles = StyleSheet.create({
     gap: 10,
     alignItems: "center",
   },
-  cardTitle: {
-    fontSize: 16,
-    fontWeight: "800",
-    color: "#111827",
-  },
-  badge: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 999,
-  },
-  badgeText: {
-    fontSize: 12,
-    fontWeight: "800",
-  },
-  divider: {
-    height: 1,
-    backgroundColor: "#EEE",
-    marginVertical: 10,
-  },
-  rowLine: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginTop: 6,
-  },
-  icon: {
-    fontSize: 16,
-    marginRight: 8,
-  },
-  text: {
-    fontSize: 14.5,
-    color: "#333",
-    fontWeight: "700",
-  },
+  cardTitle: { fontSize: 16, fontWeight: "800", color: "#111827" },
+  badge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999 },
+  badgeText: { fontSize: 12, fontWeight: "800" },
+  divider: { height: 1, backgroundColor: "#EEE", marginVertical: 10 },
+  rowLine: { flexDirection: "row", alignItems: "center", marginTop: 6 },
+  icon: { fontSize: 16, marginRight: 8 },
+  text: { fontSize: 14.5, color: "#333", fontWeight: "700" },
   monoText: {
     fontSize: 14,
     color: "#444",
@@ -454,11 +541,7 @@ const styles = StyleSheet.create({
     color: "#111827",
     marginBottom: 10,
   },
-  bottomRow: {
-    flexDirection: "row",
-    gap: 12,
-    alignItems: "center",
-  },
+  bottomRow: { flexDirection: "row", gap: 12, alignItems: "center" },
   avatar: { width: 56, height: 56, borderRadius: 28 },
   placeholder: {
     width: 56,
@@ -476,14 +559,6 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     lineHeight: 18,
   },
-  meta: {
-    marginTop: 6,
-    fontSize: 12.5,
-    color: "#9CA3AF",
-    fontWeight: "700"
-  },
-  mapPin: {
-    width: 28,
-    height: 28,
-  },
+  meta: { marginTop: 6, fontSize: 12.5, color: "#9CA3AF", fontWeight: "700" },
+  mapPin: { width: 28, height: 28 },
 });

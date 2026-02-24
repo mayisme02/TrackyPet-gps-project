@@ -27,6 +27,7 @@ import { ref as dbRef, push } from "firebase/database";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { DEVICE_TYPES } from "../../assets/constants/deviceData";
 import DateTimePicker from "@react-native-community/datetimepicker";
+import { useRouter } from "expo-router";
 import {
   doc,
   onSnapshot,
@@ -34,11 +35,16 @@ import {
   addDoc,
   serverTimestamp,
   updateDoc,
+  setDoc,
 } from "firebase/firestore";
 
 /* ================= CONFIG ================= */
 const BACKEND_URL = "http://localhost:3000";
 const MIN_MOVE_DISTANCE = 5;
+
+/* ✅ storage keys */
+const ROUTE_FILTER_STORAGE_KEY = "routeFilter_v1";
+const ACTIVE_GEOFENCE_STORAGE_KEY = "activeGeofence_v1";
 
 /* ================= TYPES ================= */
 type DeviceLocation = {
@@ -62,13 +68,10 @@ type Device = {
   type?: string;
 };
 
+type GeoPoint = { latitude: number; longitude: number };
+
 /* ================= HAVERSINE ================= */
-function distanceInMeters(
-  lat1: number,
-  lon1: number,
-  lat2: number,
-  lon2: number
-) {
+function distanceInMeters(lat1: number, lon1: number, lat2: number, lon2: number) {
   const R = 6371000;
   const toRad = (v: number) => (v * Math.PI) / 180;
   const dLat = toRad(lat2 - lat1);
@@ -76,15 +79,14 @@ function distanceInMeters(
 
   const a =
     Math.sin(dLat / 2) ** 2 +
-    Math.cos(toRad(lat1)) *
-      Math.cos(toRad(lat2)) *
-      Math.sin(dLon / 2) ** 2;
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
 
   return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
 export default function MapTracker() {
   const mapRef = useRef<MapView>(null);
+  const router = useRouter();
 
   /* ================= MAP ================= */
   const [initialRegion] = useState<Region>({
@@ -103,9 +105,7 @@ export default function MapTracker() {
 
   const [location, setLocation] = useState<DeviceLocation | null>(null);
   const [rawPath, setRawPath] = useState<TrackPoint[]>([]);
-  const [displayPath, setDisplayPath] = useState<
-    { latitude: number; longitude: number }[]
-  >([]);
+  const [displayPath, setDisplayPath] = useState<{ latitude: number; longitude: number }[]>([]);
   const [accumulatedDistance, setAccumulatedDistance] = useState(0);
 
   const [petPhotoURL, setPetPhotoURL] = useState<string | null>(null);
@@ -124,23 +124,27 @@ export default function MapTracker() {
   const [routeModalVisible, setRouteModalVisible] = useState(false);
   const [routePreset, setRoutePreset] = useState<"today" | "custom">("today");
 
+  /* ✅ saved time filter */
+  const [savedRouteFilter, setSavedRouteFilter] = useState<{ from: Date; to: Date } | null>(null);
+
   /* ================= GEOFENCE ================= */
   const [isGeofenceMode, setIsGeofenceMode] = useState(false);
-  const [geofenceCenter, setGeofenceCenter] = useState<{
-    latitude: number;
-    longitude: number;
-  } | null>(null);
+  const [geofenceCenter, setGeofenceCenter] = useState<{ latitude: number; longitude: number } | null>(null);
   const [geofenceRadius, setGeofenceRadius] = useState(300);
   const [isInsideGeofence, setIsInsideGeofence] = useState<boolean | null>(null);
-  const [geofencePoints, setGeofencePoints] = useState<
-    { latitude: number; longitude: number }[]
-  >([]);
-  const [geofencePath, setGeofencePath] = useState<
-    { latitude: number; longitude: number }[]
-  >([]);
-  const [savedGeofence, setSavedGeofence] = useState<
-    { latitude: number; longitude: number }[] | null
-  >(null);
+
+  // drawing points
+  const [geofencePoints, setGeofencePoints] = useState<GeoPoint[]>([]);
+  const [geofencePath, setGeofencePath] = useState<GeoPoint[]>([]);
+
+  // ✅ stored = อ่านจาก Firestore (ไม่โชว์ทันที)
+  const [storedGeofence, setStoredGeofence] = useState<GeoPoint[] | null>(null);
+
+  // ✅ active = ตัวที่ “ใช้งานจริง” (โชว์บนแผนที่ + snapshot ลง route)
+  const [activeGeofence, setActiveGeofence] = useState<GeoPoint[] | null>(null);
+
+  // ✅ active until (ค้างจนหมดเวลา)
+  const [activeGeofenceUntil, setActiveGeofenceUntil] = useState<Date | null>(null);
 
   const [deviceName, setDeviceName] = useState<string>("GPS Tracker");
 
@@ -150,14 +154,32 @@ export default function MapTracker() {
   const stopTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const startTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // ✅ ล็อก context ตอนเริ่มอัด เพื่อกัน “สลับอุปกรณ์แล้วจุดไปลงผิดตัว”
-  const recordingCtxRef = useRef<{
-    deviceCode: string;
-    petId: string;
-    recordId: string;
-  } | null>(null);
+  const recordingCtxRef = useRef<{ deviceCode: string; petId: string; recordId: string } | null>(null);
 
   const insets = useSafeAreaInsets();
+
+  /* ================= HELPERS ================= */
+  const normalizeGeo = (poly: GeoPoint[] | null | undefined) => {
+    if (!poly || !Array.isArray(poly) || poly.length < 3) return null;
+    return poly.map((p) => ({ latitude: Number(p.latitude), longitude: Number(p.longitude) }));
+  };
+
+  const clearActiveGeofence = useCallback(async () => {
+    setActiveGeofence(null);
+    setActiveGeofenceUntil(null);
+    try {
+      await AsyncStorage.removeItem(ACTIVE_GEOFENCE_STORAGE_KEY);
+    } catch { }
+  }, []);
+
+  const persistActiveGeofence = useCallback(
+    async (payload: { deviceCode: string; geofence: GeoPoint[]; untilIso?: string | null }) => {
+      try {
+        await AsyncStorage.setItem(ACTIVE_GEOFENCE_STORAGE_KEY, JSON.stringify(payload));
+      } catch { }
+    },
+    []
+  );
 
   /* ================= LOAD PET MATCH ================= */
   useEffect(() => {
@@ -168,13 +190,7 @@ export default function MapTracker() {
       return;
     }
 
-    const ref = doc(
-      db,
-      "users",
-      auth.currentUser.uid,
-      "deviceMatches",
-      deviceCode
-    );
+    const ref = doc(db, "users", auth.currentUser.uid, "deviceMatches", deviceCode);
 
     return onSnapshot(ref, (snap) => {
       if (!snap.exists()) {
@@ -194,54 +210,134 @@ export default function MapTracker() {
     });
   }, [deviceCode]);
 
-  /* ================= LOAD GEOFENCE ================= */
+  /* ================= LOAD GEOFENCE (stored only) ================= */
   useEffect(() => {
     if (!auth.currentUser || !deviceCode) return;
 
     const gfRef = doc(db, "users", auth.currentUser.uid, "geofences", deviceCode);
 
     return onSnapshot(gfRef, (snap) => {
-      if (!snap.exists()) return;
+      if (!snap.exists()) {
+        setStoredGeofence(null);
+        return;
+      }
 
       const data: any = snap.data();
       const pts = data?.points;
 
       if (Array.isArray(pts) && pts.length >= 3) {
-        setSavedGeofence(
-          pts.map((p: any) => ({ latitude: p.latitude, longitude: p.longitude }))
-        );
+        const polygon = pts.map((p: any) => ({
+          latitude: p.latitude,
+          longitude: p.longitude,
+        }));
+        setStoredGeofence(normalizeGeo(polygon));
+      } else {
+        setStoredGeofence(null);
       }
     });
   }, [deviceCode]);
+
+  /* ✅ load previously saved filter (time) */
+  useEffect(() => {
+    const loadFilter = async () => {
+      try {
+        const raw = await AsyncStorage.getItem(ROUTE_FILTER_STORAGE_KEY);
+        if (!raw) return;
+        const parsed = JSON.parse(raw);
+        if (parsed?.from && parsed?.to) {
+          const from = new Date(parsed.from);
+          const to = new Date(parsed.to);
+          if (!Number.isNaN(from.getTime()) && !Number.isNaN(to.getTime())) {
+            setSavedRouteFilter({ from, to });
+          }
+        }
+      } catch { }
+    };
+    void loadFilter();
+  }, []);
+
+  /* ✅ load active geofence (ค้างไว้) */
+  useEffect(() => {
+    const loadActiveGeo = async () => {
+      try {
+        const raw = await AsyncStorage.getItem(ACTIVE_GEOFENCE_STORAGE_KEY);
+        if (!raw) return;
+
+        const parsed = JSON.parse(raw);
+        if (!parsed?.geofence) return;
+
+        // ถ้ามี deviceCode ใน key และไม่ตรงอุปกรณ์ปัจจุบัน -> ไม่ใช้
+        if (parsed.deviceCode && deviceCode && parsed.deviceCode !== deviceCode) return;
+
+        const geo = normalizeGeo(parsed.geofence);
+        if (!geo) return;
+
+        // ✅ untilIso optional
+        if (parsed.untilIso) {
+          const until = new Date(parsed.untilIso);
+          if (Number.isNaN(until.getTime())) return;
+
+          // หมดเวลาแล้ว -> ล้าง
+          if (until.getTime() <= Date.now()) {
+            await AsyncStorage.removeItem(ACTIVE_GEOFENCE_STORAGE_KEY);
+            return;
+          }
+
+          setActiveGeofenceUntil(until);
+        } else {
+          setActiveGeofenceUntil(null); // ไม่มีวันหมดอายุ
+        }
+
+        setActiveGeofence(geo);
+      } catch { }
+    };
+
+    void loadActiveGeo();
+  }, [deviceCode]);
+
+  /* ✅ auto clear active geofence when expired */
+  useEffect(() => {
+    if (!activeGeofenceUntil) return;
+
+    const timer = setInterval(() => {
+      if (!activeGeofenceUntil) return;
+      if (activeGeofenceUntil.getTime() <= Date.now()) {
+        void clearActiveGeofence();
+      }
+    }, 30000);
+
+    return () => clearInterval(timer);
+  }, [activeGeofenceUntil, clearActiveGeofence]);
 
   /* ================= RESET WHEN NO DEVICE ================= */
   useEffect(() => {
     if (deviceCode) return;
 
-    // ✅ ถ้ากำลังอัดอยู่แล้ว device หาย -> ยกเลิก
     if (isRecording) {
       void stopRecording("cancelled");
     }
 
     setIsTracking(false);
-
     setLocation(null);
     setPetLocation(null);
-
     setRawPath([]);
     setDisplayPath([]);
     setAccumulatedDistance(0);
-
     setPetName(null);
     setPetPhotoURL(null);
     setPetId(null);
 
-    setSavedGeofence(null);
+    // reset geo drawing
     setGeofencePoints([]);
     setGeofencePath([]);
     setIsGeofenceMode(false);
     setIsInsideGeofence(null);
     setGeofenceCenter(null);
+
+    // stored/active
+    setStoredGeofence(null);
+    setActiveGeofence(null);
+    setActiveGeofenceUntil(null);
   }, [deviceCode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ================= CLEANUP TIMERS ON UNMOUNT ================= */
@@ -283,18 +379,26 @@ export default function MapTracker() {
       second: "2-digit",
     });
 
+  const formatThaiDateShort = (d: Date) =>
+    d.toLocaleDateString("th-TH", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+    });
+
+  const formatThaiTimeShort = (d: Date) =>
+    d.toLocaleTimeString("th-TH", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
+
   /* ================= PATH ================= */
   const appendPoint = (point: TrackPoint) => {
     setRawPath((prev) => {
       if (prev.length > 0) {
         const last = prev[prev.length - 1];
-        const dist = distanceInMeters(
-          last.latitude,
-          last.longitude,
-          point.latitude,
-          point.longitude
-        );
-
+        const dist = distanceInMeters(last.latitude, last.longitude, point.latitude, point.longitude);
         if (dist >= MIN_MOVE_DISTANCE) {
           setAccumulatedDistance((d) => d + dist);
         } else {
@@ -305,20 +409,10 @@ export default function MapTracker() {
     });
 
     setDisplayPath((prev) => {
-      if (prev.length === 0) {
-        return [{ latitude: point.latitude, longitude: point.longitude }];
-      }
-
+      if (prev.length === 0) return [{ latitude: point.latitude, longitude: point.longitude }];
       const last = prev[prev.length - 1];
-      const dist = distanceInMeters(
-        last.latitude,
-        last.longitude,
-        point.latitude,
-        point.longitude
-      );
-
+      const dist = distanceInMeters(last.latitude, last.longitude, point.latitude, point.longitude);
       if (dist < MIN_MOVE_DISTANCE) return prev;
-
       return [...prev, { latitude: point.latitude, longitude: point.longitude }];
     });
   };
@@ -340,14 +434,11 @@ export default function MapTracker() {
     geofencePoints.length === 0
       ? "แตะบนแผนที่เพื่อเพิ่มจุด"
       : geofencePoints.length < 3
-      ? "เพิ่มจุดให้ครบอย่างน้อย 3 จุด"
-      : "ลากจุดเพื่อปรับตำแหน่ง หรือบันทึก";
+        ? "เพิ่มจุดให้ครบอย่างน้อย 3 จุด"
+        : "ลากจุดเพื่อปรับตำแหน่ง หรือบันทึก";
 
   /* ================= FETCH ================= */
-  const fetchLocation = async (
-    code: string,
-    options?: { silent?: boolean }
-  ): Promise<boolean> => {
+  const fetchLocation = async (code: string, options?: { silent?: boolean }): Promise<boolean> => {
     try {
       setLoading(true);
 
@@ -405,24 +496,16 @@ export default function MapTracker() {
 
       appendPoint(p);
 
-      // ✅ ถ้ากำลัง recording ให้บันทึก point realtime (subcollection)
+      // ✅ ถ้ากำลัง recording ให้บันทึก point realtime
       if (isRecording) {
         const locked = recordingCtxRef.current;
-
-        // ✅ กันบั๊ก: ถ้า context ไม่ตรง (สลับอุปกรณ์/recordId เปลี่ยน) ห้ามเซฟ
-        if (!locked || locked.deviceCode !== code) {
-          return true;
-        }
-
-        // ใช้ rid จาก ctx เป็นหลัก กัน state ค้าง/เปลี่ยน
+        if (!locked || locked.deviceCode !== code) return true;
         void savePoint(locked.recordId, p);
       }
 
       return true;
     } catch {
-      if (!options?.silent) {
-        Alert.alert("ไม่พบอุปกรณ์", "กรุณาตรวจสอบรหัสอุปกรณ์");
-      }
+      if (!options?.silent) Alert.alert("ไม่พบอุปกรณ์", "กรุณาตรวจสอบรหัสอุปกรณ์");
       return false;
     } finally {
       setLoading(false);
@@ -445,7 +528,6 @@ export default function MapTracker() {
 
   /* ================= RECORDING CONTROL ================= */
   const stopRecording = async (finalStatus: "completed" | "cancelled") => {
-    // ใช้ ctx เป็นหลัก กัน recordId state เปลี่ยน/ค้าง
     const locked = recordingCtxRef.current;
     const rid = locked?.recordId ?? recordId;
 
@@ -479,8 +561,16 @@ export default function MapTracker() {
         endedAt: serverTimestamp(),
         distanceMeters: Number(accumulatedDistance.toFixed(1)),
       });
-    } catch {
-      // ไม่ต้องทำอะไรเพิ่ม
+    } catch { }
+
+    if (finalStatus === "completed" || finalStatus === "cancelled") {
+      void clearActiveGeofence();
+
+      // ✅ รีเซตเวลาเมื่อบันทึกเสร็จสิ้น
+      setSavedRouteFilter(null);
+      try {
+        await AsyncStorage.removeItem(ROUTE_FILTER_STORAGE_KEY);
+      } catch { }
     }
   };
 
@@ -500,10 +590,12 @@ export default function MapTracker() {
 
     const uid = auth.currentUser.uid;
 
-    // reset เส้นของรอบใหม่ (ไม่กระทบส่วนอื่น)
     setRawPath([]);
     setDisplayPath([]);
     setAccumulatedDistance(0);
+
+    // ✅ ใช้ geofence “ตัวที่ใช้งานจริง” เท่านั้น (active)
+    const geoSnapshot = normalizeGeo(activeGeofence);
 
     const ref = await addDoc(collection(db, "users", uid, "routeHistories"), {
       deviceCode,
@@ -514,7 +606,10 @@ export default function MapTracker() {
       from: startAt.toISOString(),
       to: stopAt.toISOString(),
 
-      status: "recording", // recording | completed | cancelled
+      // ✅ SNAPSHOT geofence ณ เวลาบันทึก (แก้ mismatch)
+      geofence: geoSnapshot ?? null,
+
+      status: "recording",
       createdAt: serverTimestamp(),
       startedAt: serverTimestamp(),
     });
@@ -523,7 +618,6 @@ export default function MapTracker() {
     setIsRecording(true);
     setIsTracking(true);
 
-    // ✅ ล็อก context ตอนเริ่มอัด
     recordingCtxRef.current = {
       deviceCode,
       petId,
@@ -543,18 +637,13 @@ export default function MapTracker() {
   /* ================= MAP PRESS (GEOFENCE) ================= */
   const onMapPress = (e: MapPressEvent) => {
     if (!isGeofenceMode) return;
-
     const coord = e.nativeEvent.coordinate;
     if (!coord) return;
-
     setGeofencePoints((prev) => [...prev, { ...coord }]);
   };
 
   const undoGeofencePoint = () => {
-    setGeofencePoints((prev) => {
-      if (prev.length === 0) return prev;
-      return prev.slice(0, prev.length - 1);
-    });
+    setGeofencePoints((prev) => (prev.length === 0 ? prev : prev.slice(0, prev.length - 1)));
     setIsInsideGeofence(null);
   };
 
@@ -573,7 +662,6 @@ export default function MapTracker() {
           setRawPath([]);
           setDisplayPath([]);
           setAccumulatedDistance(0);
-          setSavedGeofence(null);
 
           return;
         }
@@ -598,21 +686,34 @@ export default function MapTracker() {
   );
 
   useEffect(() => {
-    if (geofencePoints.length >= 2) {
-      setGeofencePath([...geofencePoints]);
-    } else {
-      setGeofencePath([]);
-    }
+    if (geofencePoints.length >= 2) setGeofencePath([...geofencePoints]);
+    else setGeofencePath([]);
   }, [geofencePoints]);
 
   useEffect(() => {
     if (!restorePetCallout || !petLocation) return;
-
     setTimeout(() => {
       petMarkerRef.current?.showCallout();
       setRestorePetCallout(false);
     }, 300);
   }, [restorePetCallout, petLocation]);
+
+  useEffect(() => {
+    if (!savedRouteFilter?.to) return;
+
+    const t = setInterval(async () => {
+      const toMs = savedRouteFilter.to.getTime();
+      if (toMs <= Date.now()) {
+        setSavedRouteFilter(null);
+        try { await AsyncStorage.removeItem(ROUTE_FILTER_STORAGE_KEY); } catch { }
+
+        // ✅ ล้าง geofence ด้วยเมื่อเวลาหมด
+        await clearActiveGeofence();
+      }
+    }, 30000);
+
+    return () => clearInterval(t);
+  }, [savedRouteFilter]);
 
   /* ================= ADD DEVICE (UNIFIED) ================= */
   const confirmAddDevice = async () => {
@@ -644,6 +745,9 @@ export default function MapTracker() {
     setIsTracking(true);
     setModalVisible(false);
     setTempCode("");
+
+    // ✅ ไม่โชว์ geofence อัตโนมัติ (activeGeofence ต้องให้ user เลือกเอง)
+    // storedGeofence จะถูกโหลดมาเงียบ ๆ ตาม useEffect
   };
 
   const cancelGeofence = () => {
@@ -661,7 +765,6 @@ export default function MapTracker() {
       ]);
       return;
     }
-
     setIsGeofenceMode(false);
   };
 
@@ -670,15 +773,10 @@ export default function MapTracker() {
 
     const now = new Date();
     const atUtc = now.toISOString();
-    const atTh = now.toLocaleString("th-TH", {
-      dateStyle: "long",
-      timeStyle: "medium",
-    });
+    const atTh = now.toLocaleString("th-TH", { dateStyle: "long", timeStyle: "medium" });
 
     const message =
-      type === "exit"
-        ? `สัตว์เลี้ยงออกนอกพื้นที่ (${Math.round(distance)} ม.)`
-        : `สัตว์เลี้ยงกลับเข้าพื้นที่`;
+      type === "exit" ? `สัตว์เลี้ยงออกนอกพื้นที่ (${Math.round(distance)} ม.)` : `สัตว์เลี้ยงกลับเข้าพื้นที่`;
 
     await push(dbRef(rtdb, `devices/${deviceCode}/alerts`), {
       type,
@@ -696,10 +794,92 @@ export default function MapTracker() {
       return;
     }
 
-    const polygon = [...geofencePoints];
+    if (!auth.currentUser) {
+      Alert.alert("กรุณาเข้าสู่ระบบ");
+      return;
+    }
+    if (!deviceCode) {
+      Alert.alert("กรุณาเลือกอุปกรณ์ก่อน");
+      return;
+    }
 
-    setSavedGeofence(polygon);
+    const polygon = normalizeGeo([...geofencePoints]); // ✅ normalize และกัน NaN
+    if (!polygon || polygon.length < 3) {
+      Alert.alert("Geofence ไม่ถูกต้อง", "กรุณาลองกำหนดจุดใหม่");
+      return;
+    }
 
+    // ✅ 1) เก็บลง stored (เหมือนเดิม)
+    setStoredGeofence(polygon);
+
+    // ✅ 2) ตั้งเป็น active ทันที -> โชว์บนแผนที่ + checkmark ผ่าน
+    setActiveGeofence(polygon);
+
+    await persistActiveGeofence({
+      deviceCode,
+      geofence: polygon,
+      untilIso: savedRouteFilter?.to ? savedRouteFilter.to.toISOString() : null, // ✅ ยังไม่ตั้งเวลา -> null
+    });
+
+    if (savedRouteFilter?.to) {
+      const until = savedRouteFilter.to;
+
+      if (until.getTime() > Date.now()) {
+        setActiveGeofenceUntil(until);
+      } else {
+        await clearActiveGeofence();
+        setActiveGeofenceUntil(null);
+      }
+    } else {
+      // ยังไม่ตั้งเวลา -> ไม่มีวันหมดอายุ (จนกว่าจะตั้ง)
+      setActiveGeofenceUntil(null);
+    }
+
+    // ✅ 3) บันทึกลง Firestore
+    try {
+      const uid = auth.currentUser.uid;
+
+      await setDoc(
+        doc(db, "users", uid, "geofences", deviceCode),
+        {
+          deviceCode,
+          points: polygon,
+          updatedAt: serverTimestamp(),
+
+          // ✅ ถ้าอยากไม่ให้ createdAt ถูกเขียนทับ: ใช้ merge และใส่ createdAt ไว้เฉย ๆ ก็ได้
+          // (ถ้ามีอยู่แล้วจะคงเดิม เพราะ merge=true และ field เดิมจะถูกแทนได้หากเราส่งค่าใหม่)
+          // วิธีที่ง่ายสุดคือ "ไม่ส่ง createdAt" เลย:
+        },
+        { merge: true }
+      );
+    } catch (e) {
+      Alert.alert("บันทึก Geofence ไม่สำเร็จ", "ลองใหม่อีกครั้ง");
+      return;
+    }
+
+    /**
+     * ✅ 4) ถ้ามีการตั้งเวลาไว้แล้ว (savedRouteFilter) -> ให้ geofence ค้างจนถึงเวลา TO ทันที
+     * และ persist ลง AsyncStorage เพื่อกันเด้งหน้าแล้วหาย
+     */
+    if (savedRouteFilter?.to) {
+      const until = savedRouteFilter.to;
+
+      // ถ้าเวลา TO หมดแล้ว ไม่ต้องค้าง
+      if (until.getTime() > Date.now()) {
+        setActiveGeofenceUntil(until);
+        await persistActiveGeofence({
+          deviceCode,
+          geofence: polygon,
+          untilIso: until.toISOString(),
+        });
+      } else {
+        // ถ้าหมดเวลาแล้ว ล้าง storage เผื่อมีค้าง
+        await clearActiveGeofence();
+        setActiveGeofenceUntil(null);
+      }
+    }
+
+    // ✅ ปิดโหมดวาด
     setIsInsideGeofence(null);
     setIsGeofenceMode(false);
     setGeofencePoints([]);
@@ -711,10 +891,8 @@ export default function MapTracker() {
     const now = new Date();
     const start = new Date(now);
     start.setHours(0, 0, 0, 0);
-
     const end = new Date(now);
     end.setHours(23, 59, 0, 0);
-
     return { start, end };
   };
 
@@ -723,12 +901,9 @@ export default function MapTracker() {
     return { routeFrom: start, routeTo: end };
   });
 
-  // ✅ picker ตัวเดียว
   const [pickerVisible, setPickerVisible] = useState(false);
   const [pickerMode, setPickerMode] = useState<"date" | "time">("time");
-  const [activeField, setActiveField] = useState<
-    "fromDate" | "fromTime" | "toDate" | "toTime"
-  >("fromTime");
+  const [activeField, setActiveField] = useState<"fromDate" | "fromTime" | "toDate" | "toTime">("fromTime");
 
   const openPicker = (field: "fromDate" | "fromTime" | "toDate" | "toTime") => {
     setActiveField(field);
@@ -737,26 +912,19 @@ export default function MapTracker() {
   };
 
   const openRouteModal = () => {
+    if (savedRouteFilter) {
+      setRoutePreset("custom");
+      setRouteRange({ routeFrom: savedRouteFilter.from, routeTo: savedRouteFilter.to });
+      setRouteModalVisible(true);
+      return;
+    }
     const { start, end } = getTodayRange();
     setRoutePreset("today");
     setRouteRange({ routeFrom: start, routeTo: end });
     setRouteModalVisible(true);
   };
 
-  // ✅ เปลี่ยนจาก “ดึงย้อนหลัง” -> “เริ่มอัด realtime ตามช่วงเวลา”
   const saveRouteHistory = async () => {
-    if (!deviceCode) {
-      Alert.alert("ไม่พบอุปกรณ์", "กรุณาเชื่อมต่ออุปกรณ์ก่อน");
-      return;
-    }
-    if (!petId || !petName) {
-      Alert.alert(
-        "ยังไม่ได้ผูกสัตว์เลี้ยง",
-        "กรุณาเชื่อมต่ออุปกรณ์กับสัตว์เลี้ยงก่อน"
-      );
-      return;
-    }
-
     const startAt = routeFrom;
     const stopAt = routeTo;
 
@@ -765,24 +933,112 @@ export default function MapTracker() {
       return;
     }
 
+    setSavedRouteFilter({ from: startAt, to: stopAt });
+
+    // ✅ ถ้ามี geofence อยู่แล้ว ให้ค้างจนถึงเวลา TO ทันที (แก้เคสตั้ง geofence ก่อนเวลา)
+    if (activeGeofence && activeGeofence.length >= 3) {
+      if (stopAt.getTime() > Date.now()) {
+        setActiveGeofenceUntil(stopAt);
+        await persistActiveGeofence({
+          deviceCode: deviceCode ?? "",
+          geofence: activeGeofence,
+          untilIso: stopAt.toISOString(),
+        });
+      } else {
+        // เวลา TO หมดแล้ว -> ล้างให้หมด
+        await clearActiveGeofence();
+        setActiveGeofenceUntil(null);
+      }
+    }
+
+    try {
+      await AsyncStorage.setItem(
+        ROUTE_FILTER_STORAGE_KEY,
+        JSON.stringify({
+          deviceCode,
+          from: startAt.toISOString(),
+          to: stopAt.toISOString(),
+          hasGeofence: !!(activeGeofence && activeGeofence.length >= 3),
+        })
+      );
+    } catch { }
+
     setRouteModalVisible(false);
 
-    // ถ้ากำลังอัดอยู่แล้ว -> ไม่ให้ซ้อน
+    const { start, end } = getTodayRange();
+    setRoutePreset("today");
+    setRouteRange({ routeFrom: start, routeTo: end });
+  };
+
+  /* ✅ SAVE FILTER -> ไป RouteHistoryList + ค้าง geofence จนหมดเวลา */
+  const saveFilterAndGo = async () => {
+    const hasDevice = !!deviceCode;
+    const hasGeo = !!(activeGeofence && activeGeofence.length >= 3);
+    const hasTime = !!savedRouteFilter;
+
+    if (!hasDevice) {
+      Alert.alert("กรุณาเพิ่ม/เลือกอุปกรณ์ก่อน");
+      return;
+    }
+    if (!hasGeo) {
+      Alert.alert("กรุณากำหนด Geofence ก่อน");
+      return;
+    }
+    if (!hasTime) {
+      Alert.alert("กรุณาเพิ่มเวลา (บันทึกเส้นทาง) ก่อน");
+      return;
+    }
+
+    if (!petId || !petName) {
+      Alert.alert("ยังไม่ได้ผูกสัตว์เลี้ยง", "กรุณาเชื่อมต่ออุปกรณ์กับสัตว์เลี้ยงก่อน");
+      return;
+    }
+
+    const startAt = savedRouteFilter!.from;
+    const stopAt = savedRouteFilter!.to;
+
+    if (stopAt.getTime() <= startAt.getTime()) {
+      Alert.alert("ช่วงเวลาไม่ถูกต้อง", "TO ต้องมากกว่า FROM");
+      return;
+    }
+
     if (isRecording) {
       Alert.alert("กำลังบันทึกอยู่", "กรุณารอให้การบันทึกปัจจุบันจบก่อน");
       return;
     }
 
-    // ถ้าเริ่มในอนาคต -> ตั้งเวลารอเริ่ม
+    // ✅ เก็บ filter ไว้ให้ RouteHistoryList อ่าน (เหมือนเดิม)
+    try {
+      await AsyncStorage.setItem(
+        ROUTE_FILTER_STORAGE_KEY,
+        JSON.stringify({
+          deviceCode,
+          from: startAt.toISOString(),
+          to: stopAt.toISOString(),
+          hasGeofence: true,
+          geofence: activeGeofence,
+          savedAt: new Date().toISOString(),
+        })
+      );
+    } catch { }
+
+    // ✅ ค้าง geofence จนหมดเวลา
+    setActiveGeofenceUntil(stopAt);
+    void persistActiveGeofence({
+      deviceCode: deviceCode!,
+      geofence: activeGeofence!,
+      untilIso: stopAt.toISOString(),
+    });
+
+    setMenuVisible(false);
+    router.push("/RouteHistoryList");
+
     const now = Date.now();
 
     if (startAt.getTime() > now) {
       const msToStart = startAt.getTime() - now;
 
-      Alert.alert(
-        "ตั้งเวลาบันทึกแล้ว",
-        `จะเริ่มบันทึกตอน ${startAt.toLocaleString("th-TH", { hour12: false })}`
-      );
+      Alert.alert("ตั้งเวลาบันทึกแล้ว", `จะเริ่มบันทึกตอน ${startAt.toLocaleString("th-TH", { hour12: false })}`);
 
       if (startTimeoutRef.current) clearTimeout(startTimeoutRef.current);
       startTimeoutRef.current = setTimeout(() => {
@@ -792,23 +1048,31 @@ export default function MapTracker() {
       return;
     }
 
-    // ถ้า start เป็นอดีต/ตอนนี้ -> เริ่มทันที (เริ่มจริง = ตอนนี้)
     const actualStart = new Date();
     void startRecording(actualStart, stopAt);
   };
 
+
+  /* ✅ NEW: status for checkmarks */
+  const hasDeviceSelected = !!deviceCode;
+  const hasGeofenceSaved = !!(activeGeofence && activeGeofence.length >= 3);
+  const hasTimeSaved = !!savedRouteFilter;
+  const canSaveFilter = hasDeviceSelected && hasGeofenceSaved && hasTimeSaved;
+
+  const renderRightStatus = (done: boolean) => {
+    if (done) {
+      return <MaterialIcons name="check-circle" size={22} color="#16A34A" />;
+    }
+    return <MaterialIcons name="chevron-right" size={22} color="#9CA3AF" />;
+  };
+
   return (
     <View style={styles.container}>
-      <MapView
-        ref={mapRef}
-        style={StyleSheet.absoluteFill}
-        initialRegion={initialRegion}
-        onPress={onMapPress}
-      >
-        {/* ✅ SAVED GEOFENCE (FILLED) */}
-        {savedGeofence && savedGeofence.length >= 3 && (
+      <MapView ref={mapRef} style={StyleSheet.absoluteFill} initialRegion={initialRegion} onPress={onMapPress}>
+        {/* ✅ แสดงเฉพาะ active geofence (ไม่ใช่ stored) */}
+        {activeGeofence && activeGeofence.length >= 3 && (
           <Polygon
-            coordinates={savedGeofence}
+            coordinates={activeGeofence}
             strokeColor="#A100CE"
             strokeWidth={3}
             fillColor="rgba(150, 23, 185, 0.21)"
@@ -818,28 +1082,14 @@ export default function MapTracker() {
 
         {/* drawing geofence */}
         {isGeofenceMode && geofencePoints.length > 1 && (
-          <Polyline
-            coordinates={geofencePoints}
-            strokeColor="#A100CE"
-            strokeWidth={3}
-            lineDashPattern={[8, 6]}
-            zIndex={4}
-          />
+          <Polyline coordinates={geofencePoints} strokeColor="#A100CE" strokeWidth={3} lineDashPattern={[8, 6]} zIndex={4} />
         )}
 
         {/* path tracking */}
-        {displayPath.length > 1 && (
-          <Polyline
-            coordinates={displayPath}
-            strokeColor="#875100"
-            strokeWidth={8}
-            zIndex={3}
-          />
-        )}
+        {displayPath.length > 1 && <Polyline coordinates={displayPath} strokeColor="#875100" strokeWidth={8} zIndex={3} />}
 
         {geofencePoints.map((p, i) => {
           if (!p || p.latitude == null || p.longitude == null) return null;
-
           return (
             <Marker
               key={`gf-${i}`}
@@ -848,7 +1098,6 @@ export default function MapTracker() {
               onDragEnd={(e) => {
                 const coord = e.nativeEvent.coordinate;
                 if (!coord) return;
-
                 setGeofencePoints((prev) => {
                   const next = [...prev];
                   next[i] = coord;
@@ -856,11 +1105,7 @@ export default function MapTracker() {
                 });
               }}
             >
-              <MaterialIcons
-                name="radio-button-checked"
-                size={18}
-                color="#8F08B5"
-              />
+              <MaterialIcons name="radio-button-checked" size={18} color="#8F08B5" />
             </Marker>
           );
         })}
@@ -869,20 +1114,13 @@ export default function MapTracker() {
           <Marker
             key={`pet-marker-${petMarkerKey}`}
             ref={petMarkerRef}
-            coordinate={{
-              latitude: petLocation.latitude,
-              longitude: petLocation.longitude,
-            }}
+            coordinate={{ latitude: petLocation.latitude, longitude: petLocation.longitude }}
             tracksViewChanges={!markerReady}
             anchor={{ x: 0.5, y: 0.5 }}
           >
             {petPhotoURL ? (
               <View style={styles.petMarker} onLayout={() => setMarkerReady(true)}>
-                <Image
-                  source={{ uri: petPhotoURL }}
-                  style={styles.petImage}
-                  onLoadEnd={() => setMarkerReady(true)}
-                />
+                <Image source={{ uri: petPhotoURL }} style={styles.petImage} onLoadEnd={() => setMarkerReady(true)} />
               </View>
             ) : (
               <View style={styles.pawMarker} onLayout={() => setMarkerReady(true)}>
@@ -934,32 +1172,13 @@ export default function MapTracker() {
       {/* ===== MENU / FILTER BOTTOM SHEET ===== */}
       <Modal visible={menuVisible} transparent animationType="slide">
         <View style={styles.sheetOverlay}>
-          <TouchableOpacity
-            style={StyleSheet.absoluteFill}
-            activeOpacity={1}
-            onPress={() => setMenuVisible(false)}
-          />
+          <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={() => setMenuVisible(false)} />
 
           <View style={[styles.sheet, { paddingBottom: 14 + insets.bottom }]}>
             <View style={styles.sheetHandle} />
             <Text style={styles.sheetTitle}>ตัวกรองแผนที่</Text>
 
-            {/* ✅ รายการ 1: Geofence */}
-            <TouchableOpacity
-              style={styles.sheetRow}
-              onPress={() => {
-                setMenuVisible(false);
-                setIsGeofenceMode(true);
-              }}
-            >
-              <View style={styles.sheetIcon}>
-                <MaterialCommunityIcons name="border-style" size={22} color="#905b0d" />
-              </View>
-              <Text style={styles.sheetText}>กำหนดพื้นที่ (Geofence)</Text>
-              <MaterialIcons name="chevron-right" size={22} color="#9CA3AF" />
-            </TouchableOpacity>
-
-            {/* ✅ รายการ 2: Add device */}
+            {/* Add device */}
             <TouchableOpacity
               style={styles.sheetRow}
               onPress={() => {
@@ -971,10 +1190,31 @@ export default function MapTracker() {
                 <MaterialIcons name="add-circle-outline" size={24} color="#905b0d" />
               </View>
               <Text style={styles.sheetText}>เพิ่มอุปกรณ์</Text>
-              <MaterialIcons name="chevron-right" size={22} color="#9CA3AF" />
+              {renderRightStatus(hasDeviceSelected)}
             </TouchableOpacity>
 
-            {/* ✅ รายการ 3: บันทึกเส้นทางย้อนหลัง */}
+            {/* Geofence */}
+            {/* Geofence */}
+            <TouchableOpacity
+              style={styles.sheetRow}
+              onPress={() => {
+                setMenuVisible(false);
+
+                setGeofencePoints([]);
+                setGeofencePath([]);
+                setIsInsideGeofence(null);
+
+                setIsGeofenceMode(true);
+              }}
+            >
+              <View style={styles.sheetIcon}>
+                <MaterialCommunityIcons name="border-style" size={22} color="#905b0d" />
+              </View>
+              <Text style={styles.sheetText}>กำหนดพื้นที่ (Geofence)</Text>
+              {renderRightStatus(hasGeofenceSaved)}
+            </TouchableOpacity>
+
+            {/* Route time */}
             <TouchableOpacity
               style={styles.sheetRow}
               onPress={() => {
@@ -985,9 +1225,32 @@ export default function MapTracker() {
               <View style={styles.sheetIcon}>
                 <MaterialCommunityIcons name="map-clock-outline" size={24} color="#905b0d" />
               </View>
-              <Text style={styles.sheetText}>บันทึกเส้นทาง</Text>
-              <MaterialIcons name="chevron-right" size={22} color="#9CA3AF" />
+
+              <View style={{ flex: 1 }}>
+                <Text style={styles.sheetText}>บันทึกเส้นทาง</Text>
+                {savedRouteFilter && (
+                  <Text style={styles.sheetSubText}>
+                    {formatThaiDateShort(savedRouteFilter.from)} {formatThaiTimeShort(savedRouteFilter.from)} น. -{" "}
+                    {formatThaiDateShort(savedRouteFilter.to)} {formatThaiTimeShort(savedRouteFilter.to)} น.
+                  </Text>
+                )}
+              </View>
+
+              {renderRightStatus(hasTimeSaved)}
             </TouchableOpacity>
+
+            {/* Save filter */}
+            <TouchableOpacity
+              style={[styles.saveFilterBtn, !canSaveFilter && styles.saveFilterBtnDisabled]}
+              disabled={!canSaveFilter}
+              onPress={saveFilterAndGo}
+            >
+              <Text style={styles.saveFilterText}>บันทึกการกรอง</Text>
+            </TouchableOpacity>
+
+            {!canSaveFilter && (
+              <Text style={styles.saveFilterHint}>* ต้องเพิ่มอุปกรณ์, กำหนด Geofence และเพิ่มเวลาให้ครบก่อน</Text>
+            )}
           </View>
         </View>
       </Modal>
@@ -995,17 +1258,12 @@ export default function MapTracker() {
       {/* ===== ROUTE SAVE MODAL ===== */}
       <Modal visible={routeModalVisible} transparent animationType="slide">
         <View style={styles.sheetOverlay}>
-          <TouchableOpacity
-            style={StyleSheet.absoluteFill}
-            activeOpacity={1}
-            onPress={() => setRouteModalVisible(false)}
-          />
+          <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={() => setRouteModalVisible(false)} />
 
           <View style={[styles.sheet, { paddingBottom: 14 + insets.bottom }]}>
             <View style={styles.sheetHandle} />
             <Text style={styles.sheetTitle}>บันทึกเส้นทาง</Text>
 
-            {/* ✅ เลือก "วันนี้" / "กำหนดเอง" */}
             <View style={styles.presetRow}>
               <TouchableOpacity
                 style={[styles.presetChip, routePreset === "today" && styles.presetChipActive]}
@@ -1015,46 +1273,23 @@ export default function MapTracker() {
                   setRouteRange({ routeFrom: start, routeTo: end });
                 }}
               >
-                <Text
-                  style={[
-                    styles.presetChipText,
-                    routePreset === "today" && styles.presetChipTextActive,
-                  ]}
-                >
-                  วันนี้
-                </Text>
+                <Text style={[styles.presetChipText, routePreset === "today" && styles.presetChipTextActive]}>วันนี้</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={[
-                  styles.presetChip,
-                  routePreset === "custom" && styles.presetChipActive,
-                ]}
+                style={[styles.presetChip, routePreset === "custom" && styles.presetChipActive]}
                 onPress={() => setRoutePreset("custom")}
               >
-                <Text
-                  style={[
-                    styles.presetChipText,
-                    routePreset === "custom" && styles.presetChipTextActive,
-                  ]}
-                >
-                  กำหนดเอง
-                </Text>
+                <Text style={[styles.presetChipText, routePreset === "custom" && styles.presetChipTextActive]}>กำหนดเอง</Text>
               </TouchableOpacity>
             </View>
 
-            {/* FROM / TO */}
             <View style={styles.timeRow}>
-              {/* FROM */}
               <View style={{ flex: 1 }}>
                 <Text style={styles.timeLabel}>FROM (วัน)</Text>
                 <TouchableOpacity style={styles.timeBox} onPress={() => openPicker("fromDate")}>
                   <Text style={styles.timeValue}>
-                    {routeFrom.toLocaleDateString("th-TH", {
-                      day: "2-digit",
-                      month: "short",
-                      year: "numeric",
-                    })}
+                    {routeFrom.toLocaleDateString("th-TH", { day: "2-digit", month: "short", year: "numeric" })}
                   </Text>
                 </TouchableOpacity>
 
@@ -1063,28 +1298,18 @@ export default function MapTracker() {
                 <Text style={styles.timeLabel}>FROM (เวลา)</Text>
                 <TouchableOpacity style={styles.timeBox} onPress={() => openPicker("fromTime")}>
                   <Text style={styles.timeValue}>
-                    {routeFrom.toLocaleTimeString("th-TH", {
-                      hour: "2-digit",
-                      minute: "2-digit",
-                      hour12: false,
-                    })}{" "}
-                    น.
+                    {routeFrom.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit", hour12: false })} น.
                   </Text>
                 </TouchableOpacity>
               </View>
 
               <View style={{ width: 12 }} />
 
-              {/* TO */}
               <View style={{ flex: 1 }}>
                 <Text style={styles.timeLabel}>TO (วัน)</Text>
                 <TouchableOpacity style={styles.timeBox} onPress={() => openPicker("toDate")}>
                   <Text style={styles.timeValue}>
-                    {routeTo.toLocaleDateString("th-TH", {
-                      day: "2-digit",
-                      month: "short",
-                      year: "numeric",
-                    })}
+                    {routeTo.toLocaleDateString("th-TH", { day: "2-digit", month: "short", year: "numeric" })}
                   </Text>
                 </TouchableOpacity>
 
@@ -1093,23 +1318,15 @@ export default function MapTracker() {
                 <Text style={styles.timeLabel}>TO (เวลา)</Text>
                 <TouchableOpacity style={styles.timeBox} onPress={() => openPicker("toTime")}>
                   <Text style={styles.timeValue}>
-                    {routeTo.toLocaleTimeString("th-TH", {
-                      hour: "2-digit",
-                      minute: "2-digit",
-                      hour12: false,
-                    })}{" "}
-                    น.
+                    {routeTo.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit", hour12: false })} น.
                   </Text>
                 </TouchableOpacity>
               </View>
             </View>
 
-            {/* ✅ DateTimePicker ตัวเดียว */}
             {pickerVisible && (
               <DateTimePicker
-                value={
-                  activeField === "fromDate" || activeField === "fromTime" ? routeFrom : routeTo
-                }
+                value={activeField === "fromDate" || activeField === "fromTime" ? routeFrom : routeTo}
                 mode={pickerMode}
                 display={Platform.OS === "ios" ? "spinner" : "default"}
                 onChange={(e, selected) => {
@@ -1133,26 +1350,20 @@ export default function MapTracker() {
 
                   if (activeField === "fromDate") nextFrom = applyDate(routeFrom, selected);
                   if (activeField === "fromTime") nextFrom = applyTime(routeFrom, selected);
-
                   if (activeField === "toDate") nextTo = applyDate(routeTo, selected);
                   if (activeField === "toTime") nextTo = applyTime(routeTo, selected);
 
                   if (nextTo.getTime() <= nextFrom.getTime()) {
-                    Alert.alert(
-                      "ช่วงเวลาไม่ถูกต้อง",
-                      "เวลา TO ต้องมากกว่า FROM (สามารถข้ามวันได้ แต่ TO ต้องหลัง FROM)"
-                    );
+                    Alert.alert("ช่วงเวลาไม่ถูกต้อง", "เวลา TO ต้องมากกว่า FROM (สามารถข้ามวันได้ แต่ TO ต้องหลัง FROM)");
                     return;
                   }
 
                   setRouteRange({ routeFrom: nextFrom, routeTo: nextTo });
-
                   if (routePreset !== "custom") setRoutePreset("custom");
                 }}
               />
             )}
 
-            {/* Continue */}
             <TouchableOpacity style={styles.continueBtn} onPress={saveRouteHistory}>
               <Text style={styles.continueText}>บันทึก</Text>
             </TouchableOpacity>
@@ -1161,44 +1372,27 @@ export default function MapTracker() {
       </Modal>
 
       {isGeofenceMode && (
-        <View
-          style={[
-            styles.geoBottomSheet,
-            {
-              bottom: 16 + insets.bottom + 56,
-            },
-          ]}
-        >
+        <View style={[styles.geoBottomSheet, { bottom: 16 + insets.bottom + 56 }]}>
           <Text style={styles.geoTitle}>กำหนดพื้นที่ Geofence</Text>
-
-          <Text style={styles.geoSubtitle}>{geofencePoints.length} จุด · แตะบนแผนที่</Text>
+          <Text style={styles.geoSubtitle}>
+            {geofencePoints.length} จุด · {geoInstruction}
+          </Text>
 
           <View style={styles.geoActionRow}>
-            {/* ยกเลิก */}
             <TouchableOpacity style={[styles.geoBtn, styles.geoCancel]} onPress={cancelGeofence}>
               <Text style={styles.geoCancelText}>ยกเลิก</Text>
             </TouchableOpacity>
 
-            {/* Undo */}
             <TouchableOpacity
-              style={[
-                styles.geoBtn,
-                styles.geoUndo,
-                geofencePoints.length === 0 && { opacity: 0.5 },
-              ]}
+              style={[styles.geoBtn, styles.geoUndo, geofencePoints.length === 0 && { opacity: 0.5 }]}
               disabled={geofencePoints.length === 0}
               onPress={undoGeofencePoint}
             >
               <Text style={styles.geoUndoText}>Undo</Text>
             </TouchableOpacity>
 
-            {/* Save */}
             <TouchableOpacity
-              style={[
-                styles.geoBtn,
-                styles.geoSave,
-                geofencePoints.length < 3 && styles.geoSaveDisabled,
-              ]}
+              style={[styles.geoBtn, styles.geoSave, geofencePoints.length < 3 && styles.geoSaveDisabled]}
               disabled={geofencePoints.length < 3}
               onPress={saveGeofence}
             >
@@ -1210,10 +1404,7 @@ export default function MapTracker() {
 
       {/* ===== TOP RIGHT CONTROLS ===== */}
       <View style={[styles.topRightControls, { top: insets.top + 12 }]}>
-        <TouchableOpacity
-          style={[styles.topFab, { backgroundColor: "#FFFFFF" }]}
-          onPress={() => setMenuVisible(true)}
-        >
+        <TouchableOpacity style={[styles.topFab, { backgroundColor: "#FFFFFF" }]} onPress={() => setMenuVisible(true)}>
           <MaterialIcons name="tune" size={24} color="#111827" />
         </TouchableOpacity>
 
@@ -1245,10 +1436,7 @@ export default function MapTracker() {
             />
 
             <View style={styles.modalRow}>
-              <TouchableOpacity
-                style={[styles.submitBtn, { backgroundColor: "#aaa" }]}
-                onPress={() => setModalVisible(false)}
-              >
+              <TouchableOpacity style={[styles.submitBtn, { backgroundColor: "#aaa" }]} onPress={() => setModalVisible(false)}>
                 <Text style={styles.submitText}>ยกเลิก</Text>
               </TouchableOpacity>
 
@@ -1632,9 +1820,37 @@ const styles = StyleSheet.create({
   },
 
   sheetText: {
-    flex: 1,
     fontSize: 16,
     color: "#111827",
+    fontWeight: "700",
+  },
+
+  sheetSubText: {
+    marginTop: 4,
+    fontSize: 12.5,
+    color: "#6B7280",
+    fontWeight: "700",
+  },
+
+  saveFilterBtn: {
+    marginTop: 14,
+    backgroundColor: "#905b0dff",
+    paddingVertical: 14,
+    borderRadius: 14,
+    alignItems: "center",
+  },
+  saveFilterBtnDisabled: {
+    backgroundColor: "#AE9367",
+  },
+  saveFilterText: {
+    fontSize: 16,
+    fontWeight: "900",
+    color: "#ffffff",
+  },
+  saveFilterHint: {
+    marginTop: 8,
+    fontSize: 12.5,
+    color: "#6B7280",
     fontWeight: "700",
   },
 

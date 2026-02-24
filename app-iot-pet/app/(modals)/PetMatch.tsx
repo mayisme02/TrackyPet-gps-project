@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   View,
   Text,
@@ -59,10 +59,13 @@ export default function PetMatch() {
   const [pets, setPets] = useState<Pet[]>([]);
   const [currentMatch, setCurrentMatch] = useState<any>(null);
 
-  // ✅ GLOBAL LOCK: ถ้ามี recording อยู่ที่ไหนก็ตาม -> ล็อกทั้งระบบ
-  const [activeRecording, setActiveRecording] = useState<{
+  /**
+   * ✅ LOCK เฉพาะ "สัตว์เลี้ยงที่เชื่อมกับอุปกรณ์นี้" เท่านั้น
+   * ถ้า petId ปัจจุบันมี routeHistories.status=recording -> ห้ามเปลี่ยนไปตัวอื่น
+   */
+  const [recordingForThisPet, setRecordingForThisPet] = useState<{
     routeId: string;
-    petId: string | null;
+    petId: string;
     deviceCode: string | null;
   } | null>(null);
 
@@ -89,40 +92,49 @@ export default function PetMatch() {
     );
   }, [parsedDevice.code]);
 
-  /* ================= GLOBAL RECORDING LISTENER ================= */
+  /* ================= RECORDING LISTENER (ONLY THIS PET) ================= */
   useEffect(() => {
     if (!auth.currentUser) return;
     const uid = auth.currentUser.uid;
 
+    const petId = currentMatch?.petId as string | undefined;
+    if (!petId) {
+      setRecordingForThisPet(null);
+      return;
+    }
+
+    // ✅ ฟังเฉพาะ recording ของ pet ที่กำลัง match กับ device นี้
     const qRec = query(
       collection(db, "users", uid, "routeHistories"),
       where("status", "==", "recording"),
+      where("petId", "==", petId),
       limit(1)
     );
 
     return onSnapshot(qRec, (snap) => {
       if (snap.empty) {
-        setActiveRecording(null);
+        setRecordingForThisPet(null);
         return;
       }
 
       const d = snap.docs[0];
       const data: any = d.data();
 
-      setActiveRecording({
+      setRecordingForThisPet({
         routeId: d.id,
-        petId: data?.petId ?? null,
+        petId: data?.petId,
         deviceCode: data?.deviceCode ?? null,
       });
     });
-  }, []);
+  }, [currentMatch?.petId]);
 
-  const guardIfRecording = () => {
-    if (!activeRecording) return false;
+  const guardIfRecordingThisPet = () => {
+    // ✅ ล็อกเฉพาะตอน "pet ที่เชื่อมอยู่นี้" กำลัง recording
+    if (!recordingForThisPet) return false;
 
     Alert.alert(
       "กำลังบันทึกเส้นทางอยู่",
-      `ไม่สามารถเปลี่ยนการเชื่อมต่อระหว่างบันทึกได้`
+      "ไม่สามารถเปลี่ยนสัตว์เลี้ยงระหว่างบันทึกเส้นทางได้"
     );
     return true;
   };
@@ -139,8 +151,8 @@ export default function PetMatch() {
 
   /* ================= SELECT PET ================= */
   const onSelectPet = async (pet: Pet) => {
-    // ✅ GLOBAL LOCK
-    if (guardIfRecording()) return;
+    // ✅ ถ้ากำลังบันทึกของ pet ตัวที่เชื่อมกับ device นี้ -> ห้ามเปลี่ยน
+    if (guardIfRecordingThisPet()) return;
 
     if (currentMatch?.petId === pet.id) return;
 
@@ -179,7 +191,8 @@ export default function PetMatch() {
 
   /* ================= DISCONNECT ================= */
   const onPressStatus = () => {
-    if (guardIfRecording()) return;
+    // ✅ ถ้ากำลังบันทึกของ pet ตัวนี้ -> ห้ามยกเลิกการเชื่อมต่อ
+    if (guardIfRecordingThisPet()) return;
 
     if (!currentMatch) return;
 
@@ -202,9 +215,10 @@ export default function PetMatch() {
     );
   };
 
+  const isLocked = !!recordingForThisPet;
+
   return (
     <>
-      {/* ✅ HEADER (ใช้ component กลาง) */}
       <ProfileHeader
         title="รายละเอียดอุปกรณ์"
         left={
@@ -218,7 +232,10 @@ export default function PetMatch() {
         {/* ===== DEVICE CARD ===== */}
         <View style={styles.card}>
           <View style={styles.deviceTop}>
-            <Image source={{ uri: deviceType.image.uri }} style={styles.deviceImage} />
+            <Image
+              source={{ uri: deviceType.image.uri }}
+              style={styles.deviceImage}
+            />
             <View style={{ flex: 1 }}>
               <Text style={styles.deviceName}>{parsedDevice.name}</Text>
               <Text style={styles.deviceDesc}>{deviceType.description}</Text>
@@ -230,13 +247,25 @@ export default function PetMatch() {
           <View style={styles.deviceBottom}>
             <View style={styles.petRow}>
               {currentMatch?.photoURL ? (
-                <Image source={{ uri: currentMatch.photoURL }} style={styles.petAvatar} />
+                <Image
+                  source={{ uri: currentMatch.photoURL }}
+                  style={styles.petAvatar}
+                />
               ) : (
                 <View style={styles.petAvatarEmpty}>
                   <MaterialIcons name="pets" size={22} color="#9CA3AF" />
                 </View>
               )}
-              <Text style={styles.petName}>{currentMatch?.petName ?? "ว่าง"}</Text>
+              <View>
+                <Text style={styles.petName}>{currentMatch?.petName ?? "ว่าง"}</Text>
+
+                {/* ✅ แสดง hint เล็ก ๆ ว่าล็อกเพราะกำลังบันทึก */}
+                {isLocked && (
+                  <Text style={{ marginTop: 2, color: "#008D49", fontWeight: "700", fontSize: 12 }}>
+                    กำลังบันทึกเส้นทาง…
+                  </Text>
+                )}
+              </View>
             </View>
 
             <TouchableOpacity onPress={currentMatch ? onPressStatus : undefined}>
@@ -244,6 +273,7 @@ export default function PetMatch() {
                 style={[
                   styles.statusPill,
                   !currentMatch && styles.statusPillInactive,
+                  isLocked && { opacity: 0.6 },
                 ]}
               >
                 <Text
@@ -270,13 +300,13 @@ export default function PetMatch() {
             return (
               <View key={item.id}>
                 <TouchableOpacity
-                  // ป้องกัน “สลับ” ตอนกำลัง recording (ไม่กระทบ UI เดิม นอกจากกดไม่ได้)
-                  disabled={active || !!activeRecording}
+                  // ✅ ล็อก “การเปลี่ยนตัวอื่น” เฉพาะตอนมี recording ของ pet ที่เชื่อมอยู่
+                  disabled={active || isLocked}
                   onPress={() => onSelectPet(item)}
                   style={[
                     styles.petItem,
                     active && styles.petItemActive,
-                    !!activeRecording && { opacity: 0.6 },
+                    isLocked && !active && { opacity: 0.6 },
                   ]}
                 >
                   <View style={styles.petRow}>

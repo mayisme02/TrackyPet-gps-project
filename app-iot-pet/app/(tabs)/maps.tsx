@@ -9,6 +9,7 @@ import {
   TextInput,
   Platform,
   Image,
+  DeviceEventEmitter,
 } from "react-native";
 import MapView, {
   Marker,
@@ -45,6 +46,7 @@ const MIN_MOVE_DISTANCE = 5;
 /* ✅ storage keys */
 const ROUTE_FILTER_STORAGE_KEY = "routeFilter_v1";
 const ACTIVE_GEOFENCE_STORAGE_KEY = "activeGeofence_v1";
+const ROUTE_RECORDING_ENDED_EVENT = "routeRecordingEnded";
 
 /* ================= TYPES ================= */
 type DeviceLocation = {
@@ -171,6 +173,34 @@ export default function MapTracker() {
       await AsyncStorage.removeItem(ACTIVE_GEOFENCE_STORAGE_KEY);
     } catch { }
   }, []);
+
+  const resetAfterRecordingEnd = useCallback(async () => {
+    // 1) stop local timers
+    if (stopTimeoutRef.current) {
+      clearTimeout(stopTimeoutRef.current);
+      stopTimeoutRef.current = null;
+    }
+    if (startTimeoutRef.current) {
+      clearTimeout(startTimeoutRef.current);
+      startTimeoutRef.current = null;
+    }
+
+    // 2) reset recording state
+    setIsRecording(false);
+    setIsTracking(false);
+    setRecordId(null);
+    recordingCtxRef.current = null;
+
+    // 3) clear active geofence (บนแผนที่)
+    await clearActiveGeofence();
+
+    // 4) reset time filter
+    setSavedRouteFilter(null);
+    try {
+      await AsyncStorage.removeItem(ROUTE_FILTER_STORAGE_KEY);
+    } catch { }
+
+  }, [clearActiveGeofence]);
 
   const persistActiveGeofence = useCallback(
     async (payload: { deviceCode: string; geofence: GeoPoint[]; untilIso?: string | null }) => {
@@ -363,6 +393,39 @@ export default function MapTracker() {
       void stopRecording("cancelled");
     }
   }, [deviceCode, isRecording]);
+
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener(
+      ROUTE_RECORDING_ENDED_EVENT,
+      (payload?: { routeId?: string; deviceCode?: string | null }) => {
+        // ✅ ถ้ามี deviceCode และไม่ใช่อุปกรณ์ที่เปิดอยู่ -> ไม่ต้องรีเซต
+        if (payload?.deviceCode && deviceCode && payload.deviceCode !== deviceCode) return;
+
+        void resetAfterRecordingEnd();
+      }
+    );
+
+    return () => sub.remove();
+  }, [deviceCode, resetAfterRecordingEnd]);
+
+  useEffect(() => {
+    if (!auth.currentUser) return;
+    if (!recordId) return;
+
+    const uid = auth.currentUser.uid;
+    const ref = doc(db, "users", uid, "routeHistories", recordId);
+
+    return onSnapshot(ref, (snap) => {
+      if (!snap.exists()) return;
+      const data: any = snap.data();
+      const s = (data?.status ?? "").toString().toLowerCase();
+
+      // ✅ ถ้าไม่ใช่ recording แล้ว -> reset map filter/geofence
+      if (s && s !== "recording" && s !== "running" && s !== "in_progress") {
+        void resetAfterRecordingEnd();
+      }
+    });
+  }, [recordId, resetAfterRecordingEnd]);
 
   /* ================= FORMAT ================= */
   const formatThaiDate = (iso: string) =>

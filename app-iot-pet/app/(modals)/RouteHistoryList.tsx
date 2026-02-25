@@ -8,6 +8,7 @@ import {
   Alert,
   Pressable,
   SectionListData,
+  DeviceEventEmitter,
 } from "react-native";
 import { useRouter } from "expo-router";
 import FontAwesome6 from "@expo/vector-icons/FontAwesome6";
@@ -28,6 +29,7 @@ import {
 } from "firebase/firestore";
 import { SwipeListView } from "react-native-swipe-list-view";
 import ProfileHeader from "@/components/ProfileHeader";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 type RouteHistory = {
   id: string;
@@ -54,6 +56,10 @@ type RealTimeMap = Record<
   }
 >;
 
+const ROUTE_FILTER_STORAGE_KEY = "routeFilter_v1";
+const ACTIVE_GEOFENCE_STORAGE_KEY = "activeGeofence_v1";
+const ROUTE_RECORDING_ENDED_EVENT = "routeRecordingEnded";
+
 export default function RouteHistoryList() {
   const router = useRouter();
   const [routes, setRoutes] = useState<RouteHistory[]>([]);
@@ -64,7 +70,7 @@ export default function RouteHistoryList() {
   // กันยิง getDocs ซ้ำซ้อน
   const fetchingRef = useRef<Set<string>>(new Set());
 
-  // ✅ กันการกดที่การ์ดเด้งไปหน้า RouteHistory ตอนที่ผู้ใช้กดปุ่มสถานะ (แก้ issue “กดแล้วไม่ทำงาน”)
+  // ✅ กันการกดที่การ์ดเด้งไปหน้า RouteHistory ตอนที่ผู้ใช้กดปุ่มสถานะ
   const blockCardPressRef = useRef(false);
 
   const formatThaiDate = (iso: string) =>
@@ -111,8 +117,6 @@ export default function RouteHistoryList() {
 
   /**
    * ✅ normalize status ให้เป็น 2 ค่า: recording / done
-   * - สำคัญ: ถ้า status=recording แต่ยังไม่ถึงเวลา to -> ต้องเป็น recording เสมอ
-   * - ถ้าเลยเวลา to แล้ว -> done
    */
   const getStatus = (route: RouteHistory): "recording" | "done" => {
     const s = (route.status ?? "").toString().trim().toLowerCase();
@@ -120,19 +124,18 @@ export default function RouteHistoryList() {
     const now = Date.now();
     const toMs = route.to ? new Date(route.to).getTime() : NaN;
 
-    // 1) ถ้า DB บอก recording และยังไม่ถึงเวลาสิ้นสุด -> recording
+    // 1) recording
     if (
       s === "recording" ||
       s === "rec" ||
       s === "in_progress" ||
       s === "running"
     ) {
-      // ถ้ามี to และเลยเวลาแล้ว -> ถือว่า done (กันกรณี timeout ไม่ยิง)
       if (Number.isFinite(toMs) && now > toMs + 1000) return "done";
       return "recording";
     }
 
-    // 2) done (completed/cancelled/done/finished/stop)
+    // 2) done
     if (
       s === "done" ||
       s === "finished" ||
@@ -144,8 +147,7 @@ export default function RouteHistoryList() {
       return "done";
     }
 
-    // 3) fallback สำหรับเอกสารเก่ามากที่ไม่มี status:
-    // ถ้ายังอยู่ในช่วง from-to ของ "วันนี้" ให้มองว่า recording
+    // 3) fallback
     const fromMs = route.from ? new Date(route.from).getTime() : NaN;
     const isToday =
       route.from &&
@@ -160,24 +162,52 @@ export default function RouteHistoryList() {
   };
 
   /**
-   * ✅ หยุดบันทึกทันทีจากหน้า list
-   * - แตะปุ่ม “กำลังบันทึก” -> ให้ยืนยัน -> เปลี่ยนสถานะเป็น completed
+   * ✅ helper: emit event + clear storage (ให้ Maps รีเซต)
    */
-  const stopRecordingNow = useCallback(async (route: RouteHistory) => {
-    if (!auth.currentUser) return;
-    const uid = auth.currentUser.uid;
+  const notifyMapsRecordingEnded = useCallback(
+    async (payload: { routeId: string; deviceCode?: string | null }) => {
+      // ล้างตัวกรอง/Geofence ที่ค้างไว้ (ให้ Maps รีเซตแม้ยังไม่ได้เปิดหน้า)
+      try {
+        await AsyncStorage.removeItem(ROUTE_FILTER_STORAGE_KEY);
+        await AsyncStorage.removeItem(ACTIVE_GEOFENCE_STORAGE_KEY);
+      } catch {}
 
-    try {
-      await updateDoc(doc(db, "users", uid, "routeHistories", route.id), {
-        status: "completed",
-        endedAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
+      // แจ้งไปหน้า Maps แบบ realtime
+      DeviceEventEmitter.emit(ROUTE_RECORDING_ENDED_EVENT, {
+        routeId: payload.routeId,
+        deviceCode: payload.deviceCode ?? null,
+        at: Date.now(),
       });
-    } catch (e) {
-      console.warn("Failed to stop recording:", route.id, e);
-      Alert.alert("หยุดการบันทึกไม่สำเร็จ", "กรุณาลองใหม่อีกครั้ง");
-    }
-  }, []);
+    },
+    []
+  );
+
+  /**
+   * ✅ หยุดบันทึกทันทีจากหน้า list
+   */
+  const stopRecordingNow = useCallback(
+    async (route: RouteHistory) => {
+      if (!auth.currentUser) return;
+      const uid = auth.currentUser.uid;
+
+      try {
+        await updateDoc(doc(db, "users", uid, "routeHistories", route.id), {
+          status: "completed",
+          endedAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+
+        await notifyMapsRecordingEnded({
+          routeId: route.id,
+          deviceCode: route.deviceCode ?? null,
+        });
+      } catch (e) {
+        console.warn("Failed to stop recording:", route.id, e);
+        Alert.alert("หยุดการบันทึกไม่สำเร็จ", "กรุณาลองใหม่อีกครั้ง");
+      }
+    },
+    [notifyMapsRecordingEnded]
+  );
 
   const openStopRecordingConfirm = useCallback(
     (route: RouteHistory) => {
@@ -189,7 +219,6 @@ export default function RouteHistoryList() {
             text: "ยกเลิก",
             style: "cancel",
             onPress: () => {
-              // ปล่อยบล็อกการ์ดหลังจากปิด popup
               setTimeout(() => (blockCardPressRef.current = false), 200);
             },
           },
@@ -206,6 +235,7 @@ export default function RouteHistoryList() {
 
   /**
    * ✅ AUTO COMPLETE เฉพาะกรณี "เลยเวลา to" เท่านั้น
+   * - และ emit event + clear storage ด้วย
    */
   useEffect(() => {
     if (!auth.currentUser) return;
@@ -227,7 +257,6 @@ export default function RouteHistoryList() {
         const toMs = toIso ? new Date(toIso).getTime() : NaN;
 
         const passedStopTime = Number.isFinite(toMs) && now > toMs + 1000;
-
         if (!passedStopTime) continue;
 
         try {
@@ -236,12 +265,17 @@ export default function RouteHistoryList() {
             endedAt: serverTimestamp(),
             updatedAt: serverTimestamp(),
           });
+
+          await notifyMapsRecordingEnded({
+            routeId: d.id,
+            deviceCode: data?.deviceCode ?? null,
+          });
         } catch (e) {
           console.warn("Failed to auto-complete route:", d.id, e);
         }
       }
     });
-  }, []);
+  }, [notifyMapsRecordingEnded]);
 
   // ✅ โหลดรายการ routeHistories
   useEffect(() => {
@@ -278,10 +312,7 @@ export default function RouteHistoryList() {
       for (const r of routes) {
         if (!r?.id) continue;
 
-        // ถ้ามีแล้ว ไม่ต้องดึงซ้ำ
         if (realTimes[r.id]?.startIso && realTimes[r.id]?.endIso) continue;
-
-        // กันซ้ำระหว่างรอบ
         if (fetchingRef.current.has(r.id)) continue;
         fetchingRef.current.add(r.id);
 
@@ -432,7 +463,6 @@ export default function RouteHistoryList() {
       <Pressable
         style={styles.card}
         onPress={() => {
-          // ✅ ถ้ากำลังกดปุ่มสถานะอยู่ ให้ไม่เด้งไปหน้า detail
           if (blockCardPressRef.current) {
             blockCardPressRef.current = false;
             return;
@@ -460,16 +490,13 @@ export default function RouteHistoryList() {
               {item.petName ?? "-"}
             </Text>
 
-            {/* ✅ เปลี่ยนเป็น TouchableOpacity เพื่อให้ “กดติด” ชัวร์บน iOS/Android */}
             <TouchableOpacity
               activeOpacity={0.85}
               onPressIn={() => {
-                // บล็อกการ์ดทันที กัน gesture ตีกัน
                 blockCardPressRef.current = true;
               }}
               onPress={() => {
                 if (status !== "recording") {
-                  // ปล่อยบล็อกถ้าไม่ใช่ recording
                   setTimeout(() => (blockCardPressRef.current = false), 50);
                   return;
                 }
@@ -670,4 +697,4 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     borderRadius: 14,
   },
-}); 
+});

@@ -5,7 +5,6 @@ import {
   StyleSheet,
   TouchableOpacity,
   Image,
-  Dimensions,
   Platform,
 } from "react-native";
 import MapView, {
@@ -21,6 +20,7 @@ import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { auth, db } from "../../firebase/firebase";
 import { collection, doc, onSnapshot } from "firebase/firestore";
 import ProfileHeader from "@/components/ProfileHeader";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 type RoutePoint = {
   latitude: number;
@@ -52,6 +52,8 @@ type RouteHistoryDoc = {
 
 export default function RouteHistory() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
+
   const { routeId, route: routeJson } = useLocalSearchParams<{
     routeId?: string;
     route?: string;
@@ -91,12 +93,12 @@ export default function RouteHistory() {
   const normalizeGeo = (poly: any): GeoPoint[] | null => {
     if (!Array.isArray(poly) || poly.length < 3) return null;
     const cleaned = poly
-      .map((p) => ({
+      .map((p: any) => ({
         latitude: Number(p?.latitude ?? p?.lat),
         longitude: Number(p?.longitude ?? p?.lng),
       }))
       .filter(
-        (p) =>
+        (p: any) =>
           Number.isFinite(p.latitude) &&
           Number.isFinite(p.longitude) &&
           Math.abs(p.latitude) <= 90 &&
@@ -139,7 +141,6 @@ export default function RouteHistory() {
       route?.geofencePoints ??
       route?.geofence ??
       null;
-
     return normalizeGeo(pts);
   }, [route]);
 
@@ -166,9 +167,8 @@ export default function RouteHistory() {
     );
   }, [effectiveRouteId]);
 
-  // ---------- subscribe points (FIXED) ----------
-  // ✅ แก้หลัก ๆ: อย่า orderBy("timestampMs") เพราะหลายคนไม่ได้เก็บ field นี้ → query พัง → points ว่าง → ไม่วาดเส้น
-  // ✅ ดึงทั้งหมดแล้ว sort ฝั่ง client แทน (รองรับ timestampMs / tsMs / timestamp)
+  // ---------- subscribe points (robust) ----------
+  // ✅ รองรับหลาย schema ของ points doc (latitude/longitude, lat/lng, coord/coordinate/location)
   useEffect(() => {
     if (!auth.currentUser) return;
     if (!effectiveRouteId) return;
@@ -183,29 +183,58 @@ export default function RouteHistory() {
       "points"
     );
 
+    const pickNumber = (...vals: any[]) => {
+      for (const v of vals) {
+        const n = Number(v);
+        if (Number.isFinite(n)) return n;
+      }
+      return NaN;
+    };
+
+    const pickIso = (v: any) => {
+      if (!v) return "";
+      if (typeof v === "string") return v;
+      if (typeof v?.toDate === "function") return v.toDate().toISOString();
+      if (v instanceof Date) return v.toISOString();
+      return "";
+    };
+
     return onSnapshot(
       colRef,
       (snap) => {
-        // debug: ดูว่ามีข้อมูลไหม
-        // console.log("points docs:", snap.size, snap.docs[0]?.data());
-
-        const data = snap.docs
+        const parsed = snap.docs
           .map((d) => d.data() as any)
           .map((p) => {
-            const latitude = Number(p.latitude ?? p.lat);
-            const longitude = Number(p.longitude ?? p.lng);
+            const lat = pickNumber(
+              p.latitude,
+              p.lat,
+              p.coord?.latitude,
+              p.coord?.lat,
+              p.coordinate?.latitude,
+              p.coordinate?.lat,
+              p.location?.latitude,
+              p.location?.lat
+            );
+
+            const lng = pickNumber(
+              p.longitude,
+              p.lng,
+              p.coord?.longitude,
+              p.coord?.lng,
+              p.coordinate?.longitude,
+              p.coordinate?.lng,
+              p.location?.longitude,
+              p.location?.lng
+            );
 
             const iso =
               typeof p.timestamp === "string"
                 ? p.timestamp
-                : toIso(p.timestamp);
+                : pickIso(p.timestamp) || pickIso(p.createdAt) || "";
 
-            const timestampMsRaw = Number(p.timestampMs ?? p.tsMs ?? NaN);
-            const timestampMs = Number.isFinite(timestampMsRaw)
-              ? timestampMsRaw
-              : Date.parse(iso || "") || 0;
+            const ms = pickNumber(p.timestampMs, p.tsMs, Date.parse(iso) || 0);
 
-            return { latitude, longitude, timestamp: iso, _ms: timestampMs };
+            return { latitude: lat, longitude: lng, timestamp: iso, _ms: ms };
           })
           .filter(
             (p) =>
@@ -217,7 +246,7 @@ export default function RouteHistory() {
           .sort((a, b) => a._ms - b._ms)
           .map(({ _ms, ...rest }) => rest as RoutePoint);
 
-        setPoints(data);
+        setPoints(parsed);
       },
       (err) => {
         console.log("points onSnapshot error:", err);
@@ -293,16 +322,18 @@ export default function RouteHistory() {
 
     const t = setTimeout(() => {
       mapRef.current?.fitToCoordinates(coordsToFit, {
-        edgePadding: { top: 60, right: 60, bottom: 60, left: 60 },
+        edgePadding: {
+          top: insets.top + 90, // กัน header
+          right: 60,
+          bottom: insets.bottom + 220, // กันการ์ดล่าง
+          left: 60,
+        },
         animated: true,
       });
     }, 250);
 
     return () => clearTimeout(t);
-  }, [lineCoords, savedGeofence]);
-
-  const H = Dimensions.get("window").height;
-  const mapHeight = Math.min(520, H * 0.52);
+  }, [lineCoords, savedGeofence, insets.top, insets.bottom]);
 
   const start = points.length > 0 ? points[0] : null;
   const end = points.length > 0 ? points[points.length - 1] : null;
@@ -398,95 +429,102 @@ export default function RouteHistory() {
   };
 
   return (
-    <View style={{ flex: 1, backgroundColor: "#F3F4F6" }}>
-      <ProfileHeader
-        title="ประวัติเส้นทางย้อนหลัง"
-        left={
-          <TouchableOpacity onPress={() => router.back()}>
-            <Ionicons name="chevron-back" size={28} color="#000" />
-          </TouchableOpacity>
-        }
-      />
+    <View style={styles.screen}>
+      {/* ✅ Map เต็มจอแบบหน้า Maps */}
+      <MapView
+        ref={mapRef}
+        style={StyleSheet.absoluteFill}
+        initialRegion={initialRegion}
+        onPress={mapOnPress}
+      >
+        {/* ✅ Geofence snapshot */}
+        {savedGeofence && savedGeofence.length >= 3 && (
+          <Polygon
+            coordinates={savedGeofence}
+            strokeColor="#A100CE"
+            strokeWidth={3}
+            fillColor="rgba(150, 23, 185, 0.21)"
+            zIndex={1}
+          />
+        )}
 
-      <View style={[styles.mapWrap, { height: mapHeight }]}>
-        <MapView
-          ref={mapRef}
-          style={StyleSheet.absoluteFill}
-          initialRegion={initialRegion}
-          onPress={mapOnPress}
-        >
-          {/* ✅ Geofence snapshot */}
-          {savedGeofence && savedGeofence.length >= 3 && (
-            <Polygon
-              coordinates={savedGeofence}
-              strokeColor="#A100CE"
-              strokeWidth={3}
-              fillColor="rgba(150, 23, 185, 0.21)"
-              zIndex={1}
+        {/* ✅ Route line */}
+        {lineCoords.length > 1 && (
+          <Polyline
+            coordinates={lineCoords}
+            strokeColor="#E28F00"
+            strokeWidth={8}
+            zIndex={5}
+          />
+        )}
+
+        {/* ✅ Start marker */}
+        {start && (
+          <Marker
+            ref={startMarkerRef}
+            coordinate={{ latitude: start.latitude, longitude: start.longitude }}
+            onPress={onPressStartMarker}
+            anchor={{ x: 0, y: 0 }}
+          >
+            <Image
+              source={require("../../assets/images/location.png")}
+              style={styles.mapPin}
+              resizeMode="contain"
             />
-          )}
-
-          {/* ✅ Route line */}
-          {lineCoords.length > 1 && (
-            <Polyline coordinates={lineCoords} strokeColor="#C88F00" strokeWidth={8} />
-          )}
-
-          {/* ✅ Start marker */}
-          {start && (
-            <Marker
-              ref={startMarkerRef}
-              coordinate={{ latitude: start.latitude, longitude: start.longitude }}
-              onPress={onPressStartMarker}
-              anchor={{ x: 0, y: 0 }}
-            >
-              <Image
-                source={require("../../assets/images/location.png")}
-                style={styles.mapPin}
-                resizeMode="contain"
+            <Callout tooltip>
+              <InfoCallout
+                title="เริ่มบันทึก"
+                badge="เริ่มต้น"
+                dateIso={start?.timestamp ?? null}
+                timeIso={start?.timestamp ?? null}
+                color="#16a34a"
+                coords={{ latitude: start.latitude, longitude: start.longitude }}
               />
-              <Callout tooltip>
-                <InfoCallout
-                  title="เริ่มบันทึก"
-                  badge="เริ่มต้น"
-                  dateIso={start?.timestamp ?? null}
-                  timeIso={start?.timestamp ?? null}
-                  color="#16a34a"
-                  coords={{ latitude: start.latitude, longitude: start.longitude }}
-                />
-              </Callout>
-            </Marker>
-          )}
+            </Callout>
+          </Marker>
+        )}
 
-          {/* ✅ End marker */}
-          {end && (
-            <Marker
-              ref={endMarkerRef}
-              coordinate={{ latitude: end.latitude, longitude: end.longitude }}
-              onPress={onPressEndMarker}
-              anchor={{ x: 0, y: 20 }}
-            >
-              <Image
-                source={require("../../assets/images/flag.png")}
-                style={styles.mapPin}
-                resizeMode="contain"
+        {/* ✅ End marker */}
+        {end && (
+          <Marker
+            ref={endMarkerRef}
+            coordinate={{ latitude: end.latitude, longitude: end.longitude }}
+            onPress={onPressEndMarker}
+            anchor={{ x: 0, y: 20 }}
+          >
+            <Image
+              source={require("../../assets/images/flag.png")}
+              style={styles.mapPin}
+              resizeMode="contain"
+            />
+            <Callout tooltip>
+              <InfoCallout
+                title="สิ้นสุด"
+                badge="สิ้นสุด"
+                dateIso={end?.timestamp ?? null}
+                timeIso={end?.timestamp ?? null}
+                color="#dc2626"
+                coords={{ latitude: end.latitude, longitude: end.longitude }}
               />
-              <Callout tooltip>
-                <InfoCallout
-                  title="สิ้นสุด"
-                  badge="สิ้นสุด"
-                  dateIso={end?.timestamp ?? null}
-                  timeIso={end?.timestamp ?? null}
-                  color="#dc2626"
-                  coords={{ latitude: end.latitude, longitude: end.longitude }}
-                />
-              </Callout>
-            </Marker>
-          )}
-        </MapView>
+            </Callout>
+          </Marker>
+        )}
+      </MapView>
+
+      {/* ✅ Header ซ้อนบนแผนที่ด้วย Component เดิม (ไม่ชดเชยซ้ำ) */}
+      <View style={styles.headerOverlay} pointerEvents="box-none">
+        <ProfileHeader
+          title="เส้นทางย้อนหลัง"
+          left={
+            <TouchableOpacity onPress={() => router.back()}>
+              <Ionicons name="chevron-back" size={28} color="#000" />
+            </TouchableOpacity>
+          }
+        />
       </View>
 
-      {/* ===== INFO CARD ===== */}
-      <View style={styles.bottomCard}>
+      {/* ✅ Info Card ล่างแบบ overlay */}
+      <View style={[styles.bottomCardOverlay, { paddingBottom: 14 + insets.bottom }]}>
         <Text style={styles.timeTitle}>{topTimeTitle}</Text>
 
         <View style={styles.bottomRow}>
@@ -517,10 +555,61 @@ export default function RouteHistory() {
 }
 
 const styles = StyleSheet.create({
-  mapWrap: {
-    overflow: "hidden",
-    backgroundColor: "#E5E7EB",
+  screen: {
+    flex: 1,
+    backgroundColor: "#F3F4F6",
   },
+
+  headerOverlay: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    top: 0, // ✅ ชิดบนสุด (ไม่บวก insets.top ซ้ำ)
+    zIndex: 50,
+  },
+
+  bottomCardOverlay: {
+    position: "absolute",
+    left: 16,
+    right: 16,
+    bottom: 16,
+    backgroundColor: "#fff",
+    borderRadius: 18,
+    padding: 14,
+    shadowColor: "#000",
+    shadowOpacity: 0.08,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 3,
+    zIndex: 60,
+  },
+
+  timeTitle: {
+    textAlign: "center",
+    fontSize: 16,
+    fontWeight: "900",
+    color: "#111827",
+    marginBottom: 10,
+  },
+  bottomRow: { flexDirection: "row", gap: 12, alignItems: "center" },
+  avatar: { width: 56, height: 56, borderRadius: 28 },
+  placeholder: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: "#EEF2F7",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  petName: { fontSize: 15.5, fontWeight: "900", color: "#111827" },
+  range: {
+    marginTop: 2,
+    fontSize: 13.5,
+    color: "#6B7280",
+    fontWeight: "700",
+    lineHeight: 18,
+  },
+  meta: { marginTop: 6, fontSize: 12.5, color: "#9CA3AF", fontWeight: "700" },
 
   // ===== Callout (เหมือน Maps) =====
   calloutWrapper: { alignItems: "center" },
@@ -564,43 +653,5 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
 
-  bottomCard: {
-    marginHorizontal: 16,
-    marginBottom: 16,
-    backgroundColor: "#fff",
-    borderRadius: 18,
-    padding: 14,
-    shadowColor: "#000",
-    shadowOpacity: 0.06,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 2,
-  },
-  timeTitle: {
-    textAlign: "center",
-    fontSize: 16,
-    fontWeight: "900",
-    color: "#111827",
-    marginBottom: 10,
-  },
-  bottomRow: { flexDirection: "row", gap: 12, alignItems: "center" },
-  avatar: { width: 56, height: 56, borderRadius: 28 },
-  placeholder: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: "#EEF2F7",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  petName: { fontSize: 15.5, fontWeight: "900", color: "#111827" },
-  range: {
-    marginTop: 2,
-    fontSize: 13.5,
-    color: "#6B7280",
-    fontWeight: "700",
-    lineHeight: 18,
-  },
-  meta: { marginTop: 6, fontSize: 12.5, color: "#9CA3AF", fontWeight: "700" },
   mapPin: { width: 28, height: 28 },
 });

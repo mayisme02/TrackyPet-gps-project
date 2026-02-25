@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import {
   Text,
   StyleSheet,
@@ -38,7 +38,7 @@ type RouteHistory = {
   from: string; // ISO (เวลาที่ตั้งไว้)
   to: string; // ISO (เวลาที่ตั้งไว้)
 
-  status?: string; 
+  status?: string;
   deviceCode?: string | null;
 
   createdAt?: any;
@@ -63,6 +63,9 @@ export default function RouteHistoryList() {
 
   // กันยิง getDocs ซ้ำซ้อน
   const fetchingRef = useRef<Set<string>>(new Set());
+
+  // ✅ กันการกดที่การ์ดเด้งไปหน้า RouteHistory ตอนที่ผู้ใช้กดปุ่มสถานะ (แก้ issue “กดแล้วไม่ทำงาน”)
+  const blockCardPressRef = useRef(false);
 
   const formatThaiDate = (iso: string) =>
     new Date(iso).toLocaleDateString("th-TH", {
@@ -157,8 +160,52 @@ export default function RouteHistoryList() {
   };
 
   /**
+   * ✅ หยุดบันทึกทันทีจากหน้า list
+   * - แตะปุ่ม “กำลังบันทึก” -> ให้ยืนยัน -> เปลี่ยนสถานะเป็น completed
+   */
+  const stopRecordingNow = useCallback(async (route: RouteHistory) => {
+    if (!auth.currentUser) return;
+    const uid = auth.currentUser.uid;
+
+    try {
+      await updateDoc(doc(db, "users", uid, "routeHistories", route.id), {
+        status: "completed",
+        endedAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+    } catch (e) {
+      console.warn("Failed to stop recording:", route.id, e);
+      Alert.alert("หยุดการบันทึกไม่สำเร็จ", "กรุณาลองใหม่อีกครั้ง");
+    }
+  }, []);
+
+  const openStopRecordingConfirm = useCallback(
+    (route: RouteHistory) => {
+      Alert.alert(
+        "หยุดการบันทึกทันที",
+        `ต้องการหยุดการบันทึกของ ${route.petName ?? "สัตว์เลี้ยง"} ใช่ไหม?`,
+        [
+          {
+            text: "ยกเลิก",
+            style: "cancel",
+            onPress: () => {
+              // ปล่อยบล็อกการ์ดหลังจากปิด popup
+              setTimeout(() => (blockCardPressRef.current = false), 200);
+            },
+          },
+          {
+            text: "หยุดบันทึก",
+            style: "destructive",
+            onPress: () => void stopRecordingNow(route),
+          },
+        ]
+      );
+    },
+    [stopRecordingNow]
+  );
+
+  /**
    * ✅ AUTO COMPLETE เฉพาะกรณี "เลยเวลา to" เท่านั้น
-   * (เอา logic ปิดเพราะ disconnected ออกทั้งหมด เพราะทำให้ปิดผิดตั้งแต่โหลดหน้า)
    */
   useEffect(() => {
     if (!auth.currentUser) return;
@@ -219,9 +266,6 @@ export default function RouteHistoryList() {
 
   /**
    * ✅ ดึง "เวลาจริงเริ่ม/จบ" จาก subcollection points ของแต่ละ route
-   * - start = point แรก (orderBy timestamp asc, limit 1)
-   * - end = point สุดท้าย (orderBy timestamp desc, limit 1)
-   *
    * NOTE: ใช้ getDocs (ไม่ใช่ onSnapshot) เพื่อลด listener จำนวนมาก
    */
   useEffect(() => {
@@ -387,12 +431,18 @@ export default function RouteHistoryList() {
     return (
       <Pressable
         style={styles.card}
-        onPress={() =>
+        onPress={() => {
+          // ✅ ถ้ากำลังกดปุ่มสถานะอยู่ ให้ไม่เด้งไปหน้า detail
+          if (blockCardPressRef.current) {
+            blockCardPressRef.current = false;
+            return;
+          }
+
           router.push({
             pathname: "/(modals)/RouteHistory",
             params: { routeId: item.id, route: JSON.stringify(item) },
-          })
-        }
+          });
+        }}
       >
         <View>
           {item.photoURL ? (
@@ -410,11 +460,26 @@ export default function RouteHistoryList() {
               {item.petName ?? "-"}
             </Text>
 
-            <View
+            {/* ✅ เปลี่ยนเป็น TouchableOpacity เพื่อให้ “กดติด” ชัวร์บน iOS/Android */}
+            <TouchableOpacity
+              activeOpacity={0.85}
+              onPressIn={() => {
+                // บล็อกการ์ดทันที กัน gesture ตีกัน
+                blockCardPressRef.current = true;
+              }}
+              onPress={() => {
+                if (status !== "recording") {
+                  // ปล่อยบล็อกถ้าไม่ใช่ recording
+                  setTimeout(() => (blockCardPressRef.current = false), 50);
+                  return;
+                }
+                openStopRecordingConfirm(item);
+              }}
               style={[
                 styles.statusPill,
                 status === "recording" ? styles.statusRecording : styles.statusDone,
               ]}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             >
               <Text
                 style={[
@@ -426,7 +491,7 @@ export default function RouteHistoryList() {
               >
                 {statusText}
               </Text>
-            </View>
+            </TouchableOpacity>
           </View>
 
           <Text style={styles.range} numberOfLines={2}>
@@ -458,7 +523,7 @@ export default function RouteHistoryList() {
   return (
     <>
       <ProfileHeader
-        title="เส้นทางย้อนหลัง"
+        title="ประวัติเส้นทางย้อนหลัง"
         left={
           <TouchableOpacity onPress={() => router.back()}>
             <Ionicons name="chevron-back" size={28} color="#000" />
@@ -605,4 +670,4 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     borderRadius: 14,
   },
-});
+}); 

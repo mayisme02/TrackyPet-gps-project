@@ -422,10 +422,12 @@ export default function MapTracker() {
     if (!auth.currentUser) return;
     const uid = auth.currentUser.uid;
 
+    const tsMs = Date.parse(point.timestamp);
     await addDoc(collection(db, "users", uid, "routeHistories", rid, "points"), {
       latitude: point.latitude,
       longitude: point.longitude,
       timestamp: point.timestamp,
+      timestampMs: Number.isFinite(tsMs) ? tsMs : Date.now(), // ✅ เพิ่ม
       createdAt: serverTimestamp(),
     });
   };
@@ -878,12 +880,16 @@ export default function MapTracker() {
         setActiveGeofenceUntil(null);
       }
     }
-
-    // ✅ ปิดโหมดวาด
+    // ปิดโหมดวาด
     setIsInsideGeofence(null);
     setIsGeofenceMode(false);
     setGeofencePoints([]);
     setGeofencePath([]);
+
+    // เด้งไปที่ “ตัวกรองแผนที่” อัตโนมัติ
+    setTimeout(() => {
+      setMenuVisible(true);
+    }, 250);
   };
 
   /* ================= ROUTE MODAL ================= */
@@ -935,7 +941,7 @@ export default function MapTracker() {
 
     setSavedRouteFilter({ from: startAt, to: stopAt });
 
-    // ✅ ถ้ามี geofence อยู่แล้ว ให้ค้างจนถึงเวลา TO ทันที (แก้เคสตั้ง geofence ก่อนเวลา)
+    // ✅ ถ้ามี geofence อยู่แล้ว ให้ค้างจนถึงเวลา TO ทันที
     if (activeGeofence && activeGeofence.length >= 3) {
       if (stopAt.getTime() > Date.now()) {
         setActiveGeofenceUntil(stopAt);
@@ -945,7 +951,6 @@ export default function MapTracker() {
           untilIso: stopAt.toISOString(),
         });
       } else {
-        // เวลา TO หมดแล้ว -> ล้างให้หมด
         await clearActiveGeofence();
         setActiveGeofenceUntil(null);
       }
@@ -963,11 +968,18 @@ export default function MapTracker() {
       );
     } catch { }
 
+    // ปิด modal บันทึกเส้นทางก่อน
     setRouteModalVisible(false);
 
+    // รีเซตค่าหน้า modal กลับเป็นวันนี้เหมือนเดิม
     const { start, end } = getTodayRange();
     setRoutePreset("today");
     setRouteRange({ routeFrom: start, routeTo: end });
+
+    // เด้งไปที่ “ตัวกรองแผนที่” อัตโนมัติ
+    setTimeout(() => {
+      setMenuVisible(true);
+    }, 250);
   };
 
   /* ✅ SAVE FILTER -> ไป RouteHistoryList + ค้าง geofence จนหมดเวลา */
@@ -1064,6 +1076,23 @@ export default function MapTracker() {
       return <MaterialIcons name="check-circle" size={22} color="#16A34A" />;
     }
     return <MaterialIcons name="chevron-right" size={22} color="#9CA3AF" />;
+  };
+
+  const showSavedRoutePopup = () => {
+    Alert.alert(
+      "บันทึกช่วงเวลาแล้ว",
+      "ไปที่ตัวกรองแผนที่เพื่อกด “บันทึกการกรอง” ต่อได้เลย",
+      [
+        { text: "ยังไม่ไป", style: "cancel" },
+        {
+          text: "ไปที่ตัวกรองแผนที่",
+          onPress: () => {
+            // เปิด Bottom Sheet ตัวกรองแผนที่
+            setMenuVisible(true);
+          },
+        },
+      ]
+    );
   };
 
   return (

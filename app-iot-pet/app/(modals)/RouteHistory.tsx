@@ -19,13 +19,13 @@ import MapView, {
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { auth, db } from "../../firebase/firebase";
-import { collection, doc, onSnapshot, orderBy, query } from "firebase/firestore";
+import { collection, doc, onSnapshot } from "firebase/firestore";
 import ProfileHeader from "@/components/ProfileHeader";
 
 type RoutePoint = {
   latitude: number;
   longitude: number;
-  timestamp: string; // ISO
+  timestamp: string; // ISO string
 };
 
 type GeoPoint = { latitude: number; longitude: number };
@@ -43,10 +43,10 @@ type RouteHistoryDoc = {
   // ✅ NEW (recommended): snapshot geofence ตอนเริ่มบันทึก (จาก MapTracker.startRecording)
   geofence?: GeoPoint[] | null;
 
-  // ✅ เผื่อชื่ออื่น (legacy)
+  // ✅ legacy
   geofencePoints?: GeoPoint[] | null;
 
-  // ✅ เผื่อรูปแบบเป็น object (legacy)
+  // ✅ legacy
   geofenceSnapshot?: { points?: GeoPoint[]; savedAt?: any } | null;
 };
 
@@ -82,7 +82,7 @@ export default function RouteHistory() {
 
   const [points, setPoints] = useState<RoutePoint[]>([]);
 
-  // ✅ geofence ที่จะแสดงจริงบนหน้านี้ (priority: routeDoc -> fallback device geofence)
+  // ✅ geofence ที่จะแสดงจริงบนหน้านี้ (ใช้ snapshot ใน route doc เท่านั้น)
   const [savedGeofence, setSavedGeofence] = useState<GeoPoint[] | null>(null);
 
   const effectiveRouteId = routeId || (fallbackRoute as any)?.id;
@@ -92,8 +92,8 @@ export default function RouteHistory() {
     if (!Array.isArray(poly) || poly.length < 3) return null;
     const cleaned = poly
       .map((p) => ({
-        latitude: Number(p?.latitude),
-        longitude: Number(p?.longitude),
+        latitude: Number(p?.latitude ?? p?.lat),
+        longitude: Number(p?.longitude ?? p?.lng),
       }))
       .filter(
         (p) =>
@@ -119,6 +119,19 @@ export default function RouteHistory() {
       hour12: false,
     });
 
+  const toIso = (t: any): string => {
+    if (!t) return "";
+    if (typeof t === "string") return t;
+    // Firestore Timestamp
+    if (typeof t?.toDate === "function") {
+      const d: Date = t.toDate();
+      return d.toISOString();
+    }
+    // Date
+    if (t instanceof Date) return t.toISOString();
+    return "";
+  };
+
   // ✅ helper: ดึง geofence จาก route doc แบบครอบคลุมหลาย key
   const routeGeofenceSnapshot = useMemo(() => {
     const pts =
@@ -138,67 +151,93 @@ export default function RouteHistory() {
     const uid = auth.currentUser.uid;
     const ref = doc(db, "users", uid, "routeHistories", effectiveRouteId);
 
-    return onSnapshot(ref, (snap) => {
-      if (!snap.exists()) {
-        setRoute(null);
-        return;
+    return onSnapshot(
+      ref,
+      (snap) => {
+        if (!snap.exists()) {
+          setRoute(null);
+          return;
+        }
+        setRoute({ id: snap.id, ...(snap.data() as RouteHistoryDoc) });
+      },
+      (err) => {
+        console.log("route doc onSnapshot error:", err);
       }
-      setRoute({ id: snap.id, ...(snap.data() as RouteHistoryDoc) });
-    });
+    );
   }, [effectiveRouteId]);
 
-  // ---------- subscribe points ----------
+  // ---------- subscribe points (FIXED) ----------
+  // ✅ แก้หลัก ๆ: อย่า orderBy("timestampMs") เพราะหลายคนไม่ได้เก็บ field นี้ → query พัง → points ว่าง → ไม่วาดเส้น
+  // ✅ ดึงทั้งหมดแล้ว sort ฝั่ง client แทน (รองรับ timestampMs / tsMs / timestamp)
   useEffect(() => {
     if (!auth.currentUser) return;
     if (!effectiveRouteId) return;
 
     const uid = auth.currentUser.uid;
-    const q = query(
-      collection(db, "users", uid, "routeHistories", effectiveRouteId, "points"),
-      orderBy("timestamp", "asc")
+    const colRef = collection(
+      db,
+      "users",
+      uid,
+      "routeHistories",
+      effectiveRouteId,
+      "points"
     );
 
-    return onSnapshot(q, (snap) => {
-      const data = snap.docs.map((d) => d.data() as RoutePoint);
-      setPoints(data);
-    });
+    return onSnapshot(
+      colRef,
+      (snap) => {
+        // debug: ดูว่ามีข้อมูลไหม
+        // console.log("points docs:", snap.size, snap.docs[0]?.data());
+
+        const data = snap.docs
+          .map((d) => d.data() as any)
+          .map((p) => {
+            const latitude = Number(p.latitude ?? p.lat);
+            const longitude = Number(p.longitude ?? p.lng);
+
+            const iso =
+              typeof p.timestamp === "string"
+                ? p.timestamp
+                : toIso(p.timestamp);
+
+            const timestampMsRaw = Number(p.timestampMs ?? p.tsMs ?? NaN);
+            const timestampMs = Number.isFinite(timestampMsRaw)
+              ? timestampMsRaw
+              : Date.parse(iso || "") || 0;
+
+            return { latitude, longitude, timestamp: iso, _ms: timestampMs };
+          })
+          .filter(
+            (p) =>
+              Number.isFinite(p.latitude) &&
+              Number.isFinite(p.longitude) &&
+              Math.abs(p.latitude) <= 90 &&
+              Math.abs(p.longitude) <= 180
+          )
+          .sort((a, b) => a._ms - b._ms)
+          .map(({ _ms, ...rest }) => rest as RoutePoint);
+
+        setPoints(data);
+      },
+      (err) => {
+        console.log("points onSnapshot error:", err);
+        setPoints([]);
+      }
+    );
   }, [effectiveRouteId]);
 
   /**
    * ✅ IMPORTANT:
    * 1) ถ้า route doc มี geofence snapshot -> ใช้อันนั้นทันที (ตรงกับตอนบันทึก)
-   * 2) ถ้าไม่มี -> fallback ไป geofences/{deviceCode}
+   * 2) ถ้าไม่มี -> ไม่ fallback (ตามที่คุณตั้งใจ)
    */
   useEffect(() => {
-    // (1) route snapshot มาก่อนเสมอ
     if (routeGeofenceSnapshot && routeGeofenceSnapshot.length >= 3) {
       setSavedGeofence(routeGeofenceSnapshot);
-      return;
-    }
-
-    // (2) fallback: device geofence ล่าสุด
-    if (!auth.currentUser) return;
-
-    const code = route?.deviceCode;
-    if (!code) {
+    } else {
       setSavedGeofence(null);
-      return;
     }
-
-    const uid = auth.currentUser.uid;
-    const gfRef = doc(db, "users", uid, "geofences", code);
-
-    return onSnapshot(gfRef, (snap) => {
-      if (!snap.exists()) {
-        setSavedGeofence(null);
-        return;
-      }
-
-      const data: any = snap.data();
-      const pts = normalizeGeo(data?.points);
-      setSavedGeofence(pts);
-    });
-  }, [route?.deviceCode, routeGeofenceSnapshot]);
+  }, [routeGeofenceSnapshot]);
 
   // ---------- compute line coords ----------
   const lineCoords: LatLng[] = useMemo(() => {
@@ -242,7 +281,7 @@ export default function RouteHistory() {
     };
   }, [lineCoords, savedGeofence]);
 
-  // ✅ fit ให้ครอบคลุม “เส้นทาง + geofence” เพื่อให้สัมพันธ์กันจริง
+  // ✅ fit ให้ครอบคลุม “เส้นทาง + geofence”
   useEffect(() => {
     if (!mapRef.current) return;
 
@@ -269,8 +308,8 @@ export default function RouteHistory() {
   const end = points.length > 0 ? points[points.length - 1] : null;
 
   // ✅ เวลาจริงจาก points (ถ้ามี) ไม่งั้น fallback route.from/to
-  const startTs = start?.timestamp ?? route?.from ?? null;
-  const endTs = end?.timestamp ?? route?.to ?? null;
+  const startTs = start?.timestamp || (route?.from ? toIso(route.from) : "");
+  const endTs = end?.timestamp || (route?.to ? toIso(route.to) : "");
 
   const topTimeTitle = useMemo(() => {
     if (startTs && endTs) return `${formatThaiTime(startTs)} - ${formatThaiTime(endTs)} น.`;
@@ -304,7 +343,7 @@ export default function RouteHistory() {
     setTimeout(() => (suppressMapPressRef.current = false), 250);
   };
 
-  // ✅ UI callout สไตล์เดียวกับ MapTracker
+  // ✅ UI callout
   const InfoCallout = ({
     title,
     badge,
@@ -322,7 +361,9 @@ export default function RouteHistory() {
   }) => {
     const dateText = dateIso ? formatThaiDate(dateIso) : "-";
     const timeText = timeIso ? formatThaiTime(timeIso) : "-";
-    const coordText = coords ? `${coords.latitude.toFixed(6)}, ${coords.longitude.toFixed(6)}` : "-";
+    const coordText = coords
+      ? `${coords.latitude.toFixed(6)}, ${coords.longitude.toFixed(6)}`
+      : "-";
 
     return (
       <View style={styles.calloutWrapper}>
@@ -374,7 +415,7 @@ export default function RouteHistory() {
           initialRegion={initialRegion}
           onPress={mapOnPress}
         >
-          {/* ✅ Geofence (priority: snapshot ใน route -> fallback device geofence) */}
+          {/* ✅ Geofence snapshot */}
           {savedGeofence && savedGeofence.length >= 3 && (
             <Polygon
               coordinates={savedGeofence}
@@ -385,10 +426,12 @@ export default function RouteHistory() {
             />
           )}
 
+          {/* ✅ Route line */}
           {lineCoords.length > 1 && (
             <Polyline coordinates={lineCoords} strokeColor="#C88F00" strokeWidth={8} />
           )}
 
+          {/* ✅ Start marker */}
           {start && (
             <Marker
               ref={startMarkerRef}
@@ -401,7 +444,6 @@ export default function RouteHistory() {
                 style={styles.mapPin}
                 resizeMode="contain"
               />
-
               <Callout tooltip>
                 <InfoCallout
                   title="เริ่มบันทึก"
@@ -415,6 +457,7 @@ export default function RouteHistory() {
             </Marker>
           )}
 
+          {/* ✅ End marker */}
           {end && (
             <Marker
               ref={endMarkerRef}
@@ -427,7 +470,6 @@ export default function RouteHistory() {
                 style={styles.mapPin}
                 resizeMode="contain"
               />
-
               <Callout tooltip>
                 <InfoCallout
                   title="สิ้นสุด"

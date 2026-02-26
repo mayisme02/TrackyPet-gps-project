@@ -157,8 +157,10 @@ export default function MapTracker() {
   const startTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const recordingCtxRef = useRef<{ deviceCode: string; petId: string; recordId: string } | null>(null);
-
   const insets = useSafeAreaInsets();
+  // ✅ metrics refs for current recording
+  const recordingStartMsRef = useRef<number | null>(null);
+  const geofenceExitCountRef = useRef<number>(0);
 
   /* ================= HELPERS ================= */
   const normalizeGeo = (poly: GeoPoint[] | null | undefined) => {
@@ -540,6 +542,10 @@ export default function MapTracker() {
 
         if (isInsideGeofence === true && !inside) {
           sendGeofenceAlert("exit", distFromCenter);
+
+          // ✅ count exits only while recording
+          if (isRecording) geofenceExitCountRef.current += 1;
+
           setIsInsideGeofence(false);
         }
 
@@ -621,11 +627,30 @@ export default function MapTracker() {
     recordingCtxRef.current = null;
 
     try {
+      // ✅ duration (วินาที) จากตอนเริ่ม recording
+      const startMs = recordingStartMsRef.current;
+      const durationSeconds =
+        startMs && Date.now() > startMs
+          ? Math.round((Date.now() - startMs) / 1000)
+          : 0;
+
+      // ✅ นับจำนวนครั้งออกนอกพื้นที่
+      const exitCount = geofenceExitCountRef.current ?? 0;
+
       await updateDoc(doc(db, "users", uid, "routeHistories", rid), {
         status: finalStatus,
         endedAt: serverTimestamp(),
+        endedAtIso: new Date().toISOString(),
+
+        // ✅ metrics from Maps
         distanceMeters: Number(accumulatedDistance.toFixed(1)),
+        durationSeconds,
+        exitCount,
       });
+
+      // (แนะนำ) reset ref หลังบันทึกเสร็จ
+      recordingStartMsRef.current = null;
+      geofenceExitCountRef.current = 0;
     } catch { }
 
     if (finalStatus === "completed" || finalStatus === "cancelled") {
@@ -677,6 +702,11 @@ export default function MapTracker() {
       status: "recording",
       createdAt: serverTimestamp(),
       startedAt: serverTimestamp(),
+
+      startedAtIso: new Date().toISOString(),
+      distanceMeters: 0,
+      durationSeconds: 0,
+      exitCount: 0,
     });
 
     setRecordId(ref.id);
@@ -697,6 +727,9 @@ export default function MapTracker() {
     } else {
       void stopRecording("completed");
     }
+    // reset metrics
+    recordingStartMsRef.current = Date.now();
+    geofenceExitCountRef.current = 0;
   };
 
   /* ================= MAP PRESS (GEOFENCE) ================= */

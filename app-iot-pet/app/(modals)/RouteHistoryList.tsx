@@ -550,7 +550,7 @@ export default function RouteHistoryList() {
   return (
     <>
       <ProfileHeader
-        title="ประวัติเส้นทางย้อนหลัง"
+        title="เส้นทางย้อนหลัง"
         left={
           <TouchableOpacity onPress={() => router.back()}>
             <Ionicons name="chevron-back" size={28} color="#000" />

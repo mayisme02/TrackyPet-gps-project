@@ -332,7 +332,7 @@ export default function HomeScreen() {
       </View>
 
       <TouchableOpacity style={styles.routeCard} onPress={() => router.push("/(modals)/RouteHistoryList")}>
-        <Image source={require("../../assets/images/distance.png")} style={styles.routeImage} />
+        <Image source={require("../../assets/images/destination.png")} style={styles.routeImage} />
         <View style={styles.routeContent}>
           <Text style={styles.routeTitle}>เส้นทางย้อนหลัง</Text>
         </View>

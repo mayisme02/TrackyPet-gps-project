@@ -21,20 +21,33 @@ type RouteHistoryDoc = {
   petName: string;
   photoURL?: string | null;
   deviceCode?: string;
-  from: string;
-  to: string;
+
+  from: string; // ISO (planned)
+  to: string; // ISO (planned)
   createdAt?: any;
 
+  status?: string;
+
+  // ✅ geofence ณ เวลาบันทึก
   geofence?: GeoPoint[] | null;
-  geofencePoints?: GeoPoint[] | null;
   geofenceSnapshot?: { points?: GeoPoint[]; savedAt?: any } | null;
 
+  // ✅ metrics
   distanceMeters?: number;
   durationSeconds?: number;
   exitCount?: number;
 
-  startedAtIso?: string;
-  endedAtIso?: string;
+  // ✅ เวลาจริง (บันทึกจากหน้า Maps)
+  startedAtIso?: string | null;
+  endedAtIso?: string | null;
+
+  // ✅ เวลาจริง (Timestamp) เผื่อบางเครื่องเก็บเป็น Firestore Timestamp
+  startedAt?: any; // Firestore Timestamp
+  endedAt?: any; // Firestore Timestamp
+
+  // ✅ realtime fields
+  lastLiveIso?: string | null;
+  lastLiveMs?: number | null;
 };
 
 export default function RouteHistory() {
@@ -89,6 +102,14 @@ export default function RouteHistory() {
     return cleaned.length >= 3 ? cleaned : null;
   };
 
+  const toIso = (v: any): string => {
+    if (!v) return "";
+    if (typeof v === "string") return v;
+    if (typeof v?.toDate === "function") return v.toDate().toISOString();
+    if (v instanceof Date) return v.toISOString();
+    return "";
+  };
+
   const formatThaiDate = (iso: string) =>
     new Date(iso).toLocaleDateString("th-TH", {
       day: "2-digit",
@@ -103,17 +124,9 @@ export default function RouteHistory() {
       hour12: false,
     });
 
-  const toIso = (t: any): string => {
-    if (!t) return "";
-    if (typeof t === "string") return t;
-    if (typeof t?.toDate === "function") return t.toDate().toISOString();
-    if (t instanceof Date) return t.toISOString();
-    return "";
-  };
-
   const formatDistance = (m?: number) => {
     const meters = Number(m ?? 0);
-    if (!Number.isFinite(meters) || meters <= 0) return "0 กม.";
+    if (!Number.isFinite(meters) || meters <= 0) return "0 ม.";
     if (meters >= 1000) return `${(meters / 1000).toFixed(1)} กม.`;
     return `${Math.round(meters)} ม.`;
   };
@@ -124,8 +137,14 @@ export default function RouteHistory() {
     return `${Math.round(s / 60)} นาที`;
   };
 
+  const getStatus = (r?: RouteHistoryDoc | null) => {
+    const s = (r?.status ?? "").toString().trim().toLowerCase();
+    return s === "recording" || s === "running" || s === "in_progress" ? "recording" : "done";
+  };
+
+  // ✅ use record-time geofence snapshot first, then fallback to geofence
   const routeGeofenceSnapshot = useMemo(() => {
-    const pts = route?.geofenceSnapshot?.points ?? route?.geofencePoints ?? route?.geofence ?? null;
+    const pts = route?.geofenceSnapshot?.points ?? route?.geofence ?? null;
     return normalizeGeo(pts);
   }, [route]);
 
@@ -150,7 +169,7 @@ export default function RouteHistory() {
     );
   }, [effectiveRouteId]);
 
-  // ---------- subscribe points ----------
+  // ---------- subscribe points (NO orderBy; sort client to avoid index/field issues) ----------
   useEffect(() => {
     if (!auth.currentUser) return;
     if (!effectiveRouteId) return;
@@ -164,14 +183,6 @@ export default function RouteHistory() {
         if (Number.isFinite(n)) return n;
       }
       return NaN;
-    };
-
-    const pickIso = (v: any) => {
-      if (!v) return "";
-      if (typeof v === "string") return v;
-      if (typeof v?.toDate === "function") return v.toDate().toISOString();
-      if (v instanceof Date) return v.toISOString();
-      return "";
     };
 
     return onSnapshot(
@@ -203,11 +214,10 @@ export default function RouteHistory() {
             );
 
             const iso =
-              typeof p.timestamp === "string"
-                ? p.timestamp
-                : pickIso(p.timestamp) || pickIso(p.createdAt) || "";
+              typeof p.timestamp === "string" ? p.timestamp : toIso(p.timestamp) || toIso(p.createdAt) || "";
 
             const ms = pickNumber(p.timestampMs, p.tsMs, Date.parse(iso) || 0);
+
             return { latitude: lat, longitude: lng, timestamp: iso, _ms: ms };
           })
           .filter(
@@ -279,11 +289,24 @@ export default function RouteHistory() {
 
     const coordsToFit: LatLng[] = [];
     if (savedGeofence && savedGeofence.length >= 3) coordsToFit.push(...savedGeofence);
-    if (lineCoords.length >= 2) coordsToFit.push(...lineCoords);
+    if (lineCoords.length >= 1) coordsToFit.push(...lineCoords);
 
-    if (coordsToFit.length < 2) return;
+    if (coordsToFit.length === 0) return;
 
     const t = setTimeout(() => {
+      if (coordsToFit.length === 1) {
+        mapRef.current?.animateToRegion(
+          {
+            latitude: coordsToFit[0].latitude,
+            longitude: coordsToFit[0].longitude,
+            latitudeDelta: 0.01,
+            longitudeDelta: 0.01,
+          },
+          350
+        );
+        return;
+      }
+
       mapRef.current?.fitToCoordinates(coordsToFit, {
         edgePadding: {
           top: 90 + insets.top,
@@ -298,14 +321,33 @@ export default function RouteHistory() {
     return () => clearTimeout(t);
   }, [lineCoords, savedGeofence, insets.top]);
 
-  const start = points.length > 0 ? points[0] : null;
-  const end = points.length > 0 ? points[points.length - 1] : null;
+  const startPoint = points.length > 0 ? points[0] : null;
+  const endPoint = points.length > 0 ? points[points.length - 1] : null;
 
-  const startTs = start?.timestamp || (route?.from ? toIso(route.from) : "");
-  const endTs = end?.timestamp || (route?.to ? toIso(route.to) : "");
+  const status = getStatus(route);
+
+  /**
+   * ✅ เวลาแสดง “อิงเวลาจริงจาก Maps ก่อน”:
+   * start = route.startedAtIso > route.startedAt(TS) > point แรก > route.from(planned)
+   * end   = (recording) route.lastLiveIso > point สุดท้าย > route.to(planned)
+   *        (done)       route.endedAtIso > route.endedAt(TS) > point สุดท้าย > route.to(planned)
+   */
+  const startTs =
+    (route?.startedAtIso ?? "") ||
+    toIso(route?.startedAt) ||
+    startPoint?.timestamp ||
+    route?.from ||
+    "";
+
+  const endTs =
+    status === "recording"
+      ? route?.lastLiveIso || endPoint?.timestamp || route?.to || ""
+      : (route?.endedAtIso ?? "") || toIso(route?.endedAt) || endPoint?.timestamp || route?.to || "";
 
   const rangeLine = useMemo(() => {
-    if (startTs && endTs) return `${formatThaiDate(startTs)} • ${formatThaiTime(startTs)} - ${formatThaiTime(endTs)} น.`;
+    if (startTs && endTs) {
+      return `${formatThaiDate(startTs)} • ${formatThaiTime(startTs)} - ${formatThaiTime(endTs)} น.`;
+    }
     return "-";
   }, [startTs, endTs]);
 
@@ -330,22 +372,27 @@ export default function RouteHistory() {
     return Number.isFinite(v) && v >= 0 ? v : 0;
   }, [route?.exitCount]);
 
+  // ✅ เวลาที่จะโชว์ใน callout ของ marker (ให้ตรงกับเวลาจริง)
+  const startMarkerIso = startTs || startPoint?.timestamp || "";
+  const endMarkerIso = endTs || endPoint?.timestamp || "";
+
   // ---------- map interactions ----------
   const mapOnPress = () => {
     if (suppressMapPressRef.current) return;
+    suppressMapPressRef.current = false;
     startMarkerRef.current?.hideCallout?.();
     endMarkerRef.current?.hideCallout?.();
   };
 
   const onPressStartMarker = () => {
-    if (!start) return;
+    if (!startPoint) return;
     suppressMapPressRef.current = true;
     startMarkerRef.current?.showCallout?.();
     setTimeout(() => (suppressMapPressRef.current = false), 250);
   };
 
   const onPressEndMarker = () => {
-    if (!end) return;
+    if (!endPoint) return;
     suppressMapPressRef.current = true;
     endMarkerRef.current?.showCallout?.();
     setTimeout(() => (suppressMapPressRef.current = false), 250);
@@ -354,20 +401,18 @@ export default function RouteHistory() {
   const InfoCallout = ({
     title,
     badge,
-    dateIso,
-    timeIso,
+    iso,
     color,
     coords,
   }: {
     title: string;
     badge: string;
-    dateIso: string | null;
-    timeIso: string | null;
+    iso: string | null;
     color: string;
     coords: { latitude: number; longitude: number } | null;
   }) => {
-    const dateText = dateIso ? formatThaiDate(dateIso) : "-";
-    const timeText = timeIso ? formatThaiTime(timeIso) : "-";
+    const dateText = iso ? formatThaiDate(iso) : "-";
+    const timeText = iso ? formatThaiTime(iso) : "-";
     const coordText = coords ? `${coords.latitude.toFixed(6)}, ${coords.longitude.toFixed(6)}` : "-";
 
     return (
@@ -434,43 +479,41 @@ export default function RouteHistory() {
 
           {lineCoords.length > 1 && <Polyline coordinates={lineCoords} strokeColor="#E28F00" strokeWidth={8} zIndex={5} />}
 
-          {start && (
+          {startPoint && (
             <Marker
               ref={startMarkerRef}
-              coordinate={{ latitude: start.latitude, longitude: start.longitude }}
+              coordinate={{ latitude: startPoint.latitude, longitude: startPoint.longitude }}
               onPress={onPressStartMarker}
-              anchor={{ x: 0, y: 0 }}
+              anchor={{ x: 0.5, y: 1 }}
             >
               <Image source={require("../../assets/images/location.png")} style={styles.mapPin} resizeMode="contain" />
               <Callout tooltip>
                 <InfoCallout
                   title="เริ่มบันทึก"
                   badge="เริ่มต้น"
-                  dateIso={start?.timestamp ?? null}
-                  timeIso={start?.timestamp ?? null}
+                  iso={startMarkerIso || null}
                   color="#16a34a"
-                  coords={{ latitude: start.latitude, longitude: start.longitude }}
+                  coords={{ latitude: startPoint.latitude, longitude: startPoint.longitude }}
                 />
               </Callout>
             </Marker>
           )}
 
-          {end && (
+          {endPoint && (
             <Marker
               ref={endMarkerRef}
-              coordinate={{ latitude: end.latitude, longitude: end.longitude }}
+              coordinate={{ latitude: endPoint.latitude, longitude: endPoint.longitude }}
               onPress={onPressEndMarker}
-              anchor={{ x: 0, y: 20 }}
+              anchor={{ x: 0.5, y: 1 }}
             >
               <Image source={require("../../assets/images/flag.png")} style={styles.mapPin} resizeMode="contain" />
               <Callout tooltip>
                 <InfoCallout
                   title="สิ้นสุด"
-                  badge="สิ้นสุด"
-                  dateIso={end?.timestamp ?? null}
-                  timeIso={end?.timestamp ?? null}
-                  color="#dc2626"
-                  coords={{ latitude: end.latitude, longitude: end.longitude }}
+                  badge={status === "recording" ? "ล่าสุด" : "สิ้นสุด"}
+                  iso={endMarkerIso || null}
+                  color={status === "recording" ? "#0ea5e9" : "#dc2626"}
+                  coords={{ latitude: endPoint.latitude, longitude: endPoint.longitude }}
                 />
               </Callout>
             </Marker>
@@ -492,11 +535,17 @@ export default function RouteHistory() {
           <View style={{ flex: 1 }}>
             <Text style={styles.petName}>{route?.petName ?? "-"}</Text>
             <Text style={styles.range}>{rangeLine}</Text>
-            <Text style={styles.subMeta}>{points.length > 0 ? `จุดเส้นทาง ${points.length} จุด` : "ไม่มีข้อมูลเส้นทาง"}</Text>
+
+            <Text style={styles.subMeta}>
+              {status === "recording"
+                ? `กำลังบันทึก • อัปเดทล่าสุด ${route?.lastLiveIso ? formatThaiTime(route.lastLiveIso) + " น." : "-"}`
+                : points.length > 0
+                ? `จุดเส้นทาง ${points.length} จุด`
+                : "ไม่มีข้อมูลเส้นทาง"}
+            </Text>
           </View>
         </View>
 
-        {/* ✅ icon อยู่บนหัวข้อแล้ว */}
         <View style={styles.metricsRow}>
           <View style={styles.metricItem}>
             <Image source={require("../../assets/images/way.png")} style={styles.metricIconTop} resizeMode="contain" />
@@ -551,10 +600,10 @@ const styles = StyleSheet.create({
 
   topRow: { flexDirection: "row", gap: 12, alignItems: "center" },
 
-  avatar: { 
-    width: 70, 
-    height: 70, 
-    borderRadius: 40 
+  avatar: {
+    width: 70,
+    height: 70,
+    borderRadius: 40,
   },
 
   placeholder: {
@@ -612,11 +661,11 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
 
-  metricValue: { 
-    fontSize: 16, 
-    color: "#111827", 
-    fontWeight: "900", 
-    textAlign: "center" 
+  metricValue: {
+    fontSize: 16,
+    color: "#111827",
+    fontWeight: "900",
+    textAlign: "center",
   },
 
   // Callout

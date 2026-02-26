@@ -89,6 +89,7 @@ function distanceInMeters(lat1: number, lon1: number, lat2: number, lon2: number
 export default function MapTracker() {
   const mapRef = useRef<MapView>(null);
   const router = useRouter();
+  const insets = useSafeAreaInsets();
 
   /* ================= MAP ================= */
   const [initialRegion] = useState<Region>({
@@ -122,11 +123,9 @@ export default function MapTracker() {
 
   const [menuVisible, setMenuVisible] = useState(false);
 
-  // ✅ Route modal state
+  /* ================= ROUTE MODAL STATE ================= */
   const [routeModalVisible, setRouteModalVisible] = useState(false);
   const [routePreset, setRoutePreset] = useState<"today" | "custom">("today");
-
-  /* ✅ saved time filter */
   const [savedRouteFilter, setSavedRouteFilter] = useState<{ from: Date; to: Date } | null>(null);
 
   /* ================= GEOFENCE ================= */
@@ -135,38 +134,40 @@ export default function MapTracker() {
   const [geofenceRadius, setGeofenceRadius] = useState(300);
   const [isInsideGeofence, setIsInsideGeofence] = useState<boolean | null>(null);
 
-  // drawing points
   const [geofencePoints, setGeofencePoints] = useState<GeoPoint[]>([]);
   const [geofencePath, setGeofencePath] = useState<GeoPoint[]>([]);
 
-  // ✅ stored = อ่านจาก Firestore (ไม่โชว์ทันที)
   const [storedGeofence, setStoredGeofence] = useState<GeoPoint[] | null>(null);
-
-  // ✅ active = ตัวที่ “ใช้งานจริง” (โชว์บนแผนที่ + snapshot ลง route)
   const [activeGeofence, setActiveGeofence] = useState<GeoPoint[] | null>(null);
-
-  // ✅ active until (ค้างจนหมดเวลา)
   const [activeGeofenceUntil, setActiveGeofenceUntil] = useState<Date | null>(null);
 
   const [deviceName, setDeviceName] = useState<string>("GPS Tracker");
 
-  /* ================= RECORDING (REALTIME) ================= */
+  /* ================= RECORDING ================= */
   const [isRecording, setIsRecording] = useState(false);
   const [recordId, setRecordId] = useState<string | null>(null);
+
   const stopTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const startTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const recordingCtxRef = useRef<{ deviceCode: string; petId: string; recordId: string } | null>(null);
-  const insets = useSafeAreaInsets();
-  // ✅ metrics refs for current recording
+
+  // metrics refs for current recording
   const recordingStartMsRef = useRef<number | null>(null);
   const geofenceExitCountRef = useRef<number>(0);
 
-  /* ================= HELPERS ================= */
+  /* ================= HELPERS / REFS ================= */
   const normalizeGeo = (poly: GeoPoint[] | null | undefined) => {
     if (!poly || !Array.isArray(poly) || poly.length < 3) return null;
     return poly.map((p) => ({ latitude: Number(p.latitude), longitude: Number(p.longitude) }));
   };
+
+  const MAX_ACCEPT_ACCURACY = 50;
+  const MAX_PLAUSIBLE_SPEED = 8;
+
+  const lastAcceptedRef = useRef<{ lat: number; lng: number; tsMs: number } | null>(null);
+  const prevInsideRef = useRef<boolean | null>(null);
+  const lastMetricsPushRef = useRef<number>(0);
 
   const clearActiveGeofence = useCallback(async () => {
     setActiveGeofence(null);
@@ -177,7 +178,6 @@ export default function MapTracker() {
   }, []);
 
   const resetAfterRecordingEnd = useCallback(async () => {
-    // 1) stop local timers
     if (stopTimeoutRef.current) {
       clearTimeout(stopTimeoutRef.current);
       stopTimeoutRef.current = null;
@@ -187,21 +187,17 @@ export default function MapTracker() {
       startTimeoutRef.current = null;
     }
 
-    // 2) reset recording state
     setIsRecording(false);
     setIsTracking(false);
     setRecordId(null);
     recordingCtxRef.current = null;
 
-    // 3) clear active geofence (บนแผนที่)
     await clearActiveGeofence();
 
-    // 4) reset time filter
     setSavedRouteFilter(null);
     try {
       await AsyncStorage.removeItem(ROUTE_FILTER_STORAGE_KEY);
     } catch { }
-
   }, [clearActiveGeofence]);
 
   const persistActiveGeofence = useCallback(
@@ -213,262 +209,68 @@ export default function MapTracker() {
     []
   );
 
-  /* ================= LOAD PET MATCH ================= */
-  useEffect(() => {
-    if (!auth.currentUser || !deviceCode) {
-      setPetName(null);
-      setPetPhotoURL(null);
-      setPetId(null);
-      return;
+  /* ================= PURE UTILS ================= */
+  function isPointInPolygon(pt: GeoPoint, poly: GeoPoint[]) {
+    let inside = false;
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+      const xi = poly[i].latitude;
+      const yi = poly[i].longitude;
+      const xj = poly[j].latitude;
+      const yj = poly[j].longitude;
+
+      const intersect =
+        (yi > pt.longitude) !== (yj > pt.longitude) &&
+        pt.latitude < ((xj - xi) * (pt.longitude - yi)) / ((yj - yi) || 1e-12) + xi;
+
+      if (intersect) inside = !inside;
     }
+    return inside;
+  }
 
-    const ref = doc(db, "users", auth.currentUser.uid, "deviceMatches", deviceCode);
+  const sendGeofenceAlert = useCallback(
+    async (type: "exit" | "enter", distance: number) => {
+      if (!deviceCode) return;
 
-    return onSnapshot(ref, (snap) => {
-      if (!snap.exists()) {
-        setPetName(null);
-        setPetPhotoURL(null);
-        setPetId(null);
-        return;
-      }
+      const now = new Date();
+      const atUtc = now.toISOString();
+      const atTh = now.toLocaleString("th-TH", { dateStyle: "long", timeStyle: "medium" });
 
-      const data: any = snap.data();
-      setPetName(data.petName ?? null);
-      setPetPhotoURL(data.photoURL ?? null);
-      setPetId(data.petId ?? null);
+      const message =
+        type === "exit" ? `สัตว์เลี้ยงออกนอกพื้นที่ (${Math.round(distance)} ม.)` : `สัตว์เลี้ยงกลับเข้าพื้นที่`;
 
-      setPetMarkerKey((k) => k + 1);
-      setMarkerReady(false);
-    });
-  }, [deviceCode]);
-
-  /* ================= LOAD GEOFENCE (stored only) ================= */
-  useEffect(() => {
-    if (!auth.currentUser || !deviceCode) return;
-
-    const gfRef = doc(db, "users", auth.currentUser.uid, "geofences", deviceCode);
-
-    return onSnapshot(gfRef, (snap) => {
-      if (!snap.exists()) {
-        setStoredGeofence(null);
-        return;
-      }
-
-      const data: any = snap.data();
-      const pts = data?.points;
-
-      if (Array.isArray(pts) && pts.length >= 3) {
-        const polygon = pts.map((p: any) => ({
-          latitude: p.latitude,
-          longitude: p.longitude,
-        }));
-        setStoredGeofence(normalizeGeo(polygon));
-      } else {
-        setStoredGeofence(null);
-      }
-    });
-  }, [deviceCode]);
-
-  /* ✅ load previously saved filter (time) */
-  useEffect(() => {
-    const loadFilter = async () => {
-      try {
-        const raw = await AsyncStorage.getItem(ROUTE_FILTER_STORAGE_KEY);
-        if (!raw) return;
-        const parsed = JSON.parse(raw);
-        if (parsed?.from && parsed?.to) {
-          const from = new Date(parsed.from);
-          const to = new Date(parsed.to);
-          if (!Number.isNaN(from.getTime()) && !Number.isNaN(to.getTime())) {
-            setSavedRouteFilter({ from, to });
-          }
-        }
-      } catch { }
-    };
-    void loadFilter();
-  }, []);
-
-  /* ✅ load active geofence (ค้างไว้) */
-  useEffect(() => {
-    const loadActiveGeo = async () => {
-      try {
-        const raw = await AsyncStorage.getItem(ACTIVE_GEOFENCE_STORAGE_KEY);
-        if (!raw) return;
-
-        const parsed = JSON.parse(raw);
-        if (!parsed?.geofence) return;
-
-        // ถ้ามี deviceCode ใน key และไม่ตรงอุปกรณ์ปัจจุบัน -> ไม่ใช้
-        if (parsed.deviceCode && deviceCode && parsed.deviceCode !== deviceCode) return;
-
-        const geo = normalizeGeo(parsed.geofence);
-        if (!geo) return;
-
-        // ✅ untilIso optional
-        if (parsed.untilIso) {
-          const until = new Date(parsed.untilIso);
-          if (Number.isNaN(until.getTime())) return;
-
-          // หมดเวลาแล้ว -> ล้าง
-          if (until.getTime() <= Date.now()) {
-            await AsyncStorage.removeItem(ACTIVE_GEOFENCE_STORAGE_KEY);
-            return;
-          }
-
-          setActiveGeofenceUntil(until);
-        } else {
-          setActiveGeofenceUntil(null); // ไม่มีวันหมดอายุ
-        }
-
-        setActiveGeofence(geo);
-      } catch { }
-    };
-
-    void loadActiveGeo();
-  }, [deviceCode]);
-
-  /* ✅ auto clear active geofence when expired */
-  useEffect(() => {
-    if (!activeGeofenceUntil) return;
-
-    const timer = setInterval(() => {
-      if (!activeGeofenceUntil) return;
-      if (activeGeofenceUntil.getTime() <= Date.now()) {
-        void clearActiveGeofence();
-      }
-    }, 30000);
-
-    return () => clearInterval(timer);
-  }, [activeGeofenceUntil, clearActiveGeofence]);
-
-  /* ================= RESET WHEN NO DEVICE ================= */
-  useEffect(() => {
-    if (deviceCode) return;
-
-    if (isRecording) {
-      void stopRecording("cancelled");
-    }
-
-    setIsTracking(false);
-    setLocation(null);
-    setPetLocation(null);
-    setRawPath([]);
-    setDisplayPath([]);
-    setAccumulatedDistance(0);
-    setPetName(null);
-    setPetPhotoURL(null);
-    setPetId(null);
-
-    // reset geo drawing
-    setGeofencePoints([]);
-    setGeofencePath([]);
-    setIsGeofenceMode(false);
-    setIsInsideGeofence(null);
-    setGeofenceCenter(null);
-
-    // stored/active
-    setStoredGeofence(null);
-    setActiveGeofence(null);
-    setActiveGeofenceUntil(null);
-  }, [deviceCode]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  /* ================= CLEANUP TIMERS ON UNMOUNT ================= */
-  useEffect(() => {
-    return () => {
-      if (stopTimeoutRef.current) clearTimeout(stopTimeoutRef.current);
-      if (startTimeoutRef.current) clearTimeout(startTimeoutRef.current);
-    };
-  }, []);
-
-  /* ================= BLOCK SWITCH DEVICE WHILE RECORDING ================= */
-  useEffect(() => {
-    if (!isRecording) return;
-
-    const locked = recordingCtxRef.current;
-    if (!locked) return;
-
-    if (deviceCode && deviceCode !== locked.deviceCode) {
-      Alert.alert(
-        "กำลังบันทึกเส้นทางอยู่",
-        "ไม่สามารถสลับอุปกรณ์ระหว่างบันทึกได้ ระบบจะยกเลิกการบันทึกปัจจุบัน"
-      );
-      void stopRecording("cancelled");
-    }
-  }, [deviceCode, isRecording]);
-
-  useEffect(() => {
-    const sub = DeviceEventEmitter.addListener(
-      ROUTE_RECORDING_ENDED_EVENT,
-      (payload?: { routeId?: string; deviceCode?: string | null }) => {
-        // ✅ ถ้ามี deviceCode และไม่ใช่อุปกรณ์ที่เปิดอยู่ -> ไม่ต้องรีเซต
-        if (payload?.deviceCode && deviceCode && payload.deviceCode !== deviceCode) return;
-
-        void resetAfterRecordingEnd();
-      }
-    );
-
-    return () => sub.remove();
-  }, [deviceCode, resetAfterRecordingEnd]);
-
-  useEffect(() => {
-    if (!auth.currentUser) return;
-    if (!recordId) return;
-
-    const uid = auth.currentUser.uid;
-    const ref = doc(db, "users", uid, "routeHistories", recordId);
-
-    return onSnapshot(ref, (snap) => {
-      if (!snap.exists()) return;
-      const data: any = snap.data();
-      const s = (data?.status ?? "").toString().toLowerCase();
-
-      // ✅ ถ้าไม่ใช่ recording แล้ว -> reset map filter/geofence
-      if (s && s !== "recording" && s !== "running" && s !== "in_progress") {
-        void resetAfterRecordingEnd();
-      }
-    });
-  }, [recordId, resetAfterRecordingEnd]);
+      await push(dbRef(rtdb, `devices/${deviceCode}/alerts`), {
+        type,
+        message,
+        atUtc,
+        atTh,
+        radiusKm: geofenceRadius / 1000,
+        device: deviceCode,
+      });
+    },
+    [deviceCode, geofenceRadius]
+  );
 
   /* ================= FORMAT ================= */
   const formatThaiDate = (iso: string) =>
-    new Date(iso).toLocaleDateString("th-TH", {
-      day: "numeric",
-      month: "long",
-      year: "numeric",
-    });
+    new Date(iso).toLocaleDateString("th-TH", { day: "numeric", month: "long", year: "numeric" });
 
   const formatThaiTime = (iso: string) =>
-    new Date(iso).toLocaleTimeString("th-TH", {
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-    });
+    new Date(iso).toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 
   const formatThaiDateShort = (d: Date) =>
-    d.toLocaleDateString("th-TH", {
-      day: "2-digit",
-      month: "short",
-      year: "numeric",
-    });
+    d.toLocaleDateString("th-TH", { day: "2-digit", month: "short", year: "numeric" });
 
   const formatThaiTimeShort = (d: Date) =>
-    d.toLocaleTimeString("th-TH", {
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: false,
-    });
+    d.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit", hour12: false });
 
   /* ================= PATH ================= */
-  const appendPoint = (point: TrackPoint) => {
+  const appendPoint = (point: TrackPoint, minMove: number = MIN_MOVE_DISTANCE) => {
     setRawPath((prev) => {
       if (prev.length > 0) {
         const last = prev[prev.length - 1];
         const dist = distanceInMeters(last.latitude, last.longitude, point.latitude, point.longitude);
-        if (dist >= MIN_MOVE_DISTANCE) {
-          setAccumulatedDistance((d) => d + dist);
-        } else {
-          return prev;
-        }
+        if (dist >= minMove) setAccumulatedDistance((d) => d + dist);
+        else return prev;
       }
       return [...prev, point];
     });
@@ -477,12 +279,12 @@ export default function MapTracker() {
       if (prev.length === 0) return [{ latitude: point.latitude, longitude: point.longitude }];
       const last = prev[prev.length - 1];
       const dist = distanceInMeters(last.latitude, last.longitude, point.latitude, point.longitude);
-      if (dist < MIN_MOVE_DISTANCE) return prev;
+      if (dist < minMove) return prev;
       return [...prev, { latitude: point.latitude, longitude: point.longitude }];
     });
   };
 
-  /* ================= SAVE POINT (FIRESTORE) ================= */
+  /* ================= SAVE POINT / METRICS ================= */
   const savePoint = async (rid: string, point: TrackPoint) => {
     if (!auth.currentUser) return;
     const uid = auth.currentUser.uid;
@@ -492,9 +294,26 @@ export default function MapTracker() {
       latitude: point.latitude,
       longitude: point.longitude,
       timestamp: point.timestamp,
-      timestampMs: Number.isFinite(tsMs) ? tsMs : Date.now(), // ✅ เพิ่ม
+      timestampMs: Number.isFinite(tsMs) ? tsMs : Date.now(),
       createdAt: serverTimestamp(),
     });
+  };
+
+  const pushMetrics = async (rid: string) => {
+    if (!auth.currentUser) return;
+    const uid = auth.currentUser.uid;
+
+    const startMs = recordingStartMsRef.current;
+    const durationSeconds = startMs && Date.now() > startMs ? Math.round((Date.now() - startMs) / 1000) : 0;
+
+    try {
+      await updateDoc(doc(db, "users", uid, "routeHistories", rid), {
+        distanceMeters: Number(accumulatedDistance.toFixed(1)),
+        durationSeconds,
+        exitCount: geofenceExitCountRef.current ?? 0,
+        lastLiveAt: serverTimestamp(),
+      });
+    } catch { }
   };
 
   const geoInstruction =
@@ -529,49 +348,61 @@ export default function MapTracker() {
       setLocation(current);
       setPetLocation(current);
 
-      // ===== GEOFENCE CHECK =====
-      if (geofenceCenter) {
-        const distFromCenter = distanceInMeters(
-          geofenceCenter.latitude,
-          geofenceCenter.longitude,
-          current.latitude,
-          current.longitude
-        );
+      // ===== FILTER JITTER =====
+      const tsMs = Date.parse(timestamp) || Date.now();
+      const acc = Number(current.accuracy ?? 999);
+      if (acc > MAX_ACCEPT_ACCURACY) return true;
 
-        const inside = distFromCenter <= geofenceRadius;
+      const prev = lastAcceptedRef.current;
+      let dynamicMin = Math.max(MIN_MOVE_DISTANCE, acc * 0.6);
 
-        if (isInsideGeofence === true && !inside) {
-          sendGeofenceAlert("exit", distFromCenter);
-
-          // ✅ count exits only while recording
-          if (isRecording) geofenceExitCountRef.current += 1;
-
-          setIsInsideGeofence(false);
-        }
-
-        if (isInsideGeofence === false && inside) {
-          sendGeofenceAlert("enter", distFromCenter);
-          setIsInsideGeofence(true);
-        }
-
-        if (isInsideGeofence === null) {
-          setIsInsideGeofence(inside);
-        }
+      if (prev) {
+        const dt = Math.max(1, (tsMs - prev.tsMs) / 1000);
+        const dist = distanceInMeters(prev.lat, prev.lng, current.latitude, current.longitude);
+        const speed = dist / dt;
+        if (speed > MAX_PLAUSIBLE_SPEED) return true;
+        if (dist < dynamicMin) return true;
       }
 
-      const p: TrackPoint = {
-        latitude: current.latitude,
-        longitude: current.longitude,
-        timestamp,
-      };
+      lastAcceptedRef.current = { lat: current.latitude, lng: current.longitude, tsMs };
 
-      appendPoint(p);
+      const p: TrackPoint = { latitude: current.latitude, longitude: current.longitude, timestamp };
+      appendPoint(p, dynamicMin);
 
-      // ✅ ถ้ากำลัง recording ให้บันทึก point realtime
+      // ===== GEOFENCE CHECK =====
+      if (activeGeofence && activeGeofence.length >= 3) {
+        const inside = isPointInPolygon(
+          { latitude: current.latitude, longitude: current.longitude },
+          activeGeofence
+        );
+
+        const prevInside = prevInsideRef.current;
+
+        if (prevInside === true && !inside) {
+          void sendGeofenceAlert("exit", 0);
+          if (isRecording) geofenceExitCountRef.current += 1;
+        }
+
+        if (prevInside === false && inside) {
+          void sendGeofenceAlert("enter", 0);
+        }
+
+        prevInsideRef.current = inside;
+        setIsInsideGeofence(inside);
+      }
+
+      // ===== SAVE POINT + METRICS =====
       if (isRecording) {
         const locked = recordingCtxRef.current;
         if (!locked || locked.deviceCode !== code) return true;
+
         void savePoint(locked.recordId, p);
+
+        const now = Date.now();
+        if (now - lastMetricsPushRef.current >= 10000) {
+          lastMetricsPushRef.current = now;
+          void pushMetrics(locked.recordId);
+        }
       }
 
       return true;
@@ -586,7 +417,6 @@ export default function MapTracker() {
   /* ================= AUTO TRACK (ONLY WHEN RECORDING) ================= */
   useEffect(() => {
     if (!isTracking || !isRecording) return;
-
     const locked = recordingCtxRef.current;
     if (!locked) return;
 
@@ -601,6 +431,12 @@ export default function MapTracker() {
   const stopRecording = async (finalStatus: "completed" | "cancelled") => {
     const locked = recordingCtxRef.current;
     const rid = locked?.recordId ?? recordId;
+
+    if (locked?.deviceCode) {
+      try {
+        await fetchLocation(locked.deviceCode, { silent: true });
+      } catch { }
+    }
 
     if (!auth.currentUser || !rid) {
       setIsRecording(false);
@@ -627,36 +463,25 @@ export default function MapTracker() {
     recordingCtxRef.current = null;
 
     try {
-      // ✅ duration (วินาที) จากตอนเริ่ม recording
       const startMs = recordingStartMsRef.current;
-      const durationSeconds =
-        startMs && Date.now() > startMs
-          ? Math.round((Date.now() - startMs) / 1000)
-          : 0;
-
-      // ✅ นับจำนวนครั้งออกนอกพื้นที่
+      const durationSeconds = startMs && Date.now() > startMs ? Math.round((Date.now() - startMs) / 1000) : 0;
       const exitCount = geofenceExitCountRef.current ?? 0;
 
       await updateDoc(doc(db, "users", uid, "routeHistories", rid), {
         status: finalStatus,
         endedAt: serverTimestamp(),
         endedAtIso: new Date().toISOString(),
-
-        // ✅ metrics from Maps
         distanceMeters: Number(accumulatedDistance.toFixed(1)),
         durationSeconds,
         exitCount,
       });
 
-      // (แนะนำ) reset ref หลังบันทึกเสร็จ
       recordingStartMsRef.current = null;
       geofenceExitCountRef.current = 0;
     } catch { }
 
     if (finalStatus === "completed" || finalStatus === "cancelled") {
-      void clearActiveGeofence();
-
-      // ✅ รีเซตเวลาเมื่อบันทึกเสร็จสิ้น
+      await clearActiveGeofence();
       setSavedRouteFilter(null);
       try {
         await AsyncStorage.removeItem(ROUTE_FILTER_STORAGE_KEY);
@@ -665,18 +490,9 @@ export default function MapTracker() {
   };
 
   const startRecording = async (startAt: Date, stopAt: Date) => {
-    if (!auth.currentUser) {
-      Alert.alert("กรุณาเข้าสู่ระบบ");
-      return;
-    }
-    if (!deviceCode) {
-      Alert.alert("กรุณาเลือกอุปกรณ์");
-      return;
-    }
-    if (!petName || !petId) {
-      Alert.alert("ยังไม่ได้ผูกสัตว์เลี้ยงกับอุปกรณ์");
-      return;
-    }
+    if (!auth.currentUser) return Alert.alert("กรุณาเข้าสู่ระบบ");
+    if (!deviceCode) return Alert.alert("กรุณาเลือกอุปกรณ์");
+    if (!petName || !petId) return Alert.alert("ยังไม่ได้ผูกสัตว์เลี้ยงกับอุปกรณ์");
 
     const uid = auth.currentUser.uid;
 
@@ -684,7 +500,11 @@ export default function MapTracker() {
     setDisplayPath([]);
     setAccumulatedDistance(0);
 
-    // ✅ ใช้ geofence “ตัวที่ใช้งานจริง” เท่านั้น (active)
+    lastAcceptedRef.current = null;
+    prevInsideRef.current = null;
+    setIsInsideGeofence(null);
+    lastMetricsPushRef.current = 0;
+
     const geoSnapshot = normalizeGeo(activeGeofence);
 
     const ref = await addDoc(collection(db, "users", uid, "routeHistories"), {
@@ -692,17 +512,12 @@ export default function MapTracker() {
       petId,
       petName,
       photoURL: petPhotoURL ?? null,
-
       from: startAt.toISOString(),
       to: stopAt.toISOString(),
-
-      // ✅ SNAPSHOT geofence ณ เวลาบันทึก (แก้ mismatch)
       geofence: geoSnapshot ?? null,
-
       status: "recording",
       createdAt: serverTimestamp(),
       startedAt: serverTimestamp(),
-
       startedAtIso: new Date().toISOString(),
       distanceMeters: 0,
       durationSeconds: 0,
@@ -713,21 +528,15 @@ export default function MapTracker() {
     setIsRecording(true);
     setIsTracking(true);
 
-    recordingCtxRef.current = {
-      deviceCode,
-      petId,
-      recordId: ref.id,
-    };
+    recordingCtxRef.current = { deviceCode, petId, recordId: ref.id };
 
     const msToStop = stopAt.getTime() - Date.now();
     if (msToStop > 0) {
-      stopTimeoutRef.current = setTimeout(() => {
-        void stopRecording("completed");
-      }, msToStop);
+      stopTimeoutRef.current = setTimeout(() => void stopRecording("completed"), msToStop);
     } else {
       void stopRecording("completed");
     }
-    // reset metrics
+
     recordingStartMsRef.current = Date.now();
     geofenceExitCountRef.current = 0;
   };
@@ -745,6 +554,189 @@ export default function MapTracker() {
     setIsInsideGeofence(null);
   };
 
+  /* ================= LOAD PET MATCH ================= */
+  useEffect(() => {
+    if (!auth.currentUser || !deviceCode) {
+      setPetName(null);
+      setPetPhotoURL(null);
+      setPetId(null);
+      return;
+    }
+
+    const ref = doc(db, "users", auth.currentUser.uid, "deviceMatches", deviceCode);
+    return onSnapshot(ref, (snap) => {
+      if (!snap.exists()) {
+        setPetName(null);
+        setPetPhotoURL(null);
+        setPetId(null);
+        return;
+      }
+      const data: any = snap.data();
+      setPetName(data.petName ?? null);
+      setPetPhotoURL(data.photoURL ?? null);
+      setPetId(data.petId ?? null);
+
+      setPetMarkerKey((k) => k + 1);
+      setMarkerReady(false);
+    });
+  }, [deviceCode]);
+
+  /* ================= LOAD GEOFENCE (stored only) ================= */
+  useEffect(() => {
+    if (!auth.currentUser || !deviceCode) return;
+    const gfRef = doc(db, "users", auth.currentUser.uid, "geofences", deviceCode);
+
+    return onSnapshot(gfRef, (snap) => {
+      if (!snap.exists()) {
+        setStoredGeofence(null);
+        return;
+      }
+      const data: any = snap.data();
+      const pts = data?.points;
+
+      if (Array.isArray(pts) && pts.length >= 3) {
+        const polygon = pts.map((p: any) => ({ latitude: p.latitude, longitude: p.longitude }));
+        setStoredGeofence(normalizeGeo(polygon));
+      } else {
+        setStoredGeofence(null);
+      }
+    });
+  }, [deviceCode]);
+
+  /* ✅ load previously saved filter (time) */
+  useEffect(() => {
+    const loadFilter = async () => {
+      try {
+        const raw = await AsyncStorage.getItem(ROUTE_FILTER_STORAGE_KEY);
+        if (!raw) return;
+        const parsed = JSON.parse(raw);
+        if (parsed?.from && parsed?.to) {
+          const from = new Date(parsed.from);
+          const to = new Date(parsed.to);
+          if (!Number.isNaN(from.getTime()) && !Number.isNaN(to.getTime())) setSavedRouteFilter({ from, to });
+        }
+      } catch { }
+    };
+    void loadFilter();
+  }, []);
+
+  /* ✅ load active geofence (ค้างไว้) */
+  useEffect(() => {
+    const loadActiveGeo = async () => {
+      try {
+        const raw = await AsyncStorage.getItem(ACTIVE_GEOFENCE_STORAGE_KEY);
+        if (!raw) return;
+
+        const parsed = JSON.parse(raw);
+        if (!parsed?.geofence) return;
+
+        if (parsed.deviceCode && deviceCode && parsed.deviceCode !== deviceCode) return;
+
+        const geo = normalizeGeo(parsed.geofence);
+        if (!geo) return;
+
+        if (parsed.untilIso) {
+          const until = new Date(parsed.untilIso);
+          if (Number.isNaN(until.getTime())) return;
+
+          if (until.getTime() <= Date.now()) {
+            await AsyncStorage.removeItem(ACTIVE_GEOFENCE_STORAGE_KEY);
+            return;
+          }
+          setActiveGeofenceUntil(until);
+        } else {
+          setActiveGeofenceUntil(null);
+        }
+
+        setActiveGeofence(geo);
+      } catch { }
+    };
+
+    void loadActiveGeo();
+  }, [deviceCode]);
+
+  /* ✅ auto clear active geofence when expired */
+  useEffect(() => {
+    if (!activeGeofenceUntil) return;
+    const timer = setInterval(() => {
+      if (activeGeofenceUntil.getTime() <= Date.now()) void clearActiveGeofence();
+    }, 30000);
+    return () => clearInterval(timer);
+  }, [activeGeofenceUntil, clearActiveGeofence]);
+
+  /* ================= RESET WHEN NO DEVICE ================= */
+  useEffect(() => {
+    if (deviceCode) return;
+
+    if (isRecording) void stopRecording("cancelled");
+
+    setIsTracking(false);
+    setLocation(null);
+    setPetLocation(null);
+    setRawPath([]);
+    setDisplayPath([]);
+    setAccumulatedDistance(0);
+    setPetName(null);
+    setPetPhotoURL(null);
+    setPetId(null);
+
+    setGeofencePoints([]);
+    setGeofencePath([]);
+    setIsGeofenceMode(false);
+    setIsInsideGeofence(null);
+    setGeofenceCenter(null);
+
+    setStoredGeofence(null);
+    setActiveGeofence(null);
+    setActiveGeofenceUntil(null);
+  }, [deviceCode]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /* ================= CLEANUP TIMERS ON UNMOUNT ================= */
+  useEffect(() => {
+    return () => {
+      if (stopTimeoutRef.current) clearTimeout(stopTimeoutRef.current);
+      if (startTimeoutRef.current) clearTimeout(startTimeoutRef.current);
+    };
+  }, []);
+
+  /* ================= BLOCK SWITCH DEVICE WHILE RECORDING ================= */
+  useEffect(() => {
+    if (!isRecording) return;
+    const locked = recordingCtxRef.current;
+    if (!locked) return;
+
+    if (deviceCode && deviceCode !== locked.deviceCode) {
+      Alert.alert("กำลังบันทึกเส้นทางอยู่", "ไม่สามารถสลับอุปกรณ์ระหว่างบันทึกได้ ระบบจะยกเลิกการบันทึกปัจจุบัน");
+      void stopRecording("cancelled");
+    }
+  }, [deviceCode, isRecording]);
+
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener(
+      ROUTE_RECORDING_ENDED_EVENT,
+      (payload?: { routeId?: string; deviceCode?: string | null }) => {
+        if (payload?.deviceCode && deviceCode && payload.deviceCode !== deviceCode) return;
+        void resetAfterRecordingEnd();
+      }
+    );
+    return () => sub.remove();
+  }, [deviceCode, resetAfterRecordingEnd]);
+
+  useEffect(() => {
+    if (!auth.currentUser) return;
+    if (!recordId) return;
+
+    const uid = auth.currentUser.uid;
+    const ref = doc(db, "users", uid, "routeHistories", recordId);
+
+    return onSnapshot(ref, (snap) => {
+      if (!snap.exists()) return;
+      const data: any = snap.data();
+      const s = (data?.status ?? "").toString().toLowerCase();
+      if (s && s !== "recording" && s !== "running" && s !== "in_progress") void resetAfterRecordingEnd();
+    });
+  }, [recordId, resetAfterRecordingEnd]);
+
   /* ================= LOAD ACTIVE DEVICE ================= */
   useFocusEffect(
     useCallback(() => {
@@ -760,7 +752,6 @@ export default function MapTracker() {
           setRawPath([]);
           setDisplayPath([]);
           setAccumulatedDistance(0);
-
           return;
         }
 
@@ -770,11 +761,8 @@ export default function MapTracker() {
         const list: Device[] = stored ? JSON.parse(stored) : [];
         const device = list.find((d) => d.code === active);
 
-        if (device?.type && DEVICE_TYPES[device.type]) {
-          setDeviceName(DEVICE_TYPES[device.type].name);
-        } else {
-          setDeviceName("GPS Tracker");
-        }
+        if (device?.type && DEVICE_TYPES[device.type]) setDeviceName(DEVICE_TYPES[device.type].name);
+        else setDeviceName("GPS Tracker");
 
         setIsTracking(false);
       };
@@ -803,17 +791,17 @@ export default function MapTracker() {
       const toMs = savedRouteFilter.to.getTime();
       if (toMs <= Date.now()) {
         setSavedRouteFilter(null);
-        try { await AsyncStorage.removeItem(ROUTE_FILTER_STORAGE_KEY); } catch { }
-
-        // ✅ ล้าง geofence ด้วยเมื่อเวลาหมด
+        try {
+          await AsyncStorage.removeItem(ROUTE_FILTER_STORAGE_KEY);
+        } catch { }
         await clearActiveGeofence();
       }
     }, 30000);
 
     return () => clearInterval(t);
-  }, [savedRouteFilter]);
+  }, [savedRouteFilter, clearActiveGeofence]);
 
-  /* ================= ADD DEVICE (UNIFIED) ================= */
+  /* ================= ADD DEVICE ================= */
   const confirmAddDevice = async () => {
     const code = tempCode.trim().toUpperCase();
     if (!code) return;
@@ -840,14 +828,18 @@ export default function MapTracker() {
     await AsyncStorage.setItem("activeDevice", code);
 
     setDeviceCode(code);
+
+    lastAcceptedRef.current = null;
+    prevInsideRef.current = null;
+    setIsInsideGeofence(null);
+    lastMetricsPushRef.current = 0;
+
     setIsTracking(true);
     setModalVisible(false);
     setTempCode("");
-
-    // ✅ ไม่โชว์ geofence อัตโนมัติ (activeGeofence ต้องให้ user เลือกเอง)
-    // storedGeofence จะถูกโหลดมาเงียบ ๆ ตาม useEffect
   };
 
+  /* ================= GEOFENCE ACTIONS ================= */
   const cancelGeofence = () => {
     if (geofencePoints.length > 0) {
       Alert.alert("ยกเลิกการตั้งค่า", "ข้อมูลที่กำหนดไว้จะหายไป", [
@@ -866,126 +858,69 @@ export default function MapTracker() {
     setIsGeofenceMode(false);
   };
 
-  const sendGeofenceAlert = async (type: "exit" | "enter", distance: number) => {
-    if (!deviceCode) return;
-
-    const now = new Date();
-    const atUtc = now.toISOString();
-    const atTh = now.toLocaleString("th-TH", { dateStyle: "long", timeStyle: "medium" });
-
-    const message =
-      type === "exit" ? `สัตว์เลี้ยงออกนอกพื้นที่ (${Math.round(distance)} ม.)` : `สัตว์เลี้ยงกลับเข้าพื้นที่`;
-
-    await push(dbRef(rtdb, `devices/${deviceCode}/alerts`), {
-      type,
-      message,
-      atUtc,
-      atTh,
-      radiusKm: geofenceRadius / 1000,
-      device: deviceCode,
-    });
-  };
-
   const saveGeofence = async () => {
-    if (geofencePoints.length < 3) {
-      Alert.alert("ต้องมีอย่างน้อย 3 จุด");
-      return;
-    }
+    if (geofencePoints.length < 3) return Alert.alert("ต้องมีอย่างน้อย 3 จุด");
+    if (!auth.currentUser) return Alert.alert("กรุณาเข้าสู่ระบบ");
+    if (!deviceCode) return Alert.alert("กรุณาเลือกอุปกรณ์ก่อน");
 
-    if (!auth.currentUser) {
-      Alert.alert("กรุณาเข้าสู่ระบบ");
-      return;
-    }
-    if (!deviceCode) {
-      Alert.alert("กรุณาเลือกอุปกรณ์ก่อน");
-      return;
-    }
+    const polygon = normalizeGeo([...geofencePoints]);
+    if (!polygon || polygon.length < 3) return Alert.alert("Geofence ไม่ถูกต้อง", "กรุณาลองกำหนดจุดใหม่");
 
-    const polygon = normalizeGeo([...geofencePoints]); // ✅ normalize และกัน NaN
-    if (!polygon || polygon.length < 3) {
-      Alert.alert("Geofence ไม่ถูกต้อง", "กรุณาลองกำหนดจุดใหม่");
-      return;
-    }
-
-    // ✅ 1) เก็บลง stored (เหมือนเดิม)
+    // 1) เก็บลง stored
     setStoredGeofence(polygon);
 
-    // ✅ 2) ตั้งเป็น active ทันที -> โชว์บนแผนที่ + checkmark ผ่าน
+    // 2) active
     setActiveGeofence(polygon);
 
     await persistActiveGeofence({
       deviceCode,
       geofence: polygon,
-      untilIso: savedRouteFilter?.to ? savedRouteFilter.to.toISOString() : null, // ✅ ยังไม่ตั้งเวลา -> null
+      untilIso: savedRouteFilter?.to ? savedRouteFilter.to.toISOString() : null,
     });
 
     if (savedRouteFilter?.to) {
       const until = savedRouteFilter.to;
-
-      if (until.getTime() > Date.now()) {
-        setActiveGeofenceUntil(until);
-      } else {
+      if (until.getTime() > Date.now()) setActiveGeofenceUntil(until);
+      else {
         await clearActiveGeofence();
         setActiveGeofenceUntil(null);
       }
     } else {
-      // ยังไม่ตั้งเวลา -> ไม่มีวันหมดอายุ (จนกว่าจะตั้ง)
       setActiveGeofenceUntil(null);
     }
 
-    // ✅ 3) บันทึกลง Firestore
+    // 3) บันทึกลง Firestore
     try {
       const uid = auth.currentUser.uid;
-
       await setDoc(
         doc(db, "users", uid, "geofences", deviceCode),
-        {
-          deviceCode,
-          points: polygon,
-          updatedAt: serverTimestamp(),
-
-          // ✅ ถ้าอยากไม่ให้ createdAt ถูกเขียนทับ: ใช้ merge และใส่ createdAt ไว้เฉย ๆ ก็ได้
-          // (ถ้ามีอยู่แล้วจะคงเดิม เพราะ merge=true และ field เดิมจะถูกแทนได้หากเราส่งค่าใหม่)
-          // วิธีที่ง่ายสุดคือ "ไม่ส่ง createdAt" เลย:
-        },
+        { deviceCode, points: polygon, updatedAt: serverTimestamp() },
         { merge: true }
       );
-    } catch (e) {
+    } catch {
       Alert.alert("บันทึก Geofence ไม่สำเร็จ", "ลองใหม่อีกครั้ง");
       return;
     }
 
-    /**
-     * ✅ 4) ถ้ามีการตั้งเวลาไว้แล้ว (savedRouteFilter) -> ให้ geofence ค้างจนถึงเวลา TO ทันที
-     * และ persist ลง AsyncStorage เพื่อกันเด้งหน้าแล้วหาย
-     */
+    // 4) ถ้ามีเวลา -> ค้างถึง TO และ persist
     if (savedRouteFilter?.to) {
       const until = savedRouteFilter.to;
-
-      // ถ้าเวลา TO หมดแล้ว ไม่ต้องค้าง
       if (until.getTime() > Date.now()) {
         setActiveGeofenceUntil(until);
-        await persistActiveGeofence({
-          deviceCode,
-          geofence: polygon,
-          untilIso: until.toISOString(),
-        });
+        await persistActiveGeofence({ deviceCode, geofence: polygon, untilIso: until.toISOString() });
       } else {
-        // ถ้าหมดเวลาแล้ว ล้าง storage เผื่อมีค้าง
         await clearActiveGeofence();
         setActiveGeofenceUntil(null);
       }
     }
-    // ปิดโหมดวาด
+
+    // reset drawing
     setIsInsideGeofence(null);
     setIsGeofenceMode(false);
     setGeofencePoints([]);
     setGeofencePath([]);
 
-    // เด้งไปที่ “ตัวกรองแผนที่” อัตโนมัติ
-    setTimeout(() => {
-      setMenuVisible(true);
-    }, 250);
+    setTimeout(() => setMenuVisible(true), 250);
   };
 
   /* ================= ROUTE MODAL ================= */
@@ -993,8 +928,10 @@ export default function MapTracker() {
     const now = new Date();
     const start = new Date(now);
     start.setHours(0, 0, 0, 0);
+
     const end = new Date(now);
-    end.setHours(23, 59, 0, 0);
+    end.setHours(23, 59, 59, 999);
+
     return { start, end };
   };
 
@@ -1037,7 +974,6 @@ export default function MapTracker() {
 
     setSavedRouteFilter({ from: startAt, to: stopAt });
 
-    // ✅ ถ้ามี geofence อยู่แล้ว ให้ค้างจนถึงเวลา TO ทันที
     if (activeGeofence && activeGeofence.length >= 3) {
       if (stopAt.getTime() > Date.now()) {
         setActiveGeofenceUntil(stopAt);
@@ -1064,43 +1000,26 @@ export default function MapTracker() {
       );
     } catch { }
 
-    // ปิด modal บันทึกเส้นทางก่อน
     setRouteModalVisible(false);
 
-    // รีเซตค่าหน้า modal กลับเป็นวันนี้เหมือนเดิม
     const { start, end } = getTodayRange();
     setRoutePreset("today");
     setRouteRange({ routeFrom: start, routeTo: end });
 
-    // เด้งไปที่ “ตัวกรองแผนที่” อัตโนมัติ
-    setTimeout(() => {
-      setMenuVisible(true);
-    }, 250);
+    setTimeout(() => setMenuVisible(true), 250);
   };
 
-  /* ✅ SAVE FILTER -> ไป RouteHistoryList + ค้าง geofence จนหมดเวลา */
+  /* ================= SAVE FILTER & GO ================= */
   const saveFilterAndGo = async () => {
     const hasDevice = !!deviceCode;
     const hasGeo = !!(activeGeofence && activeGeofence.length >= 3);
     const hasTime = !!savedRouteFilter;
 
-    if (!hasDevice) {
-      Alert.alert("กรุณาเพิ่ม/เลือกอุปกรณ์ก่อน");
-      return;
-    }
-    if (!hasGeo) {
-      Alert.alert("กรุณากำหนด Geofence ก่อน");
-      return;
-    }
-    if (!hasTime) {
-      Alert.alert("กรุณาเพิ่มเวลา (บันทึกเส้นทาง) ก่อน");
-      return;
-    }
-
-    if (!petId || !petName) {
-      Alert.alert("ยังไม่ได้ผูกสัตว์เลี้ยง", "กรุณาเชื่อมต่ออุปกรณ์กับสัตว์เลี้ยงก่อน");
-      return;
-    }
+    if (!hasDevice) return Alert.alert("กรุณาเพิ่ม/เลือกอุปกรณ์ก่อน");
+    if (!hasGeo) return Alert.alert("กรุณากำหนด Geofence ก่อน");
+    if (!hasTime) return Alert.alert("กรุณาเพิ่มเวลา (บันทึกเส้นทาง) ก่อน");
+    if (!petId || !petName) return Alert.alert("ยังไม่ได้ผูกสัตว์เลี้ยง", "กรุณาเชื่อมต่ออุปกรณ์กับสัตว์เลี้ยงก่อน");
+    if (isRecording) return Alert.alert("กำลังบันทึกอยู่", "กรุณารอให้การบันทึกปัจจุบันจบก่อน");
 
     const startAt = savedRouteFilter!.from;
     const stopAt = savedRouteFilter!.to;
@@ -1110,12 +1029,6 @@ export default function MapTracker() {
       return;
     }
 
-    if (isRecording) {
-      Alert.alert("กำลังบันทึกอยู่", "กรุณารอให้การบันทึกปัจจุบันจบก่อน");
-      return;
-    }
-
-    // ✅ เก็บ filter ไว้ให้ RouteHistoryList อ่าน (เหมือนเดิม)
     try {
       await AsyncStorage.setItem(
         ROUTE_FILTER_STORAGE_KEY,
@@ -1130,7 +1043,6 @@ export default function MapTracker() {
       );
     } catch { }
 
-    // ✅ ค้าง geofence จนหมดเวลา
     setActiveGeofenceUntil(stopAt);
     void persistActiveGeofence({
       deviceCode: deviceCode!,
@@ -1142,17 +1054,13 @@ export default function MapTracker() {
     router.push("/RouteHistoryList");
 
     const now = Date.now();
-
     if (startAt.getTime() > now) {
       const msToStart = startAt.getTime() - now;
 
       Alert.alert("ตั้งเวลาบันทึกแล้ว", `จะเริ่มบันทึกตอน ${startAt.toLocaleString("th-TH", { hour12: false })}`);
 
       if (startTimeoutRef.current) clearTimeout(startTimeoutRef.current);
-      startTimeoutRef.current = setTimeout(() => {
-        void startRecording(startAt, stopAt);
-      }, msToStart);
-
+      startTimeoutRef.current = setTimeout(() => void startRecording(startAt, stopAt), msToStart);
       return;
     }
 
@@ -1160,35 +1068,15 @@ export default function MapTracker() {
     void startRecording(actualStart, stopAt);
   };
 
-
-  /* ✅ NEW: status for checkmarks */
+  /* ================= UI HELPERS ================= */
   const hasDeviceSelected = !!deviceCode;
   const hasGeofenceSaved = !!(activeGeofence && activeGeofence.length >= 3);
   const hasTimeSaved = !!savedRouteFilter;
   const canSaveFilter = hasDeviceSelected && hasGeofenceSaved && hasTimeSaved;
 
   const renderRightStatus = (done: boolean) => {
-    if (done) {
-      return <MaterialIcons name="check-circle" size={22} color="#16A34A" />;
-    }
+    if (done) return <MaterialIcons name="check-circle" size={22} color="#16A34A" />;
     return <MaterialIcons name="chevron-right" size={22} color="#9CA3AF" />;
-  };
-
-  const showSavedRoutePopup = () => {
-    Alert.alert(
-      "บันทึกช่วงเวลาแล้ว",
-      "ไปที่ตัวกรองแผนที่เพื่อกด “บันทึกการกรอง” ต่อได้เลย",
-      [
-        { text: "ยังไม่ไป", style: "cancel" },
-        {
-          text: "ไปที่ตัวกรองแผนที่",
-          onPress: () => {
-            // เปิด Bottom Sheet ตัวกรองแผนที่
-            setMenuVisible(true);
-          },
-        },
-      ]
-    );
   };
 
   return (

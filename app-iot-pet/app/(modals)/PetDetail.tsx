@@ -90,7 +90,7 @@ export default function PetDetail() {
           if (!auth.currentUser) return;
           const uid = auth.currentUser.uid;
           await deleteDoc(doc(db, "users", uid, "pets", petData.id));
-          router.push("/pet");
+          router.push("/PetList");
         },
       },
     ]);

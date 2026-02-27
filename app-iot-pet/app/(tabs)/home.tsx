@@ -292,7 +292,7 @@ export default function HomeScreen() {
       }
     >
       {/* ===== PET SECTION ===== */}
-      <Pressable style={styles.sectionHeader} onPress={() => router.push("/(modals)/pet")}>
+      <Pressable style={styles.sectionHeader} onPress={() => router.push("/(modals)/PetList")}>
         <Text style={styles.sectionTitle}>สัตว์เลี้ยงของคุณ</Text>
         {pets.length > 0 && (
           <View style={styles.arrowBtn}>

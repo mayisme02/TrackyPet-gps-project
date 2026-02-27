@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   View,
   Text,
@@ -19,6 +19,8 @@ import {
   deleteDoc,
   serverTimestamp,
   getDocs,
+  where,
+  limit,
 } from "firebase/firestore";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { DEVICE_TYPES } from "../../assets/constants/deviceData";
@@ -32,9 +34,6 @@ const ROW_HEIGHT = 64;
 const CARD_PADDING = 16;
 const ACTIVE_INSET = 8;
 
-/* =====================
-   TYPES
-====================== */
 type UserDevice = {
   id: string;
   code: string;
@@ -60,6 +59,16 @@ export default function PetMatch() {
   const [pets, setPets] = useState<Pet[]>([]);
   const [currentMatch, setCurrentMatch] = useState<any>(null);
 
+  /**
+   * ✅ LOCK เฉพาะ "สัตว์เลี้ยงที่เชื่อมกับอุปกรณ์นี้" เท่านั้น
+   * ถ้า petId ปัจจุบันมี routeHistories.status=recording -> ห้ามเปลี่ยนไปตัวอื่น
+   */
+  const [recordingForThisPet, setRecordingForThisPet] = useState<{
+    routeId: string;
+    petId: string;
+    deviceCode: string | null;
+  } | null>(null);
+
   /* ================= LOAD PETS ================= */
   useEffect(() => {
     if (!auth.currentUser) return;
@@ -68,9 +77,7 @@ export default function PetMatch() {
     return onSnapshot(
       query(collection(db, "users", uid, "pets"), orderBy("createdAt", "asc")),
       (snap) =>
-        setPets(
-          snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }))
-        )
+        setPets(snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })))
     );
   }, []);
 
@@ -83,7 +90,54 @@ export default function PetMatch() {
       doc(db, "users", uid, "deviceMatches", parsedDevice.code),
       (snap) => setCurrentMatch(snap.exists() ? snap.data() : null)
     );
-  }, []);
+  }, [parsedDevice.code]);
+
+  /* ================= RECORDING LISTENER (ONLY THIS PET) ================= */
+  useEffect(() => {
+    if (!auth.currentUser) return;
+    const uid = auth.currentUser.uid;
+
+    const petId = currentMatch?.petId as string | undefined;
+    if (!petId) {
+      setRecordingForThisPet(null);
+      return;
+    }
+
+    // ✅ ฟังเฉพาะ recording ของ pet ที่กำลัง match กับ device นี้
+    const qRec = query(
+      collection(db, "users", uid, "routeHistories"),
+      where("status", "==", "recording"),
+      where("petId", "==", petId),
+      limit(1)
+    );
+
+    return onSnapshot(qRec, (snap) => {
+      if (snap.empty) {
+        setRecordingForThisPet(null);
+        return;
+      }
+
+      const d = snap.docs[0];
+      const data: any = d.data();
+
+      setRecordingForThisPet({
+        routeId: d.id,
+        petId: data?.petId,
+        deviceCode: data?.deviceCode ?? null,
+      });
+    });
+  }, [currentMatch?.petId]);
+
+  const guardIfRecordingThisPet = () => {
+    // ✅ ล็อกเฉพาะตอน "pet ที่เชื่อมอยู่นี้" กำลัง recording
+    if (!recordingForThisPet) return false;
+
+    Alert.alert(
+      "กำลังบันทึกเส้นทางอยู่",
+      "ไม่สามารถเปลี่ยนสัตว์เลี้ยงระหว่างบันทึกเส้นทางได้"
+    );
+    return true;
+  };
 
   /* ================= CHECK PET USED ================= */
   const petAlreadyUsed = async (petId: string) => {
@@ -97,6 +151,9 @@ export default function PetMatch() {
 
   /* ================= SELECT PET ================= */
   const onSelectPet = async (pet: Pet) => {
+    // ✅ ถ้ากำลังบันทึกของ pet ตัวที่เชื่อมกับ device นี้ -> ห้ามเปลี่ยน
+    if (guardIfRecordingThisPet()) return;
+
     if (currentMatch?.petId === pet.id) return;
 
     if (await petAlreadyUsed(pet.id)) {
@@ -117,8 +174,7 @@ export default function PetMatch() {
               doc(db, "users", uid, "deviceMatches", parsedDevice.code),
               {
                 deviceCode: parsedDevice.code,
-                deviceType:
-                  parsedDevice.type ?? "GPS_TRACKER_A7670",
+                deviceType: parsedDevice.type ?? "GPS_TRACKER_A7670",
                 deviceName: parsedDevice.name,
                 petId: pet.id,
                 petName: pet.name,
@@ -135,6 +191,9 @@ export default function PetMatch() {
 
   /* ================= DISCONNECT ================= */
   const onPressStatus = () => {
+    // ✅ ถ้ากำลังบันทึกของ pet ตัวนี้ -> ห้ามยกเลิกการเชื่อมต่อ
+    if (guardIfRecordingThisPet()) return;
+
     if (!currentMatch) return;
 
     Alert.alert(
@@ -156,9 +215,10 @@ export default function PetMatch() {
     );
   };
 
+  const isLocked = !!recordingForThisPet;
+
   return (
     <>
-      {/* ✅ HEADER (ใช้ component กลาง) */}
       <ProfileHeader
         title="รายละเอียดอุปกรณ์"
         left={
@@ -177,12 +237,8 @@ export default function PetMatch() {
               style={styles.deviceImage}
             />
             <View style={{ flex: 1 }}>
-              <Text style={styles.deviceName}>
-                {parsedDevice.name}
-              </Text>
-              <Text style={styles.deviceDesc}>
-                {deviceType.description}
-              </Text>
+              <Text style={styles.deviceName}>{parsedDevice.name}</Text>
+              <Text style={styles.deviceDesc}>{deviceType.description}</Text>
             </View>
           </View>
 
@@ -197,37 +253,36 @@ export default function PetMatch() {
                 />
               ) : (
                 <View style={styles.petAvatarEmpty}>
-                  <MaterialIcons
-                    name="pets"
-                    size={22}
-                    color="#9CA3AF"
-                  />
+                  <MaterialIcons name="pets" size={22} color="#9CA3AF" />
                 </View>
               )}
-              <Text style={styles.petName}>
-                {currentMatch?.petName ?? "ว่าง"}
-              </Text>
+              <View>
+                <Text style={styles.petName}>{currentMatch?.petName ?? "ว่าง"}</Text>
+
+                {/* ✅ แสดง hint เล็ก ๆ ว่าล็อกเพราะกำลังบันทึก */}
+                {isLocked && (
+                  <Text style={{ marginTop: 2, color: "#008D49", fontWeight: "700", fontSize: 12 }}>
+                    กำลังบันทึกเส้นทาง…
+                  </Text>
+                )}
+              </View>
             </View>
 
-            <TouchableOpacity
-              onPress={currentMatch ? onPressStatus : undefined}
-            >
+            <TouchableOpacity onPress={currentMatch ? onPressStatus : undefined}>
               <View
                 style={[
                   styles.statusPill,
                   !currentMatch && styles.statusPillInactive,
+                  isLocked && { opacity: 0.6 },
                 ]}
               >
                 <Text
                   style={[
                     styles.statusText,
-                    !currentMatch &&
-                      styles.statusTextInactive,
+                    !currentMatch && styles.statusTextInactive,
                   ]}
                 >
-                  {currentMatch
-                    ? "เชื่อมต่อแล้ว"
-                    : "ยังไม่เชื่อมต่อ"}
+                  {currentMatch ? "เชื่อมต่อแล้ว" : "ยังไม่เชื่อมต่อ"}
                 </Text>
               </View>
             </TouchableOpacity>
@@ -245,45 +300,32 @@ export default function PetMatch() {
             return (
               <View key={item.id}>
                 <TouchableOpacity
-                  disabled={active}
+                  // ✅ ล็อก “การเปลี่ยนตัวอื่น” เฉพาะตอนมี recording ของ pet ที่เชื่อมอยู่
+                  disabled={active || isLocked}
                   onPress={() => onSelectPet(item)}
                   style={[
                     styles.petItem,
                     active && styles.petItemActive,
+                    isLocked && !active && { opacity: 0.6 },
                   ]}
                 >
                   <View style={styles.petRow}>
                     {item.photoURL ? (
-                      <Image
-                        source={{ uri: item.photoURL }}
-                        style={styles.petAvatar}
-                      />
+                      <Image source={{ uri: item.photoURL }} style={styles.petAvatar} />
                     ) : (
                       <View style={styles.petAvatarEmpty}>
-                        <MaterialIcons
-                          name="pets"
-                          size={22}
-                          color="#9CA3AF"
-                        />
+                        <MaterialIcons name="pets" size={22} color="#9CA3AF" />
                       </View>
                     )}
-                    <Text style={styles.petItemName}>
-                      {item.name}
-                    </Text>
+                    <Text style={styles.petItemName}>{item.name}</Text>
                   </View>
 
                   {active && (
-                    <Ionicons
-                      name="checkmark-circle"
-                      size={24}
-                      color="#009B4B"
-                    />
+                    <Ionicons name="checkmark-circle" size={24} color="#009B4B" />
                   )}
                 </TouchableOpacity>
 
-                {!isLast && (
-                  <View style={styles.petDivider} />
-                )}
+                {!isLast && <View style={styles.petDivider} />}
               </View>
             );
           })}
@@ -292,8 +334,6 @@ export default function PetMatch() {
     </>
   );
 }
-
-/* ================= STYLES ================= */
 
 const styles = StyleSheet.create({
   container: {

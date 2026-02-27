@@ -4,7 +4,6 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  StyleSheet,
   Image,
   ActivityIndicator,
   Alert,
@@ -21,6 +20,7 @@ import { uploadToCloudinary } from "../../cloud/uploadToCloudinary";
 import { SelectCountry } from "react-native-element-dropdown";
 import { breedData } from "../../assets/constants/breedData";
 import ProfileHeader from "@/components/ProfileHeader";
+import { styles } from "@/assets/styles/addPet.styles";
 
 export default function AddPet() {
   const router = useRouter();
@@ -126,7 +126,7 @@ export default function AddPet() {
 
         {/* ชื่อสัตว์ */}
         <View style={styles.nameTitle}>
-          <Text style={styles.InputTitle}>ชื่อสัตว์เลี้ยง</Text>
+          <Text style={styles.inputTitle}>ชื่อสัตว์เลี้ยง</Text>
           <TextInput
             placeholder="Pet Name"
             style={styles.input}
@@ -137,7 +137,7 @@ export default function AddPet() {
 
         {/* สายพันธุ์ */}
         <View style={styles.nameTitle}>
-          <Text style={styles.InputTitle}>สายพันธุ์</Text>
+          <Text style={styles.inputTitle}>สายพันธุ์</Text>
           <SelectCountry
             style={styles.dropdown}
             selectedTextStyle={styles.selectedTextStyle}
@@ -170,7 +170,7 @@ export default function AddPet() {
         <View style={styles.infoGrid}>
           {/* เพศ */}
           <View style={styles.gridItem}>
-            <Text style={styles.InputTitle}>เพศ</Text>
+            <Text style={styles.inputTitle}>เพศ</Text>
             <View style={styles.genderBox}>
               {["เพศผู้", "เพศเมีย"].map((g) => (
                 <TouchableOpacity
@@ -196,7 +196,7 @@ export default function AddPet() {
 
           {/* อายุ */}
           <View style={styles.gridItem}>
-            <Text style={styles.InputTitle}>อายุ</Text>
+            <Text style={styles.inputTitle}>อายุ</Text>
             <TextInput
               placeholder="เช่น 2 ปี"
               style={styles.input}
@@ -207,7 +207,7 @@ export default function AddPet() {
 
           {/* ส่วนสูง */}
           <View style={styles.gridItem}>
-            <Text style={styles.InputTitle}>ส่วนสูง</Text>
+            <Text style={styles.inputTitle}>ส่วนสูง</Text>
             <TextInput
               placeholder="ซม."
               style={styles.input}
@@ -219,7 +219,7 @@ export default function AddPet() {
 
           {/* น้ำหนัก */}
           <View style={styles.gridItem}>
-            <Text style={styles.InputTitle}>น้ำหนัก</Text>
+            <Text style={styles.inputTitle}>น้ำหนัก</Text>
             <TextInput
               placeholder="กก."
               style={styles.input}
@@ -246,120 +246,3 @@ export default function AddPet() {
     </>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    padding: 20,
-  },
-  imagePickerWrapper: {
-    alignItems: "center",
-    marginBottom: 20,
-  },
-  inputImg: {
-    height: 160,
-    width: 160,
-    backgroundColor: "#E7E7E7FF",
-    borderRadius: 100,
-    justifyContent: "center",
-    alignItems: "center",
-    overflow: "hidden",
-  },
-  nameTitle: {
-    marginBottom: 16,
-  },
-  InputTitle: {
-    fontSize: 16,
-    fontWeight: "600",
-    marginBottom: 6,
-  },
-  input: {
-    height: 48,
-    borderRadius: 12,
-    backgroundColor: "#F2F2F2FF",
-    paddingHorizontal: 12,
-    borderWidth: 1,
-    borderColor: "#D3D3D3FF",
-  },
-  dropdown: {
-    height: 50,
-    backgroundColor: "#DEDEDEFF",
-    borderRadius: 15,
-    paddingHorizontal: 12,
-  },
-  placeholderStyle: {
-    fontSize: 15,
-    color: "#555",
-  },
-  selectedTextStyle: {
-    fontSize: 15,
-    color: "#333",
-    marginLeft: 5,
-  },
-  dropdownContainer: {
-    backgroundColor: "#fff",
-    borderRadius: 12,
-    elevation: 3,
-  },
-  dropdownItemContainer: {
-    borderBottomWidth: 0.5,
-    borderColor: "#eee",
-    paddingVertical: 4,
-  },
-  dropdownItemText: {
-    fontSize: 15,
-    color: "#333",
-  },
-  imageStyle: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    marginLeft: 5,
-  },
-  infoGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    justifyContent: "space-between",
-    marginBottom: 16,
-  },
-  gridItem: {
-    width: "48%",
-    marginBottom: 12,
-  },
-  genderBox: {
-    flexDirection: "row",
-    backgroundColor: "#F2F2F2",
-    borderRadius: 10,
-    overflow: "hidden",
-    height: 48,
-    borderWidth: 1,
-    borderColor: "#D3D3D3FF",
-  },
-  genderOption: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  genderOptionSelected: {
-    backgroundColor: "#f2bb14",
-  },
-  genderLabel: {
-    fontSize: 14,
-    color: "#333",
-    fontWeight: "500",
-  },
-  genderLabelSelected: {
-    color: "#333",
-    fontWeight: "600",
-  },
-  addButton: {
-    backgroundColor: "#885900ff",
-    paddingVertical: 12,
-    borderRadius: 12,
-    alignItems: "center",
-  },
-  addButtonText: {
-    color: "#fff",
-    fontSize: 18,
-    fontWeight: "600",
-  },
-});

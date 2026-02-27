@@ -15,8 +15,6 @@ import { auth, db } from "../../firebase/firebase";
 import { onSnapshot, collection, deleteDoc, doc } from "firebase/firestore";
 import ProfileHeader from "@/components/ProfileHeader";
 
-/* ================= TYPES ================= */
-
 type Pet = {
   id: string;
   name: string;
@@ -38,9 +36,9 @@ type DeviceMatch = {
 /* ================= SCREEN ================= */
 
 export default function PetDetail() {
+  const router = useRouter();
   const { pet } = useLocalSearchParams<{ pet: string }>();
   const petData: Pet | null = pet ? JSON.parse(pet) : null;
-  const router = useRouter();
 
   const [deviceMatch, setDeviceMatch] = useState<DeviceMatch | null>(null);
 
@@ -70,6 +68,18 @@ export default function PetDetail() {
     });
   };
 
+  // ✅ ไปหน้า RouteHistoryPet โดยส่ง petId (และชื่อ/รูปไว้ทำหัวข้อ)
+  const handleRouteHistory = () => {
+    router.push({
+      pathname: "/(modals)/RouteHistoryPet",
+      params: {
+        petId: petData.id,
+        petName: petData.name,
+        photoURL: petData.photoURL ?? "",
+      },
+    });
+  };
+
   const confirmDelete = () => {
     Alert.alert("ยืนยันการลบ", `ต้องการลบ ${petData.name} หรือไม่`, [
       { text: "ยกเลิก", style: "cancel" },
@@ -80,17 +90,14 @@ export default function PetDetail() {
           if (!auth.currentUser) return;
           const uid = auth.currentUser.uid;
           await deleteDoc(doc(db, "users", uid, "pets", petData.id));
-          router.push("/pet");
+          router.push("/PetList");
         },
       },
     ]);
   };
 
-  /* ================= UI ================= */
-
   return (
     <>
-      {/* ===== HEADER ===== */}
       <ProfileHeader
         title="ข้อมูลสัตว์เลี้ยง"
         left={
@@ -154,7 +161,7 @@ export default function PetDetail() {
           <MenuRow
             icon={<MaterialIcons name="history" size={20} color="#ffffff" />}
             title="ประวัติเส้นทางย้อนหลัง"
-            onPress={() => {}}
+            onPress={handleRouteHistory} // ✅ สำคัญ: ผูกฟังก์ชันตรงนี้
           />
 
           <MenuRow

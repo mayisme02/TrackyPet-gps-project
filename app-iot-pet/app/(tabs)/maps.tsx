@@ -926,11 +926,14 @@ export default function MapTracker() {
   /* ================= ROUTE MODAL ================= */
   const getTodayRange = () => {
     const now = new Date();
-    const start = new Date(now);
-    start.setHours(0, 0, 0, 0);
 
+    // ✅ start = เวลาปัจจุบัน (ปัดวินาที/มิลลิวินาทีทิ้ง)
+    const start = new Date(now);
+    start.setSeconds(0, 0);
+
+    // ✅ end = 23:59 ของวันนี้
     const end = new Date(now);
-    end.setHours(23, 59, 59, 999);
+    end.setHours(23, 59, 0, 0);
 
     return { start, end };
   };
@@ -1286,7 +1289,9 @@ export default function MapTracker() {
                   setRouteRange({ routeFrom: start, routeTo: end });
                 }}
               >
-                <Text style={[styles.presetChipText, routePreset === "today" && styles.presetChipTextActive]}>วันนี้</Text>
+                <Text style={[styles.presetChipText, routePreset === "today" && styles.presetChipTextActive]}>
+                  วันนี้
+                </Text>
               </TouchableOpacity>
 
               <TouchableOpacity

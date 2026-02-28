@@ -16,8 +16,8 @@ const {
 
 // DEVICE CODE → DEVICE ID MAP
 const DEVICE_MAP = {
-  "PET-M3238-N3466": "84c3afd0-ebf4-11f0-b6de-09388ec431d8",
-  // เป็นรหัสที่กำหนดไว้เพื่อเรียกใช้ api ผ่าน deviceID จาก thingsboard
+  "PET-M3238-N3466": "3b8292b0-149d-11f1-abdd-ef910567fa1e",
+  // เป็นรหัสที่กำหนดไว้เพื่อเรียกใช้ api ผ่าน deviceID จาก thingsboard 
 };
 
 // LOGIN THINGSBOARD (JWT)

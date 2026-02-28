@@ -32,6 +32,31 @@ import { SwipeListView } from "react-native-swipe-list-view";
 import ProfileHeader from "@/components/ProfileHeader";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
+// ✅ Calendar
+import { Calendar, DateData, LocaleConfig } from "react-native-calendars";
+
+LocaleConfig.locales.th = {
+  monthNames: [
+    "มกราคม",
+    "กุมภาพันธ์",
+    "มีนาคม",
+    "เมษายน",
+    "พฤษภาคม",
+    "มิถุนายน",
+    "กรกฎาคม",
+    "สิงหาคม",
+    "กันยายน",
+    "ตุลาคม",
+    "พฤศจิกายน",
+    "ธันวาคม",
+  ],
+  monthNamesShort: ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."],
+  dayNames: ["อาทิตย์", "จันทร์", "อังคาร", "พุธ", "พฤหัส", "ศุกร์", "เสาร์"],
+  dayNamesShort: ["อา.", "จ.", "อ.", "พ.", "พฤ.", "ศ.", "ส."],
+  today: "วันนี้",
+};
+LocaleConfig.defaultLocale = "th";
+
 type RouteHistory = {
   id: string;
   petId: string;
@@ -80,6 +105,9 @@ export default function RouteHistoryList() {
   const fetchingRef = useRef<Set<string>>(new Set());
   const blockCardPressRef = useRef(false);
 
+  // ✅ selected date (YYYY-MM-DD). null = แสดงทั้งหมดตามเดิม
+  const [selectedDateId, setSelectedDateId] = useState<string | null>(null);
+
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (user) => {
       setUid(user?.uid ?? null);
@@ -127,13 +155,11 @@ export default function RouteHistoryList() {
     return 0;
   };
 
-  const formatTimeRange = (fromIso: string, toIso: string) => {
-    const sameDay = new Date(fromIso).toDateString() === new Date(toIso).toDateString();
-
-    if (sameDay) return `${formatThaiTime(fromIso)} - ${formatThaiTime(toIso)} น.`;
-
-    return `${formatThaiDate(fromIso)} ${formatThaiTime(fromIso)} น. - ${formatThaiDate(toIso)} ${formatThaiTime(
-      toIso
+  const formatTimeRange = (fromIso: string, toIsoStr: string) => {
+    const sameDay = new Date(fromIso).toDateString() === new Date(toIsoStr).toDateString();
+    if (sameDay) return `${formatThaiTime(fromIso)} - ${formatThaiTime(toIsoStr)} น.`;
+    return `${formatThaiDate(fromIso)} ${formatThaiTime(fromIso)} น. - ${formatThaiDate(toIsoStr)} ${formatThaiTime(
+      toIsoStr
     )} น.`;
   };
 
@@ -159,6 +185,15 @@ export default function RouteHistoryList() {
     return isToday && isInRange ? "recording" : "done";
   };
 
+  // ✅ แปลง ISO -> YYYY-MM-DD (ตาม timezone ของเครื่อง)
+  const toDateId = (iso: string) => {
+    const d = new Date(iso);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+  };
+
   const notifyMapsRecordingEnded = useCallback(async (payload: { routeId: string; deviceCode?: string | null }) => {
     try {
       await AsyncStorage.removeItem(ROUTE_FILTER_STORAGE_KEY);
@@ -172,10 +207,6 @@ export default function RouteHistoryList() {
     });
   }, []);
 
-  /**
-   * ✅ หยุดบันทึกทันทีจากหน้า list
-   * - อัปเดท endedAtIso/endedAtMs เพื่อให้หน้า RouteHistory แสดง “เวลาหยุดจริง” ทันที
-   */
   const stopRecordingNow = useCallback(
     async (route: RouteHistory) => {
       if (!uid) return;
@@ -224,10 +255,7 @@ export default function RouteHistoryList() {
     [stopRecordingNow]
   );
 
-  /**
-   * ✅ AUTO COMPLETE เฉพาะกรณี "เลยเวลา to" เท่านั้น
-   * - อัปเดท endedAtIso/endedAtMs ด้วย
-   */
+  // ✅ AUTO COMPLETE เฉพาะกรณี "เลยเวลา to" เท่านั้น
   useEffect(() => {
     if (!uid) return;
 
@@ -272,7 +300,7 @@ export default function RouteHistoryList() {
     });
   }, [uid, notifyMapsRecordingEnded]);
 
-  // ✅ โหลดรายการ routeHistories (realtime)
+  // ✅ โหลด routeHistories
   useEffect(() => {
     if (!uid) {
       setRoutes([]);
@@ -292,10 +320,7 @@ export default function RouteHistoryList() {
     });
   }, [uid]);
 
-  /**
-   * ✅ ดึง "เวลาจริงเริ่ม/จบ" จาก points (ลด listener: ใช้ getDocs)
-   * - ใช้ timestampMs orderBy
-   */
+  // ✅ ดึง start/end จาก points (แบบ getDocs ลด listener)
   useEffect(() => {
     if (!uid) return;
 
@@ -305,7 +330,6 @@ export default function RouteHistoryList() {
       for (const r of routes) {
         if (!r?.id) continue;
 
-        // ถ้า route มี startedAtIso/endedAtIso แล้ว ไม่ต้อง fetch points ก็ได้
         const hasRouteStart = !!(r.startedAtIso || toIso(r.startedAt));
         const hasRouteEnd = !!(r.endedAtIso || toIso(r.endedAt));
         if (hasRouteStart && hasRouteEnd) continue;
@@ -345,15 +369,70 @@ export default function RouteHistoryList() {
     };
   }, [uid, routes, realTimes]);
 
-  // ✅ group by วัน (ใช้ "วันของ startedAt จริง" ถ้ามี ไม่งั้นใช้ points start ไม่งั้นใช้ from)
+  // ✅ หา ISO ที่ใช้เป็น "วัน" ของ route
+  const getRouteDayIso = useCallback(
+    (r: RouteHistory) => {
+      const routeStart = r.startedAtIso || toIso(r.startedAt) || null;
+      const pointsStart = realTimes[r.id]?.startIso ?? null;
+      return routeStart || pointsStart || r.from || null;
+    },
+    [realTimes]
+  );
+
+  // ✅ สร้าง map: dateId -> routes
+  const routesByDateId = useMemo(() => {
+    const map = new Map<string, RouteHistory[]>();
+    for (const r of routes) {
+      const dayIso = getRouteDayIso(r);
+      if (!dayIso) continue;
+      const dateId = toDateId(dayIso);
+      const arr = map.get(dateId) ?? [];
+      arr.push(r);
+      map.set(dateId, arr);
+    }
+
+    for (const [k, arr] of map.entries()) {
+      arr.sort((a, b) => getSortMs(b) - getSortMs(a));
+      map.set(k, arr);
+    }
+    return map;
+  }, [routes, getRouteDayIso]);
+
+  // ✅ markedDates ให้ปฏิทิน: วันไหนมีบันทึกจะมีจุด
+  const markedDates = useMemo(() => {
+    const obj: any = {};
+
+    for (const dateId of routesByDateId.keys()) {
+      obj[dateId] = {
+        marked: true,
+        dotColor: "#22C55E",
+      };
+    }
+
+    if (selectedDateId) {
+      obj[selectedDateId] = {
+        ...(obj[selectedDateId] ?? {}),
+        selected: true,
+        selectedColor: "#FBBF24",
+        selectedTextColor: "#111827",
+      };
+    }
+
+    return obj;
+  }, [routesByDateId, selectedDateId]);
+
+  // ✅ routes ที่จะโชว์ (เลือกวัน = filter)
+  const visibleRoutes = useMemo(() => {
+    if (!selectedDateId) return routes;
+    return routesByDateId.get(selectedDateId) ?? [];
+  }, [routes, routesByDateId, selectedDateId]);
+
+  // ✅ group sections (วันจริง) จาก visibleRoutes
   const sections: SectionListData<RouteHistory>[] = useMemo(() => {
     const map = new Map<string, RouteHistory[]>();
 
-    for (const r of routes) {
-      const routeStart = r.startedAtIso || toIso(r.startedAt) || null;
-      const pointsStart = realTimes[r.id]?.startIso ?? null;
-      const isoForDay = routeStart || pointsStart || r.from;
-
+    for (const r of visibleRoutes) {
+      const isoForDay = getRouteDayIso(r);
       const dateKey = isoForDay ? new Date(isoForDay).toDateString() : "Unknown";
       const arr = map.get(dateKey) ?? [];
       arr.push(r);
@@ -366,8 +445,7 @@ export default function RouteHistoryList() {
       arr.sort((a, b) => getSortMs(b) - getSortMs(a));
 
       const first = arr[0];
-      const isoForTitle =
-        (first?.startedAtIso || toIso(first?.startedAt) || realTimes[first?.id]?.startIso || first?.from) ?? null;
+      const isoForTitle = (getRouteDayIso(first) || first?.from) ?? null;
 
       const title = isoForTitle ? formatThaiDate(isoForTitle) : "ไม่ทราบวันที่";
       result.push({ key: dateKey, title, data: arr });
@@ -380,7 +458,7 @@ export default function RouteHistoryList() {
     });
 
     return result as SectionListData<RouteHistory>[];
-  }, [routes, realTimes]);
+  }, [visibleRoutes, getRouteDayIso]);
 
   const confirmDelete = (rowMap: { [key: string]: any }, rowKey: string, routeId: string, petName: string) => {
     Alert.alert("ลบประวัติการบันทึก", `ต้องการลบประวัติของ ${petName} ใช่ไหม?`, [
@@ -417,14 +495,10 @@ export default function RouteHistoryList() {
     const status = getStatus(item);
     const statusText = status === "recording" ? "กำลังบันทึก" : "เสร็จสิ้นแล้ว";
 
-    // ✅ เลือกเวลา “จริง” สำหรับการ์ด
-    const startIso =
-      item.startedAtIso || toIso(item.startedAt) || rt?.startIso || item.from || "";
-    const endIso =
-      item.endedAtIso || toIso(item.endedAt) || rt?.endIso || item.to || "";
+    const startIso = item.startedAtIso || toIso(item.startedAt) || rt?.startIso || item.from || "";
+    const endIso = item.endedAtIso || toIso(item.endedAt) || rt?.endIso || item.to || "";
 
-    const timeText =
-      startIso && endIso ? formatTimeRange(startIso, endIso) : formatTimeRange(item.from, item.to);
+    const timeText = startIso && endIso ? formatTimeRange(startIso, endIso) : formatTimeRange(item.from, item.to);
 
     return (
       <Pressable
@@ -506,6 +580,11 @@ export default function RouteHistoryList() {
     </View>
   );
 
+  const onDayPress = useCallback((d: DateData) => {
+    // toggle: แตะซ้ำ = ยกเลิก filter
+    setSelectedDateId((prev) => (prev === d.dateString ? null : d.dateString));
+  }, []);
+
   return (
     <>
       <ProfileHeader
@@ -515,12 +594,44 @@ export default function RouteHistoryList() {
             <Ionicons name="chevron-back" size={28} color="#000" />
           </TouchableOpacity>
         }
+        // ✅ ปุ่มล้างตัวกรองแบบเร็ว
+        right={
+          selectedDateId ? (
+            <TouchableOpacity onPress={() => setSelectedDateId(null)} style={{ paddingHorizontal: 6, paddingVertical: 4 }}>
+              <Text style={{ fontWeight: "900", color: "#0F172A" }}>ล้าง</Text>
+            </TouchableOpacity>
+          ) : null
+        }
       />
 
+      {/* ✅ Calendar (ตัดส่วนบนออกทั้งหมด) */}
+      <View style={styles.calendarWrap}>
+        <Calendar
+          onDayPress={onDayPress}
+          markedDates={markedDates}
+          enableSwipeMonths
+          theme={{
+            textMonthFontWeight: "900",
+            textDayFontWeight: "700",
+            textDayHeaderFontWeight: "800",
+            arrowColor: "#0F172A",
+            todayTextColor: "#1651A3",
+          
+          }}
+          style={styles.calendar}
+        />
+      </View>
+
+      {/* ✅ List */}
       {routes.length === 0 ? (
         <View style={styles.emptyContainer}>
           <FontAwesome6 name="route" size={88} color="lightgray" />
           <Text style={styles.emptyText}>ยังไม่มีประวัติการบันทึกเส้นทาง</Text>
+        </View>
+      ) : selectedDateId && visibleRoutes.length === 0 ? (
+        <View style={styles.emptyContainer}>
+          <FontAwesome6 name="calendar-xmark" size={72} color="lightgray" />
+          <Text style={styles.emptyText}>ไม่มีการบันทึกในวันที่เลือก</Text>
         </View>
       ) : (
         <SwipeListView
@@ -545,6 +656,18 @@ export default function RouteHistoryList() {
 }
 
 const styles = StyleSheet.create({
+  // ✅ ขยาย padding บนล่างของปฏิทิน
+  calendarWrap: {
+    paddingHorizontal: 16,
+    paddingTop: 4, 
+    marginTop: 10,
+  },
+  calendar: {
+    borderRadius: 14,
+    overflow: "hidden",
+    paddingBottom: 20,
+  },
+
   emptyContainer: {
     flex: 1,
     justifyContent: "center",

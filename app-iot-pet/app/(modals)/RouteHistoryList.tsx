@@ -31,6 +31,7 @@ import { onAuthStateChanged } from "firebase/auth";
 import { SwipeListView } from "react-native-swipe-list-view";
 import ProfileHeader from "@/components/ProfileHeader";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 
 // ✅ Calendar
 import { Calendar, DateData, LocaleConfig } from "react-native-calendars";
@@ -597,8 +598,8 @@ export default function RouteHistoryList() {
         // ✅ ปุ่มล้างตัวกรองแบบเร็ว
         right={
           selectedDateId ? (
-            <TouchableOpacity onPress={() => setSelectedDateId(null)} style={{ paddingHorizontal: 6, paddingVertical: 4 }}>
-              <Text style={{ fontWeight: "900", color: "#0F172A" }}>ล้าง</Text>
+            <TouchableOpacity onPress={() => setSelectedDateId(null)} style={{ paddingHorizontal: 0, paddingVertical: 4 }}>
+              <MaterialCommunityIcons name="restart" size={28} color="black" />
             </TouchableOpacity>
           ) : null
         }
@@ -615,7 +616,7 @@ export default function RouteHistoryList() {
             textDayFontWeight: "700",
             textDayHeaderFontWeight: "800",
             arrowColor: "#0F172A",
-            todayTextColor: "#1651A3",
+            todayTextColor: "#8C4D00",
           
           }}
           style={styles.calendar}

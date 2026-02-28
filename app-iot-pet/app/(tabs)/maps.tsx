@@ -147,6 +147,13 @@ export default function MapTracker() {
   const [isRecording, setIsRecording] = useState(false);
   const [recordId, setRecordId] = useState<string | null>(null);
 
+  // ✅ Callout recording UI state
+  const [calloutRecordingInfo, setCalloutRecordingInfo] = useState<{
+    savedAtIso: string;
+    fromIso: string;
+    toIso: string;
+  } | null>(null);
+
   const stopTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const startTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -168,6 +175,9 @@ export default function MapTracker() {
   const lastAcceptedRef = useRef<{ lat: number; lng: number; tsMs: number } | null>(null);
   const prevInsideRef = useRef<boolean | null>(null);
   const lastMetricsPushRef = useRef<number>(0);
+
+  const isCalloutRecording = !!calloutRecordingInfo || isRecording;
+  // const calloutSavedAtIso = calloutRecordingInfo?.savedAtIso ?? null;
 
   const clearActiveGeofence = useCallback(async () => {
     setActiveGeofence(null);
@@ -191,6 +201,13 @@ export default function MapTracker() {
     setIsTracking(false);
     setRecordId(null);
     recordingCtxRef.current = null;
+
+    setCalloutRecordingInfo(null);
+    setRestorePetCallout(false);
+
+    await clearActiveGeofence();
+    setSavedRouteFilter(null);
+    await AsyncStorage.removeItem(ROUTE_FILTER_STORAGE_KEY);
 
     await clearActiveGeofence();
 
@@ -716,9 +733,14 @@ export default function MapTracker() {
       ROUTE_RECORDING_ENDED_EVENT,
       (payload?: { routeId?: string; deviceCode?: string | null }) => {
         if (payload?.deviceCode && deviceCode && payload.deviceCode !== deviceCode) return;
+
+        // ✅ reset สถานะกำลังติดตาม/กำลังบันทึกทั้งหมด
         void resetAfterRecordingEnd();
+
+        petMarkerRef.current?.hideCallout?.();
       }
     );
+
     return () => sub.remove();
   }, [deviceCode, resetAfterRecordingEnd]);
 
@@ -1027,6 +1049,16 @@ export default function MapTracker() {
     const startAt = savedRouteFilter!.from;
     const stopAt = savedRouteFilter!.to;
 
+    const savedAtIso = new Date().toISOString();
+    setCalloutRecordingInfo({
+      savedAtIso,
+      fromIso: startAt.toISOString(),
+      toIso: stopAt.toISOString(),
+    });
+
+    // ให้ callout เด้งขึ้นทันที
+    setRestorePetCallout(true);
+
     if (stopAt.getTime() <= startAt.getTime()) {
       Alert.alert("ช่วงเวลาไม่ถูกต้อง", "TO ต้องมากกว่า FROM");
       return;
@@ -1147,6 +1179,7 @@ export default function MapTracker() {
             <Callout tooltip>
               <View style={styles.calloutWrapper}>
                 <View style={styles.calloutHandle} />
+
                 <View style={styles.calloutCard}>
                   <View style={styles.cardHeader}>
                     <Text style={styles.cardTitle}>{petName ?? "สัตว์เลี้ยง"}</Text>
@@ -1154,9 +1187,15 @@ export default function MapTracker() {
                       <Text style={styles.badgeText}>{deviceName}</Text>
                     </View>
                   </View>
-
                   <View style={styles.divider} />
 
+                  {/* แสดงสถานะ */}
+                  {isCalloutRecording && (
+                    <View style={styles.row}>
+                      <Text style={styles.icon}>🟢</Text>
+                      <Text style={styles.recordingText}>กำลังติดตาม</Text>
+                    </View>
+                  )}
                   <View style={styles.row}>
                     <Text style={styles.icon}>📅</Text>
                     <Text style={styles.text}>{formatThaiDate(petLocation.timestamp)}</Text>
@@ -1209,7 +1248,6 @@ export default function MapTracker() {
               {renderRightStatus(hasDeviceSelected)}
             </TouchableOpacity>
 
-            {/* Geofence */}
             {/* Geofence */}
             <TouchableOpacity
               style={styles.sheetRow}
@@ -1469,7 +1507,6 @@ export default function MapTracker() {
   );
 }
 
-/* ================= STYLES ================= */
 const styles = StyleSheet.create({
   container: { flex: 1 },
 
@@ -1949,5 +1986,17 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: "900",
     color: "#ffffff",
+  },
+  recordingRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 10,
+    flexWrap: "wrap",
+    gap: 6,
+  },
+  recordingText: {
+    fontSize: 14.5,
+    fontWeight: "600",
+    color: "#008917",
   },
 });

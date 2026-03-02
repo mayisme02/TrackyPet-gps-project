@@ -169,7 +169,6 @@ export default function RouteHistory() {
     );
   }, [effectiveRouteId]);
 
-  // ---------- subscribe points (NO orderBy; sort client to avoid index/field issues) ----------
   useEffect(() => {
     if (!auth.currentUser) return;
     if (!effectiveRouteId) return;

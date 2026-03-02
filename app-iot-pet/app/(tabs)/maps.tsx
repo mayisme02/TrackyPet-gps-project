@@ -40,8 +40,8 @@ import {
 } from "firebase/firestore";
 
 /* ================= CONFIG ================= */
-const BACKEND_URL = "http://localhost:3000";
-const MIN_MOVE_DISTANCE = 5;
+const BACKEND_URL = "http://172.20.10.2:3000";
+const MIN_MOVE_DISTANCE = 3;
 
 /* ✅ storage keys */
 const ROUTE_FILTER_STORAGE_KEY = "routeFilter_v1";
@@ -142,6 +142,13 @@ export default function MapTracker() {
   const [activeGeofenceUntil, setActiveGeofenceUntil] = useState<Date | null>(null);
 
   const [deviceName, setDeviceName] = useState<string>("GPS Tracker");
+  // Anti-spam / hysteresis (กัน GPS แกว่งริมขอบ)
+  const GEOFENCE_EXIT_CONFIRM_MS = 8000;   // ต้องอยู่นอกต่อเนื่อง 8 วิ ถึงจะแจ้ง
+  const GEOFENCE_REARM_CONFIRM_MS = 8000;  // ต้องกลับเข้าในต่อเนื่อง 8 วิ ถึงจะ re-arm ให้แจ้งครั้งต่อไป
+
+  const exitArmedRef = useRef(true);
+  const outsideSinceRef = useRef<number | null>(null);
+  const insideSinceRef = useRef<number | null>(null);
 
   /* ================= RECORDING ================= */
   const [isRecording, setIsRecording] = useState(false);
@@ -365,47 +372,77 @@ export default function MapTracker() {
       setLocation(current);
       setPetLocation(current);
 
-      // ===== FILTER JITTER =====
+      // ===== FILTER JITTER (✅ show path when moved >= 3m) =====
       const tsMs = Date.parse(timestamp) || Date.now();
       const acc = Number(current.accuracy ?? 999);
+
+      // กันจุดที่ accuracy แย่มาก (ส่วนใหญ่เป็น noise)
       if (acc > MAX_ACCEPT_ACCURACY) return true;
 
       const prev = lastAcceptedRef.current;
-      let dynamicMin = Math.max(MIN_MOVE_DISTANCE, acc * 0.6);
+      const minMove = MIN_MOVE_DISTANCE; // ✅ fix threshold = 3m ตามที่ต้องการ
 
       if (prev) {
         const dt = Math.max(1, (tsMs - prev.tsMs) / 1000);
         const dist = distanceInMeters(prev.lat, prev.lng, current.latitude, current.longitude);
         const speed = dist / dt;
+
+        // กัน teleport / ค่าโดดผิดปกติ
         if (speed > MAX_PLAUSIBLE_SPEED) return true;
-        if (dist < dynamicMin) return true;
+
+        // ✅ เดินเกิน 3 เมตรค่อยรับเข้าเส้นทาง
+        if (dist < minMove) return true;
       }
 
       lastAcceptedRef.current = { lat: current.latitude, lng: current.longitude, tsMs };
 
       const p: TrackPoint = { latitude: current.latitude, longitude: current.longitude, timestamp };
-      appendPoint(p, dynamicMin);
+      appendPoint(p, minMove); // ✅ ใช้ 3m ตรง ๆ
 
-      // ===== GEOFENCE CHECK =====
       if (activeGeofence && activeGeofence.length >= 3) {
         const inside = isPointInPolygon(
           { latitude: current.latitude, longitude: current.longitude },
           activeGeofence
         );
 
-        const prevInside = prevInsideRef.current;
+        const nowMs = Date.now();
 
-        if (prevInside === true && !inside) {
-          void sendGeofenceAlert("exit", 0);
-          if (isRecording) geofenceExitCountRef.current += 1;
-        }
-
-        if (prevInside === false && inside) {
-          void sendGeofenceAlert("enter", 0);
-        }
-
+        // เก็บไว้เพื่อ UI (โชว์ว่าอยู่ใน/นอก)
         prevInsideRef.current = inside;
         setIsInsideGeofence(inside);
+
+        if (inside) {
+          // กลับเข้าเขต -> เคลียร์ outside timer
+          outsideSinceRef.current = null;
+
+          // ถ้ายังไม่ re-arm (เพราะเคยแจ้ง exit ไปแล้ว) ให้รอเข้าเขต "ต่อเนื่อง" ถึงจะ re-arm
+          if (!exitArmedRef.current) {
+            if (!insideSinceRef.current) insideSinceRef.current = nowMs;
+
+            if (nowMs - insideSinceRef.current >= GEOFENCE_REARM_CONFIRM_MS) {
+              exitArmedRef.current = true;        // ✅ พร้อมแจ้ง exit ครั้งใหม่ในอนาคต
+              insideSinceRef.current = null;
+            }
+          } else {
+            insideSinceRef.current = null; // พร้อมอยู่แล้ว ไม่ต้องจับเวลา
+          }
+        } else {
+          // อยู่นอกเขต -> เคลียร์ inside timer
+          insideSinceRef.current = null;
+
+          // แจ้ง exit ได้แค่เมื่อ "armed" และอยู่นอกต่อเนื่องตามเวลาที่กำหนด
+          if (exitArmedRef.current) {
+            if (!outsideSinceRef.current) outsideSinceRef.current = nowMs;
+
+            if (nowMs - outsideSinceRef.current >= GEOFENCE_EXIT_CONFIRM_MS) {
+              void sendGeofenceAlert("exit", 0);
+              if (isRecording) geofenceExitCountRef.current += 1;
+
+              exitArmedRef.current = false;      // ✅ ล็อกไม่ให้แจ้งซ้ำจนกว่าจะกลับเข้าเขตแบบนิ่งๆ
+              outsideSinceRef.current = null;
+            }
+          }
+        }
       }
 
       // ===== SAVE POINT + METRICS =====
@@ -521,6 +558,10 @@ export default function MapTracker() {
     prevInsideRef.current = null;
     setIsInsideGeofence(null);
     lastMetricsPushRef.current = 0;
+
+    exitArmedRef.current = true;
+    outsideSinceRef.current = null;
+    insideSinceRef.current = null;
 
     const geoSnapshot = normalizeGeo(activeGeofence);
 

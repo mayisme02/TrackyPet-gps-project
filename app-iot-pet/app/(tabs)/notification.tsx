@@ -1,10 +1,4 @@
-import { useFocusEffect } from "expo-router";
-import React, {
-  useCallback,
-  useEffect,
-  useMemo,
-  useState,
-} from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   View,
   Text,
@@ -21,6 +15,7 @@ import { rtdb, auth, db } from "../../firebase/firebase";
 import { ref as dbRef, onValue, remove } from "firebase/database";
 import { doc, onSnapshot } from "firebase/firestore";
 import ProfileHeader from "@/components/ProfileHeader";
+import { useFocusEffect } from "@react-navigation/native";
 
 /* ================= TYPES ================= */
 type AlertItem = {
@@ -28,6 +23,9 @@ type AlertItem = {
   type: "exit" | "enter";
   atTh?: string;
   atUtc?: string;
+  message?: string;
+  device?: string;
+  radiusKm?: number;
 };
 
 type MatchedPet = {
@@ -46,6 +44,19 @@ export default function NotificationScreen() {
   const [pet, setPet] = useState<MatchedPet | null>(null);
   const [readMap, setReadMap] = useState<Record<string, boolean>>({});
 
+  /* ================= LOAD ACTIVE DEVICE (ทันที) ================= */
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      const active = await AsyncStorage.getItem("activeDevice");
+      if (!mounted) return;
+      setDeviceId(active || null);
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
   /* ================= LOAD MATCHED PET ================= */
   useEffect(() => {
     if (!auth.currentUser || !deviceId) {
@@ -57,7 +68,7 @@ export default function NotificationScreen() {
       doc(db, "users", auth.currentUser.uid, "deviceMatches", deviceId),
       (snap) => {
         if (!snap.exists()) return setPet(null);
-        const d = snap.data();
+        const d: any = snap.data();
         setPet({ petName: d.petName, photoURL: d.photoURL ?? null });
       }
     );
@@ -71,71 +82,77 @@ export default function NotificationScreen() {
     );
   }, [deviceId]);
 
-  /* ================= LOAD ALERTS ================= */
-  const load = useCallback(async () => {
+  /* ================= SUBSCRIBE ALERTS (FOCUS) ================= */
+  const subscribeAlerts = useCallback(async () => {
     const active = await AsyncStorage.getItem("activeDevice");
     if (!active) {
+      setDeviceId(null);
       setAlerts([]);
       setLoading(false);
       return () => {};
     }
 
     setDeviceId(active);
+    setLoading(true);
+
     const ref = dbRef(rtdb, `devices/${active}/alerts`);
 
-    return onValue(ref, (snap) => {
-      const v = snap.val() || {};
-      const rows: AlertItem[] = Object.keys(v).map((k) => ({
-        key: k,
-        ...v[k],
-      }));
+    const unsubscribe = onValue(
+      ref,
+      (snap) => {
+        const v = snap.val() || {};
+        const rows: AlertItem[] = Object.keys(v).map((k) => ({
+          key: k,
+          ...(v[k] || {}),
+        }));
 
-      rows.sort((a, b) => {
-        const ta = a.atUtc ? Date.parse(a.atUtc) : 0;
-        const tb = b.atUtc ? Date.parse(b.atUtc) : 0;
-        return tb - ta;
-      });
+        rows.sort((a, b) => {
+          const ta = a.atUtc ? Date.parse(a.atUtc) : 0;
+          const tb = b.atUtc ? Date.parse(b.atUtc) : 0;
+          return tb - ta;
+        });
 
-      const filtered: AlertItem[] = [];
-      for (const a of rows) {
-        const last = filtered[filtered.length - 1];
-        if (!last || last.type !== a.type) filtered.push(a);
-      }
+        // ✅ แสดงเฉพาะ "ออกนอกพื้นที่" เท่านั้น
+        const onlyExit = rows.filter((a) => (a.type || "").toString().toLowerCase() === "exit");
 
-      setAlerts(filtered);
-      setLoading(false);
-    });
+        setAlerts(onlyExit);
+        setLoading(false);
+      },
+      () => setLoading(false)
+    );
+
+    return () => unsubscribe();
   }, []);
 
   useFocusEffect(
     useCallback(() => {
       let off: any;
-      load().then((u) => (off = u));
+      subscribeAlerts().then((u) => (off = u));
       return () => off && off();
-    }, [load])
+    }, [subscribeAlerts])
   );
 
-  /* ================= MARK ALL AS READ ================= */
+  /* ================= MARK LAST READ (FOCUS) ================= */
   useFocusEffect(
     useCallback(() => {
       if (!deviceId) return;
-      AsyncStorage.setItem(
-        `notification_last_read_${deviceId}`,
-        String(Date.now())
-      );
+      AsyncStorage.setItem(`notification_last_read_${deviceId}`, String(Date.now()));
     }, [deviceId])
   );
 
+  /* ================= MARK VISIBLE ALERTS AS READ ================= */
   useFocusEffect(
     useCallback(() => {
       if (!deviceId || alerts.length === 0) return;
+
       const updated = { ...readMap };
-      alerts.forEach((a) => a.key && (updated[a.key] = true));
+      alerts.forEach((a) => {
+        if (a.key) updated[a.key] = true;
+      });
+
       setReadMap(updated);
-      AsyncStorage.setItem(
-        `notification_read_${deviceId}`,
-        JSON.stringify(updated)
-      );
+      AsyncStorage.setItem(`notification_read_${deviceId}`, JSON.stringify(updated));
+      // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [deviceId, alerts])
   );
 
@@ -151,9 +168,9 @@ export default function NotificationScreen() {
         onPress: async () => {
           await Promise.all(
             alerts.map((a) =>
-              remove(dbRef(rtdb, `devices/${deviceId}/alerts/${a.key}`)).catch(
-                () => null
-              )
+              a.key
+                ? remove(dbRef(rtdb, `devices/${deviceId}/alerts/${a.key}`)).catch(() => null)
+                : Promise.resolve()
             )
           );
         },
@@ -164,8 +181,9 @@ export default function NotificationScreen() {
   /* ================= BUILD LIST ================= */
   const listData: ListItem[] = useMemo(() => {
     if (!alerts.length) return [];
-    const unread = alerts.filter((a) => !readMap[a.key!]);
-    const read = alerts.filter((a) => readMap[a.key!]);
+
+    const unread = alerts.filter((a) => a.key && !readMap[a.key]);
+    const read = alerts.filter((a) => a.key && readMap[a.key]);
 
     const out: ListItem[] = [];
     if (unread.length) {
@@ -181,12 +199,14 @@ export default function NotificationScreen() {
 
   /* ================= RENDER ================= */
   const renderItem = ({ item }: { item: ListItem }) => {
-    if (item.kind === "section")
+    if (item.kind === "section") {
       return <Text style={styles.sectionTitle}>{item.title}</Text>;
+    }
 
     const a = item.data;
-    const isExit = a.type === "exit";
     const petName = pet?.petName ?? "สัตว์เลี้ยง";
+    const title = a.message || `${petName} ออกนอกพื้นที่`;
+    const timeLabel = a.atTh || a.atUtc || "";
 
     return (
       <View style={styles.card}>
@@ -197,17 +217,10 @@ export default function NotificationScreen() {
             <MaterialIcons name="pets" size={22} color="#7A4A00" />
           )}
         </View>
+
         <View style={{ flex: 1 }}>
-          <Text
-            style={[
-              styles.title,
-              { color: isExit ? "#b00020" : "#2e7d32" },
-            ]}
-          >
-            {petName}
-            {isExit ? " ออกนอกพื้นที่" : " กลับเข้าพื้นที่"}
-          </Text>
-          <Text style={styles.time}>{a.atTh || a.atUtc}</Text>
+          <Text style={[styles.title, { color: "#b00020" }]}>{title}</Text>
+          {!!timeLabel && <Text style={styles.time}>{timeLabel}</Text>}
         </View>
       </View>
     );
@@ -231,21 +244,16 @@ export default function NotificationScreen() {
           data={listData}
           renderItem={renderItem}
           keyExtractor={(item, i) =>
-            item.kind === "section"
-              ? `section-${i}`
-              : item.data.key!
+            item.kind === "section" ? `section-${i}` : item.data.key || `alert-${i}`
           }
           contentContainerStyle={{ padding: 16 }}
-          ListEmptyComponent={
-            <Text style={styles.empty}>ยังไม่มีการแจ้งเตือน</Text>
-          }
+          ListEmptyComponent={<Text style={styles.empty}>ยังไม่มีการแจ้งเตือน</Text>}
         />
       )}
     </>
   );
 }
 
-/* ================= STYLES ================= */
 const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 15,
@@ -263,7 +271,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 12,
     padding: 16,
-    borderRadius: 12,
     borderWidth: 1,
     borderColor: "#F1F1F1",
     backgroundColor: "#fff",
@@ -277,7 +284,18 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-  avatar: { width: 50, height: 50, borderRadius: 26 },
-  title: { fontSize: 16, fontWeight: "700" },
-  time: { fontSize: 12, color: "#777", marginTop: 6 },
+  avatar: { 
+    width: 50, 
+    height: 50, 
+    borderRadius: 26 
+  },
+  title: { 
+    fontSize: 16, 
+    fontWeight: "700" 
+  },
+  time: { 
+    fontSize: 12, 
+    color: "#777", 
+    marginTop: 6 
+  },
 });

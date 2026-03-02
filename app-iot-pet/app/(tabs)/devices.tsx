@@ -129,7 +129,7 @@ export default function Devices() {
       setLoading(true);
 
       // ⚠️ โปรดักชันจริงให้ใช้โดเมน https://api.yourapp.com แทน IP LAN
-      const res = await fetch("http://localhost:3000/api/device/location", {
+      const res = await fetch("http://172.20.10.2:3000/api/device/location", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ deviceCode: code }),
@@ -171,7 +171,7 @@ export default function Devices() {
     const updated = [...list, newDevice];
 
     await AsyncStorage.setItem("devices", JSON.stringify(updated));
-    await AsyncStorage.setItem("activeDevice", code);
+    await AsyncStorage.setItem("activeDevic e", code);
 
     setDevices(updated);
     setModalVisible(false);

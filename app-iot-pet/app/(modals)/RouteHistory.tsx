@@ -4,9 +4,9 @@ import MapView, { Polyline, Marker, Region, LatLng, Callout, Polygon } from "rea
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { auth, db } from "../../firebase/firebase";
-import { collection, doc, onSnapshot } from "firebase/firestore";
 import ProfileHeader from "@/components/ProfileHeader";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { collection, doc, onSnapshot } from "firebase/firestore";
 
 type RoutePoint = {
   latitude: number;
@@ -81,6 +81,7 @@ export default function RouteHistory() {
 
   const [points, setPoints] = useState<RoutePoint[]>([]);
   const [savedGeofence, setSavedGeofence] = useState<GeoPoint[] | null>(null);
+  const [mapReady, setMapReady] = useState(false);
 
   const effectiveRouteId = routeId || (fallbackRoute as any)?.id;
 
@@ -148,6 +149,52 @@ export default function RouteHistory() {
     return normalizeGeo(pts);
   }, [route]);
 
+  // ✅ รองรับ points หลายฟอร์แมต (รวม Firestore GeoPoint)
+  const getLatLng = (p: any): { latitude: number; longitude: number } | null => {
+    const gp =
+      p?.geoPoint ||
+      p?.geopoint ||
+      p?.coord ||
+      p?.coordinate ||
+      p?.location ||
+      p?.position ||
+      p?.point ||
+      null;
+
+    const lat =
+      (typeof p?.latitude === "number" ? p.latitude : null) ??
+      (typeof p?.lat === "number" ? p.lat : null) ??
+      (typeof gp?.latitude === "number" ? gp.latitude : null) ??
+      (typeof gp?._lat === "number" ? gp._lat : null) ??
+      (typeof gp?.lat === "number" ? gp.lat : null);
+
+    const lng =
+      (typeof p?.longitude === "number" ? p.longitude : null) ??
+      (typeof p?.lng === "number" ? p.lng : null) ??
+      (typeof gp?.longitude === "number" ? gp.longitude : null) ??
+      (typeof gp?._long === "number" ? gp._long : null) ??
+      (typeof gp?.lng === "number" ? gp.lng : null);
+
+    const latitude = Number(lat);
+    const longitude = Number(lng);
+
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
+    if (Math.abs(latitude) > 90 || Math.abs(longitude) > 180) return null;
+
+    return { latitude, longitude };
+  };
+
+  const getMs = (p: any, iso: string) => {
+    const ms =
+      Number(p?.timestampMs) ||
+      Number(p?.tsMs) ||
+      (typeof p?.createdAt?.toMillis === "function" ? p.createdAt.toMillis() : 0) ||
+      (iso ? Date.parse(iso) : 0) ||
+      0;
+
+    return Number.isFinite(ms) ? ms : 0;
+  };
+
   // ---------- subscribe route doc ----------
   useEffect(() => {
     if (!auth.currentUser) return;
@@ -169,65 +216,35 @@ export default function RouteHistory() {
     );
   }, [effectiveRouteId]);
 
+  // ---------- subscribe points (no orderBy; sort client-side for backward compatibility) ----------
   useEffect(() => {
     if (!auth.currentUser) return;
     if (!effectiveRouteId) return;
 
     const uid = auth.currentUser.uid;
-    const colRef = collection(db, "users", uid, "routeHistories", effectiveRouteId, "points");
-
-    const pickNumber = (...vals: any[]) => {
-      for (const v of vals) {
-        const n = Number(v);
-        if (Number.isFinite(n)) return n;
-      }
-      return NaN;
-    };
+    const col = collection(db, "users", uid, "routeHistories", effectiveRouteId, "points");
 
     return onSnapshot(
-      colRef,
+      col,
       (snap) => {
         const parsed = snap.docs
           .map((d) => d.data() as any)
           .map((p) => {
-            const lat = pickNumber(
-              p.latitude,
-              p.lat,
-              p.coord?.latitude,
-              p.coord?.lat,
-              p.coordinate?.latitude,
-              p.coordinate?.lat,
-              p.location?.latitude,
-              p.location?.lat
-            );
-
-            const lng = pickNumber(
-              p.longitude,
-              p.lng,
-              p.coord?.longitude,
-              p.coord?.lng,
-              p.coordinate?.longitude,
-              p.coordinate?.lng,
-              p.location?.longitude,
-              p.location?.lng
-            );
+            const ll = getLatLng(p);
+            if (!ll) return null;
 
             const iso =
-              typeof p.timestamp === "string" ? p.timestamp : toIso(p.timestamp) || toIso(p.createdAt) || "";
+              typeof p.timestamp === "string"
+                ? p.timestamp
+                : toIso(p.timestamp) || toIso(p.createdAt) || "";
 
-            const ms = pickNumber(p.timestampMs, p.tsMs, Date.parse(iso) || 0);
+            const ms = getMs(p, iso);
 
-            return { latitude: lat, longitude: lng, timestamp: iso, _ms: ms };
+            return { ...ll, timestamp: iso, _ms: ms };
           })
-          .filter(
-            (p) =>
-              Number.isFinite(p.latitude) &&
-              Number.isFinite(p.longitude) &&
-              Math.abs(p.latitude) <= 90 &&
-              Math.abs(p.longitude) <= 180
-          )
-          .sort((a, b) => a._ms - b._ms)
-          .map(({ _ms, ...rest }) => rest as RoutePoint);
+          .filter(Boolean)
+          .sort((a: any, b: any) => (a._ms || 0) - (b._ms || 0))
+          .map(({ _ms, ...rest }: any) => rest as RoutePoint);
 
         setPoints(parsed);
       },
@@ -243,19 +260,19 @@ export default function RouteHistory() {
     else setSavedGeofence(null);
   }, [routeGeofenceSnapshot]);
 
-  const lineCoords: LatLng[] = useMemo(
-    () =>
-      points
-        .map((p) => ({ latitude: Number(p.latitude), longitude: Number(p.longitude) }))
-        .filter(
-          (p) =>
-            Number.isFinite(p.latitude) &&
-            Number.isFinite(p.longitude) &&
-            Math.abs(p.latitude) <= 90 &&
-            Math.abs(p.longitude) <= 180
-        ),
-    [points]
-  );
+  // ✅ สร้างเส้น + ตัดจุดซ้ำติดกัน (กัน polyline เหมือนจุดเดียว)
+  const lineCoords: LatLng[] = useMemo(() => {
+    const out: LatLng[] = [];
+    for (const p of points) {
+      const c = { latitude: Number(p.latitude), longitude: Number(p.longitude) };
+      if (!Number.isFinite(c.latitude) || !Number.isFinite(c.longitude)) continue;
+      if (Math.abs(c.latitude) > 90 || Math.abs(c.longitude) > 180) continue;
+
+      const prev = out[out.length - 1];
+      if (!prev || prev.latitude !== c.latitude || prev.longitude !== c.longitude) out.push(c);
+    }
+    return out;
+  }, [points]);
 
   const initialRegion: Region = useMemo(() => {
     if (lineCoords.length > 0) {
@@ -465,7 +482,14 @@ export default function RouteHistory() {
 
       {/* Map เต็มพื้นที่ใต้ header */}
       <View style={[styles.mapWrap, { marginTop: HEADER_H }]}>
-        <MapView ref={mapRef} style={StyleSheet.absoluteFill} initialRegion={initialRegion} onPress={mapOnPress}>
+        <MapView
+          key={effectiveRouteId} // ✅ บังคับ remount แก้ “บางรายการไม่วาดเส้น”
+          ref={mapRef}
+          style={StyleSheet.absoluteFill}
+          initialRegion={initialRegion}
+          onPress={mapOnPress}
+          onMapReady={() => setMapReady(true)}
+        >
           {savedGeofence && savedGeofence.length >= 3 && (
             <Polygon
               coordinates={savedGeofence}
@@ -476,7 +500,9 @@ export default function RouteHistory() {
             />
           )}
 
-          {lineCoords.length > 1 && <Polyline coordinates={lineCoords} strokeColor="#E28F00" strokeWidth={8} zIndex={5} />}
+          {mapReady && lineCoords.length > 1 && (
+            <Polyline coordinates={lineCoords} strokeColor="#E28F00" strokeWidth={8} zIndex={5} />
+          )}
 
           {startPoint && (
             <Marker

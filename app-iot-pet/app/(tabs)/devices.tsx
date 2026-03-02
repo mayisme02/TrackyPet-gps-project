@@ -171,7 +171,7 @@ export default function Devices() {
     const updated = [...list, newDevice];
 
     await AsyncStorage.setItem("devices", JSON.stringify(updated));
-    await AsyncStorage.setItem("activeDevic e", code);
+    await AsyncStorage.setItem("activeDevic", code);
 
     setDevices(updated);
     setModalVisible(false);

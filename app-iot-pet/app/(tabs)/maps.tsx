@@ -252,27 +252,72 @@ export default function MapTracker() {
   }
 
   const sendGeofenceAlert = useCallback(
-    async (type: "exit" | "enter", distance: number) => {
-      if (!deviceCode) return;
+  async (type: "exit" | "enter", distance: number) => {
+    if (!deviceCode) return;
 
-      const now = new Date();
-      const atUtc = now.toISOString();
-      const atTh = now.toLocaleString("th-TH", { dateStyle: "long", timeStyle: "medium" });
+    const now = new Date();
+    const atUtc = now.toISOString();
+    const atMs = now.getTime();
+    const atTh = now.toLocaleString("th-TH", { dateStyle: "long", timeStyle: "medium" });
 
-      const message =
-        type === "exit" ? `สัตว์เลี้ยงออกนอกพื้นที่ (${Math.round(distance)} ม.)` : `สัตว์เลี้ยงกลับเข้าพื้นที่`;
+    const message =
+      type === "exit" ? `สัตว์เลี้ยงออกนอกพื้นที่ (${Math.round(distance)} ม.)` : `สัตว์เลี้ยงกลับเข้าพื้นที่`;
 
+    // ✅ 1) เก็บแบบเดิมใน Realtime DB (ถ้าคุณยังใช้ notification จาก RTDB)
+    try {
       await push(dbRef(rtdb, `devices/${deviceCode}/alerts`), {
         type,
         message,
         atUtc,
         atTh,
-        radiusKm: geofenceRadius / 1000,
+        atMs,
         device: deviceCode,
+        radiusKm: geofenceRadius / 1000,
       });
-    },
-    [deviceCode, geofenceRadius]
-  );
+    } catch {}
+
+    // ✅ 2) เก็บ “แยก” ลง Firestore (สำคัญ)
+    try {
+      if (!auth.currentUser) return;
+      const uid = auth.currentUser.uid;
+
+      const rid = recordingCtxRef.current?.recordId ?? recordId ?? null;
+
+      await addDoc(collection(db, "users", uid, "alerts"), {
+        type, // "exit" | "enter"
+        kind: "GEOFENCE",
+        message,
+        deviceCode,
+        petId: petId ?? null,
+        petName: petName ?? null,
+        routeId: rid,
+        atIso: atUtc,
+        atMs,
+        lat: petLocation?.latitude ?? null,
+        lng: petLocation?.longitude ?? null,
+        createdAt: serverTimestamp(),
+        read: false,
+      });
+
+      // (ออปชัน) ถ้าอยากให้ดูแจ้งเตือนตาม route ได้ง่ายขึ้น:
+      if (rid) {
+        await addDoc(collection(db, "users", uid, "routeHistories", rid, "alerts"), {
+          type,
+          kind: "GEOFENCE",
+          message,
+          deviceCode,
+          petId: petId ?? null,
+          atIso: atUtc,
+          atMs,
+          lat: petLocation?.latitude ?? null,
+          lng: petLocation?.longitude ?? null,
+          createdAt: serverTimestamp(),
+        });
+      }
+    } catch {}
+  },
+  [deviceCode, geofenceRadius, petId, petName, petLocation, recordId]
+);
 
   /* ================= FORMAT ================= */
   const formatThaiDate = (iso: string) =>

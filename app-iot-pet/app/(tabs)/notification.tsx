@@ -31,18 +31,35 @@ type AlertItem = {
 type MatchedPet = {
   petName: string;
   photoURL?: string | null;
+  petId?: string | null;
+  // จุดเริ่ม session (เวลาที่ match นี้ถูกอัปเดตล่าสุด)
+  sessionStartMs?: number; // derived from updatedAt
 };
 
 type ListItem =
-  | { kind: "section"; title: string }
+  | { kind: "section"; id: "section-latest" | "section-old"; title: string }
   | { kind: "alert"; data: AlertItem };
 
 export default function NotificationScreen() {
   const [loading, setLoading] = useState(true);
   const [alerts, setAlerts] = useState<AlertItem[]>([]);
   const [deviceId, setDeviceId] = useState<string | null>(null);
+
   const [pet, setPet] = useState<MatchedPet | null>(null);
+  const [sessionStartMs, setSessionStartMs] = useState<number>(0);
+
   const [readMap, setReadMap] = useState<Record<string, boolean>>({});
+
+  /* ================= STORAGE KEYS (แยกตาม session) ================= */
+  const readKey = useMemo(() => {
+    if (!deviceId) return null;
+    return `notification_read_${deviceId}_${sessionStartMs || 0}`;
+  }, [deviceId, sessionStartMs]);
+
+  const lastReadKey = useMemo(() => {
+    if (!deviceId) return null;
+    return `notification_last_read_${deviceId}_${sessionStartMs || 0}`;
+  }, [deviceId, sessionStartMs]);
 
   /* ================= LOAD ACTIVE DEVICE (ทันที) ================= */
   useEffect(() => {
@@ -57,30 +74,60 @@ export default function NotificationScreen() {
     };
   }, []);
 
-  /* ================= LOAD MATCHED PET ================= */
+  /* ================= LOAD MATCHED PET (และสร้าง sessionStartMs) ================= */
   useEffect(() => {
     if (!auth.currentUser || !deviceId) {
       setPet(null);
+      setSessionStartMs(0);
       return;
     }
 
     return onSnapshot(
       doc(db, "users", auth.currentUser.uid, "deviceMatches", deviceId),
       (snap) => {
-        if (!snap.exists()) return setPet(null);
+        if (!snap.exists()) {
+          setPet(null);
+          setSessionStartMs(0);
+          return;
+        }
+
         const d: any = snap.data();
-        setPet({ petName: d.petName, photoURL: d.photoURL ?? null });
+
+        // ✅ ใช้ updatedAt เป็นจุดเริ่ม session
+        const ms =
+          typeof d?.updatedAt?.toMillis === "function"
+            ? (d.updatedAt.toMillis() as number)
+            : 0;
+
+        setPet({
+          petName: d.petName,
+          photoURL: d.photoURL ?? null,
+          petId: d.petId ?? null,
+          sessionStartMs: ms,
+        });
+
+        setSessionStartMs(ms || 0);
       }
     );
   }, [deviceId]);
 
-  /* ================= LOAD READ MAP ================= */
+  /* ================= LOAD READ MAP (ตาม session) ================= */
   useEffect(() => {
-    if (!deviceId) return;
-    AsyncStorage.getItem(`notification_read_${deviceId}`).then((v) =>
-      setReadMap(v ? JSON.parse(v) : {})
-    );
-  }, [deviceId]);
+    if (!readKey) {
+      setReadMap({});
+      return;
+    }
+
+    let mounted = true;
+    AsyncStorage.getItem(readKey).then((v) => {
+      if (!mounted) return;
+      setReadMap(v ? JSON.parse(v) : {});
+    });
+
+    return () => {
+      mounted = false;
+    };
+  }, [readKey]);
 
   /* ================= SUBSCRIBE ALERTS (FOCUS) ================= */
   const subscribeAlerts = useCallback(async () => {
@@ -112,17 +159,26 @@ export default function NotificationScreen() {
           return tb - ta;
         });
 
-        // ✅ แสดงเฉพาะ "ออกนอกพื้นที่" เท่านั้น
+        // ✅ แสดงเฉพาะ "ออกนอกพื้นที่"
         const onlyExit = rows.filter((a) => (a.type || "").toString().toLowerCase() === "exit");
 
-        setAlerts(onlyExit);
+        // ✅ “เพิ่มใหม่เท่านั้น”: กรองตาม sessionStartMs (เวลาที่เปลี่ยนสัตว์เลี้ยง/อัปเดต match)
+        const filteredBySession =
+          sessionStartMs > 0
+            ? onlyExit.filter((a) => {
+                const t = a.atUtc ? Date.parse(a.atUtc) : 0;
+                return t >= sessionStartMs;
+              })
+            : onlyExit;
+
+        setAlerts(filteredBySession);
         setLoading(false);
       },
       () => setLoading(false)
     );
 
     return () => unsubscribe();
-  }, []);
+  }, [sessionStartMs]);
 
   useFocusEffect(
     useCallback(() => {
@@ -135,15 +191,15 @@ export default function NotificationScreen() {
   /* ================= MARK LAST READ (FOCUS) ================= */
   useFocusEffect(
     useCallback(() => {
-      if (!deviceId) return;
-      AsyncStorage.setItem(`notification_last_read_${deviceId}`, String(Date.now()));
-    }, [deviceId])
+      if (!lastReadKey) return;
+      AsyncStorage.setItem(lastReadKey, String(Date.now()));
+    }, [lastReadKey])
   );
 
   /* ================= MARK VISIBLE ALERTS AS READ ================= */
   useFocusEffect(
     useCallback(() => {
-      if (!deviceId || alerts.length === 0) return;
+      if (!readKey || alerts.length === 0) return;
 
       const updated = { ...readMap };
       alerts.forEach((a) => {
@@ -151,12 +207,12 @@ export default function NotificationScreen() {
       });
 
       setReadMap(updated);
-      AsyncStorage.setItem(`notification_read_${deviceId}`, JSON.stringify(updated));
+      AsyncStorage.setItem(readKey, JSON.stringify(updated));
       // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [deviceId, alerts])
+    }, [readKey, alerts])
   );
 
-  /* ================= CLEAR ================= */
+  /* ================= CLEAR (ลบเฉพาะชุดที่แสดงใน session นี้) ================= */
   const clearAll = () => {
     if (!deviceId || alerts.length === 0) return;
 
@@ -173,6 +229,14 @@ export default function NotificationScreen() {
                 : Promise.resolve()
             )
           );
+
+          // เคลียร์ readMap ของ session นี้ด้วย
+          if (readKey) {
+            try {
+              await AsyncStorage.removeItem(readKey);
+            } catch {}
+            setReadMap({});
+          }
         },
       },
     ]);
@@ -187,11 +251,11 @@ export default function NotificationScreen() {
 
     const out: ListItem[] = [];
     if (unread.length) {
-      out.push({ kind: "section", title: "ล่าสุด" });
+      out.push({ kind: "section", id: "section-latest", title: "ล่าสุด" });
       unread.forEach((a) => out.push({ kind: "alert", data: a }));
     }
     if (read.length) {
-      out.push({ kind: "section", title: "ก่อนหน้านี้" });
+      out.push({ kind: "section", id: "section-old", title: "ก่อนหน้านี้" });
       read.forEach((a) => out.push({ kind: "alert", data: a }));
     }
     return out;
@@ -243,9 +307,10 @@ export default function NotificationScreen() {
         <FlatList
           data={listData}
           renderItem={renderItem}
-          keyExtractor={(item, i) =>
-            item.kind === "section" ? `section-${i}` : item.data.key || `alert-${i}`
-          }
+          keyExtractor={(item, i) => {
+            if (item.kind === "section") return item.id; // ✅ stable key ไม่ทับกัน
+            return item.data.key || `alert-${i}`;
+          }}
           contentContainerStyle={{ padding: 16 }}
           ListEmptyComponent={<Text style={styles.empty}>ยังไม่มีการแจ้งเตือน</Text>}
         />
@@ -284,18 +349,18 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-  avatar: { 
-    width: 50, 
-    height: 50, 
-    borderRadius: 26 
+  avatar: {
+    width: 50,
+    height: 50,
+    borderRadius: 26,
   },
-  title: { 
-    fontSize: 16, 
-    fontWeight: "700" 
+  title: {
+    fontSize: 16,
+    fontWeight: "700",
   },
-  time: { 
-    fontSize: 12, 
-    color: "#777", 
-    marginTop: 6 
+  time: {
+    fontSize: 12,
+    color: "#777",
+    marginTop: 6,
   },
 });

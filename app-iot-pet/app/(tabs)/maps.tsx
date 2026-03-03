@@ -38,9 +38,10 @@ import {
   updateDoc,
   setDoc,
 } from "firebase/firestore";
+import { pushAlertAndLog } from "@/utils/alertService";
 
 /* ================= CONFIG ================= */
-const BACKEND_URL = "http://172.20.10.2:3000";
+const BACKEND_URL = "http://localhost:3000";
 const MIN_MOVE_DISTANCE = 3;
 
 /* ✅ storage keys */
@@ -252,72 +253,78 @@ export default function MapTracker() {
   }
 
   const sendGeofenceAlert = useCallback(
-  async (type: "exit" | "enter", distance: number) => {
-    if (!deviceCode) return;
+    async (type: "exit" | "enter", distance: number) => {
+      if (!deviceCode) return;
 
-    const now = new Date();
-    const atUtc = now.toISOString();
-    const atMs = now.getTime();
-    const atTh = now.toLocaleString("th-TH", { dateStyle: "long", timeStyle: "medium" });
+      const now = new Date();
+      const atUtc = now.toISOString();
+      const atMs = now.getTime();
+      const atTh = now.toLocaleString("th-TH", { dateStyle: "long", timeStyle: "medium" });
 
-    const message =
-      type === "exit" ? `สัตว์เลี้ยงออกนอกพื้นที่ (${Math.round(distance)} ม.)` : `สัตว์เลี้ยงกลับเข้าพื้นที่`;
+      const message =
+        type === "exit"
+          ? `สัตว์เลี้ยงออกนอกพื้นที่ (${Math.round(distance)} ม.)`
+          : `สัตว์เลี้ยงกลับเข้าพื้นที่`;
 
-    // ✅ 1) เก็บแบบเดิมใน Realtime DB (ถ้าคุณยังใช้ notification จาก RTDB)
-    try {
-      await push(dbRef(rtdb, `devices/${deviceCode}/alerts`), {
-        type,
-        message,
-        atUtc,
-        atTh,
-        atMs,
-        device: deviceCode,
-        radiusKm: geofenceRadius / 1000,
-      });
-    } catch {}
-
-    // ✅ 2) เก็บ “แยก” ลง Firestore (สำคัญ)
-    try {
-      if (!auth.currentUser) return;
-      const uid = auth.currentUser.uid;
-
+      // ✅ 1) เขียน RTDB ทั้ง alerts + logs (และผูกสัตว์ไว้กับ alert)
       const rid = recordingCtxRef.current?.recordId ?? recordId ?? null;
 
-      await addDoc(collection(db, "users", uid, "alerts"), {
-        type, // "exit" | "enter"
-        kind: "GEOFENCE",
-        message,
-        deviceCode,
+      await pushAlertAndLog({
+        deviceId: deviceCode,
+        type,
+        message, // จะส่งหรือไม่ส่งก็ได้
+        radiusKm: geofenceRadius / 1000,
+        atUtc,
+        atTh,
+
         petId: petId ?? null,
         petName: petName ?? null,
-        routeId: rid,
-        atIso: atUtc,
-        atMs,
-        lat: petLocation?.latitude ?? null,
-        lng: petLocation?.longitude ?? null,
-        createdAt: serverTimestamp(),
-        read: false,
+        photoURL: petPhotoURL ?? null,
+
+        routeId: rid, // กดแล้วไป RouteHistory ได้
       });
 
-      // (ออปชัน) ถ้าอยากให้ดูแจ้งเตือนตาม route ได้ง่ายขึ้น:
-      if (rid) {
-        await addDoc(collection(db, "users", uid, "routeHistories", rid, "alerts"), {
+      // ✅ 2) ส่วน Firestore ของคุณ (เก็บต่อได้เหมือนเดิม)
+      try {
+        if (!auth.currentUser) return;
+        const uid = auth.currentUser.uid;
+
+        const rid = recordingCtxRef.current?.recordId ?? recordId ?? null;
+
+        await addDoc(collection(db, "users", uid, "alerts"), {
           type,
           kind: "GEOFENCE",
           message,
           deviceCode,
           petId: petId ?? null,
+          petName: petName ?? null,
+          routeId: rid,
           atIso: atUtc,
           atMs,
           lat: petLocation?.latitude ?? null,
           lng: petLocation?.longitude ?? null,
           createdAt: serverTimestamp(),
+          read: false,
         });
-      }
-    } catch {}
-  },
-  [deviceCode, geofenceRadius, petId, petName, petLocation, recordId]
-);
+
+        if (rid) {
+          await addDoc(collection(db, "users", uid, "routeHistories", rid, "alerts"), {
+            type,
+            kind: "GEOFENCE",
+            message,
+            deviceCode,
+            petId: petId ?? null,
+            atIso: atUtc,
+            atMs,
+            lat: petLocation?.latitude ?? null,
+            lng: petLocation?.longitude ?? null,
+            createdAt: serverTimestamp(),
+          });
+        }
+      } catch { }
+    },
+    [deviceCode, geofenceRadius, petId, petName, petLocation, recordId]
+  );
 
   /* ================= FORMAT ================= */
   const formatThaiDate = (iso: string) =>
@@ -460,16 +467,19 @@ export default function MapTracker() {
           // กลับเข้าเขต -> เคลียร์ outside timer
           outsideSinceRef.current = null;
 
-          // ถ้ายังไม่ re-arm (เพราะเคยแจ้ง exit ไปแล้ว) ให้รอเข้าเขต "ต่อเนื่อง" ถึงจะ re-arm
+          // ✅ เคยแจ้ง exit ไปแล้ว (exitArmedRef=false) แปลว่ากำลังกลับเข้าพื้นที่
+          // รอเข้าเขต "ต่อเนื่อง" 8 วิ แล้วค่อยยิง enter 1 ครั้ง
           if (!exitArmedRef.current) {
             if (!insideSinceRef.current) insideSinceRef.current = nowMs;
 
             if (nowMs - insideSinceRef.current >= GEOFENCE_REARM_CONFIRM_MS) {
-              exitArmedRef.current = true;        // ✅ พร้อมแจ้ง exit ครั้งใหม่ในอนาคต
+              void sendGeofenceAlert("enter", 0); // ✅ เพิ่มบรรทัดนี้
+
+              exitArmedRef.current = true; // re-arm
               insideSinceRef.current = null;
             }
           } else {
-            insideSinceRef.current = null; // พร้อมอยู่แล้ว ไม่ต้องจับเวลา
+            insideSinceRef.current = null;
           }
         } else {
           // อยู่นอกเขต -> เคลียร์ inside timer
@@ -483,11 +493,12 @@ export default function MapTracker() {
               void sendGeofenceAlert("exit", 0);
               if (isRecording) geofenceExitCountRef.current += 1;
 
-              exitArmedRef.current = false;      // ✅ ล็อกไม่ให้แจ้งซ้ำจนกว่าจะกลับเข้าเขตแบบนิ่งๆ
+              exitArmedRef.current = false;
               outsideSinceRef.current = null;
             }
           }
         }
+
       }
 
       // ===== SAVE POINT + METRICS =====

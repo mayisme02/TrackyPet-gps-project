@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, Image, Platform } from "react-native";
 import MapView, { Polyline, Marker, Region, LatLng, Callout, Polygon } from "react-native-maps";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -8,6 +8,7 @@ import ProfileHeader from "@/components/ProfileHeader";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { collection, doc, onSnapshot } from "firebase/firestore";
 
+/* ================= TYPES ================= */
 type RoutePoint = {
   latitude: number;
   longitude: number;
@@ -28,28 +29,50 @@ type RouteHistoryDoc = {
 
   status?: string;
 
-  // ✅ geofence ณ เวลาบันทึก
+  // geofence ณ เวลาบันทึก
   geofence?: GeoPoint[] | null;
   geofenceSnapshot?: { points?: GeoPoint[]; savedAt?: any } | null;
 
-  // ✅ metrics
+  // metrics (อาจไม่อัปเดตบางช่วง)
   distanceMeters?: number;
   durationSeconds?: number;
   exitCount?: number;
 
-  // ✅ เวลาจริง (บันทึกจากหน้า Maps)
+  // เวลาจริง (บันทึกจากหน้า Maps)
   startedAtIso?: string | null;
   endedAtIso?: string | null;
 
-  // ✅ เวลาจริง (Timestamp) เผื่อบางเครื่องเก็บเป็น Firestore Timestamp
-  startedAt?: any; // Firestore Timestamp
-  endedAt?: any; // Firestore Timestamp
+  // เวลาจริง (Timestamp)
+  startedAt?: any;
+  endedAt?: any;
 
-  // ✅ realtime fields
+  // realtime fields
   lastLiveIso?: string | null;
   lastLiveMs?: number | null;
 };
 
+/* ================= DISTANCE HELPERS (fallback) ================= */
+const toRad = (deg: number) => (deg * Math.PI) / 180;
+
+const haversineMeters = (a: LatLng, b: LatLng) => {
+  const R = 6371000;
+  const dLat = toRad(b.latitude - a.latitude);
+  const dLng = toRad(b.longitude - a.longitude);
+  const lat1 = toRad(a.latitude);
+  const lat2 = toRad(b.latitude);
+
+  const x =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
+
+  const c = 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
+  return R * c;
+};
+
+// กัน GPS jump: ถ้าช่วงใดกระโดดไกลเกิน (เมตร) ไม่เอามาคิดระยะ (แต่ยังวาดเส้นตามจริง)
+const MAX_SEGMENT_M = 300; // ปรับได้ (200-500)
+
+/* ================= SCREEN ================= */
 export default function RouteHistory() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -60,9 +83,11 @@ export default function RouteHistory() {
   }>();
 
   const mapRef = useRef<MapView>(null);
-  const suppressMapPressRef = useRef(false);
   const startMarkerRef = useRef<React.ElementRef<typeof Marker>>(null);
   const endMarkerRef = useRef<React.ElementRef<typeof Marker>>(null);
+  const suppressMapPressRef = useRef(false);
+
+  const [mapReady, setMapReady] = useState(false);
 
   const fallbackRoute: (RouteHistoryDoc & { id?: string }) | null = useMemo(() => {
     if (!routeJson) return null;
@@ -81,11 +106,10 @@ export default function RouteHistory() {
 
   const [points, setPoints] = useState<RoutePoint[]>([]);
   const [savedGeofence, setSavedGeofence] = useState<GeoPoint[] | null>(null);
-  const [mapReady, setMapReady] = useState(false);
 
   const effectiveRouteId = routeId || (fallbackRoute as any)?.id;
 
-  // ---------- helpers ----------
+  /* ================= HELPERS ================= */
   const normalizeGeo = (poly: any): GeoPoint[] | null => {
     if (!Array.isArray(poly) || poly.length < 3) return null;
     const cleaned = poly
@@ -143,13 +167,11 @@ export default function RouteHistory() {
     return s === "recording" || s === "running" || s === "in_progress" ? "recording" : "done";
   };
 
-  // ✅ use record-time geofence snapshot first, then fallback to geofence
   const routeGeofenceSnapshot = useMemo(() => {
     const pts = route?.geofenceSnapshot?.points ?? route?.geofence ?? null;
     return normalizeGeo(pts);
   }, [route]);
 
-  // ✅ รองรับ points หลายฟอร์แมต (รวม Firestore GeoPoint)
   const getLatLng = (p: any): { latitude: number; longitude: number } | null => {
     const gp =
       p?.geoPoint ||
@@ -195,7 +217,7 @@ export default function RouteHistory() {
     return Number.isFinite(ms) ? ms : 0;
   };
 
-  // ---------- subscribe route doc ----------
+  /* ================= SUBSCRIBE ROUTE DOC ================= */
   useEffect(() => {
     if (!auth.currentUser) return;
     if (!effectiveRouteId) return;
@@ -216,16 +238,16 @@ export default function RouteHistory() {
     );
   }, [effectiveRouteId]);
 
-  // ---------- subscribe points (no orderBy; sort client-side for backward compatibility) ----------
+  /* ================= SUBSCRIBE POINTS ================= */
   useEffect(() => {
     if (!auth.currentUser) return;
     if (!effectiveRouteId) return;
 
     const uid = auth.currentUser.uid;
-    const col = collection(db, "users", uid, "routeHistories", effectiveRouteId, "points");
+    const colRef = collection(db, "users", uid, "routeHistories", effectiveRouteId, "points");
 
     return onSnapshot(
-      col,
+      colRef,
       (snap) => {
         const parsed = snap.docs
           .map((d) => d.data() as any)
@@ -255,12 +277,13 @@ export default function RouteHistory() {
     );
   }, [effectiveRouteId]);
 
+  /* ================= GEOFENCE SNAPSHOT ================= */
   useEffect(() => {
     if (routeGeofenceSnapshot && routeGeofenceSnapshot.length >= 3) setSavedGeofence(routeGeofenceSnapshot);
     else setSavedGeofence(null);
   }, [routeGeofenceSnapshot]);
 
-  // ✅ สร้างเส้น + ตัดจุดซ้ำติดกัน (กัน polyline เหมือนจุดเดียว)
+  /* ================= LINE COORDS (always render) ================= */
   const lineCoords: LatLng[] = useMemo(() => {
     const out: LatLng[] = [];
     for (const p of points) {
@@ -274,6 +297,7 @@ export default function RouteHistory() {
     return out;
   }, [points]);
 
+  /* ================= INITIAL REGION ================= */
   const initialRegion: Region = useMemo(() => {
     if (lineCoords.length > 0) {
       return {
@@ -299,8 +323,8 @@ export default function RouteHistory() {
     };
   }, [lineCoords, savedGeofence]);
 
-  // ✅ fit ให้ครอบคลุม “เส้นทาง + geofence”
-  useEffect(() => {
+  /* ================= FIT (fix: retry when map not ready / data late) ================= */
+  const doFit = useCallback(() => {
     if (!mapRef.current) return;
 
     const coordsToFit: LatLng[] = [];
@@ -309,51 +333,48 @@ export default function RouteHistory() {
 
     if (coordsToFit.length === 0) return;
 
-    const t = setTimeout(() => {
-      if (coordsToFit.length === 1) {
-        mapRef.current?.animateToRegion(
-          {
-            latitude: coordsToFit[0].latitude,
-            longitude: coordsToFit[0].longitude,
-            latitudeDelta: 0.01,
-            longitudeDelta: 0.01,
-          },
-          350
-        );
-        return;
-      }
-
-      mapRef.current?.fitToCoordinates(coordsToFit, {
-        edgePadding: {
-          top: 90 + insets.top,
-          right: 60,
-          bottom: 60,
-          left: 60,
+    if (coordsToFit.length === 1) {
+      mapRef.current?.animateToRegion(
+        {
+          latitude: coordsToFit[0].latitude,
+          longitude: coordsToFit[0].longitude,
+          latitudeDelta: 0.01,
+          longitudeDelta: 0.01,
         },
-        animated: true,
-      });
-    }, 250);
+        350
+      );
+      return;
+    }
 
-    return () => clearTimeout(t);
+    mapRef.current?.fitToCoordinates(coordsToFit, {
+      edgePadding: {
+        top: 90 + insets.top,
+        right: 60,
+        bottom: 60,
+        left: 60,
+      },
+      animated: true,
+    });
   }, [lineCoords, savedGeofence, insets.top]);
 
+  useEffect(() => {
+    // ทำ 2 เฟส: เร็วๆ + retry (แก้ “ต้องกดหลายรอบถึงขึ้นเส้น”)
+    const t1 = setTimeout(() => doFit(), 250);
+    const t2 = setTimeout(() => doFit(), 900);
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+    };
+  }, [doFit, effectiveRouteId, mapReady]);
+
+  /* ================= START/END + TIME RANGE ================= */
   const startPoint = points.length > 0 ? points[0] : null;
   const endPoint = points.length > 0 ? points[points.length - 1] : null;
 
   const status = getStatus(route);
 
-  /**
-   * ✅ เวลาแสดง “อิงเวลาจริงจาก Maps ก่อน”:
-   * start = route.startedAtIso > route.startedAt(TS) > point แรก > route.from(planned)
-   * end   = (recording) route.lastLiveIso > point สุดท้าย > route.to(planned)
-   *        (done)       route.endedAtIso > route.endedAt(TS) > point สุดท้าย > route.to(planned)
-   */
   const startTs =
-    (route?.startedAtIso ?? "") ||
-    toIso(route?.startedAt) ||
-    startPoint?.timestamp ||
-    route?.from ||
-    "";
+    (route?.startedAtIso ?? "") || toIso(route?.startedAt) || startPoint?.timestamp || route?.from || "";
 
   const endTs =
     status === "recording"
@@ -361,9 +382,7 @@ export default function RouteHistory() {
       : (route?.endedAtIso ?? "") || toIso(route?.endedAt) || endPoint?.timestamp || route?.to || "";
 
   const rangeLine = useMemo(() => {
-    if (startTs && endTs) {
-      return `${formatThaiDate(startTs)} • ${formatThaiTime(startTs)} - ${formatThaiTime(endTs)} น.`;
-    }
+    if (startTs && endTs) return `${formatThaiDate(startTs)} • ${formatThaiTime(startTs)} - ${formatThaiTime(endTs)} น.`;
     return "-";
   }, [startTs, endTs]);
 
@@ -378,21 +397,34 @@ export default function RouteHistory() {
     return 0;
   }, [route?.durationSeconds, startTs, endTs]);
 
+  /* ================= DISTANCE EFFECTIVE (fix: fallback from points) ================= */
+  const distanceFromPoints = useMemo(() => {
+    if (lineCoords.length < 2) return 0;
+
+    let sum = 0;
+    for (let i = 1; i < lineCoords.length; i++) {
+      const d = haversineMeters(lineCoords[i - 1], lineCoords[i]);
+      // กัน jump
+      if (Number.isFinite(d) && d > 0 && d <= MAX_SEGMENT_M) sum += d;
+    }
+    return Math.round(sum);
+  }, [lineCoords]);
+
   const distanceMetersEffective = useMemo(() => {
     const v = Number(route?.distanceMeters ?? NaN);
-    return Number.isFinite(v) && v >= 0 ? v : 0;
-  }, [route?.distanceMeters]);
+    if (Number.isFinite(v) && v > 0) return v;
+    return distanceFromPoints; // ✅ fallback
+  }, [route?.distanceMeters, distanceFromPoints]);
 
   const exitCountEffective = useMemo(() => {
     const v = Number(route?.exitCount ?? NaN);
     return Number.isFinite(v) && v >= 0 ? v : 0;
   }, [route?.exitCount]);
 
-  // ✅ เวลาที่จะโชว์ใน callout ของ marker (ให้ตรงกับเวลาจริง)
   const startMarkerIso = startTs || startPoint?.timestamp || "";
   const endMarkerIso = endTs || endPoint?.timestamp || "";
 
-  // ---------- map interactions ----------
+  /* ================= MAP INTERACTIONS ================= */
   const mapOnPress = () => {
     if (suppressMapPressRef.current) return;
     suppressMapPressRef.current = false;
@@ -483,12 +515,16 @@ export default function RouteHistory() {
       {/* Map เต็มพื้นที่ใต้ header */}
       <View style={[styles.mapWrap, { marginTop: HEADER_H }]}>
         <MapView
-          key={effectiveRouteId} // ✅ บังคับ remount แก้ “บางรายการไม่วาดเส้น”
+          key={effectiveRouteId} // remount เวลาเปลี่ยน routeId
           ref={mapRef}
           style={StyleSheet.absoluteFill}
           initialRegion={initialRegion}
           onPress={mapOnPress}
-          onMapReady={() => setMapReady(true)}
+          onMapReady={() => {
+            setMapReady(true);
+            // เฟสแรก fit ทันทีเมื่อ map พร้อม
+            setTimeout(() => doFit(), 150);
+          }}
         >
           {savedGeofence && savedGeofence.length >= 3 && (
             <Polygon
@@ -500,7 +536,8 @@ export default function RouteHistory() {
             />
           )}
 
-          {mapReady && lineCoords.length > 1 && (
+          {/* ✅ วาดเส้นทันที ไม่ต้องรอ mapReady (แก้ “กดหลายรอบถึงขึ้น”) */}
+          {lineCoords.length > 1 && (
             <Polyline coordinates={lineCoords} strokeColor="#E28F00" strokeWidth={8} zIndex={5} />
           )}
 
@@ -546,7 +583,7 @@ export default function RouteHistory() {
         </MapView>
       </View>
 
-      {/* ✅ Info ลอยทับ Map */}
+      {/* Info ลอยทับ Map */}
       <View style={[styles.infoSection, { position: "absolute", left: 16, right: 16, bottom: INFO_BOTTOM }]}>
         <View style={styles.topRow}>
           {route?.photoURL ? (
@@ -595,6 +632,7 @@ export default function RouteHistory() {
   );
 }
 
+/* ================= STYLES ================= */
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: "#F3F4F6" },
 
@@ -615,7 +653,6 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff",
     borderRadius: 22,
     padding: 16,
-
     shadowColor: "#000",
     shadowOpacity: 0.08,
     shadowRadius: 16,
@@ -668,7 +705,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     borderWidth: 1,
     borderColor: "#EEF2F7",
-
     shadowColor: "#000",
     shadowOpacity: 0.03,
     shadowRadius: 6,

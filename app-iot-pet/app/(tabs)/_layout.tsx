@@ -1,6 +1,6 @@
 import { Tabs, useFocusEffect } from "expo-router";
-import React, { useCallback, useState } from "react";
-import { Platform } from "react-native";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import { Platform, DeviceEventEmitter } from "react-native";
 import FontAwesome6 from "@expo/vector-icons/FontAwesome6";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { FontAwesome5 } from "@expo/vector-icons";
@@ -14,54 +14,92 @@ export default function TabLayout() {
   const colorScheme = useColorScheme();
   const [unreadCount, setUnreadCount] = useState(0);
 
-  /* ================= UPDATE BADGE WHEN TAB FOCUS ================= */
+  const unsubRef = useRef<null | (() => void)>(null);
+  const loadingRef = useRef(false);
+
+  const computeUnread = useCallback(async () => {
+    if (loadingRef.current) return;
+    loadingRef.current = true;
+
+    try {
+      const deviceId = await AsyncStorage.getItem("activeDevice");
+      if (!deviceId) {
+        setUnreadCount(0);
+        return;
+      }
+
+      // ✅ readMap ของ device นี้ (นับ unread ให้ตรงกับสีฟ้าใน NotificationScreen)
+      const readKey = `notification_read_${deviceId}`;
+      const readRaw = await AsyncStorage.getItem(readKey);
+      const readMap: Record<string, boolean> = readRaw ? JSON.parse(readRaw) : {};
+
+      // เคลียร์ sub เก่า
+      if (unsubRef.current) {
+        unsubRef.current();
+        unsubRef.current = null;
+      }
+
+      const ref = dbRef(rtdb, `devices/${deviceId}/alerts`);
+      const unsub = onValue(ref, (snap) => {
+        const v = snap.val() || {};
+        let count = 0;
+
+        Object.keys(v).forEach((key) => {
+          const a: any = v[key];
+          const type = (a?.type || "").toString().toLowerCase();
+          if (type !== "exit" && type !== "enter") return;
+
+          // ✅ ถ้ายังไม่เคย mark read => นับ
+          if (!readMap[key]) count += 1;
+        });
+
+        setUnreadCount(count);
+      });
+
+      unsubRef.current = () => unsub();
+    } catch {
+      // เงียบไว้
+    } finally {
+      loadingRef.current = false;
+    }
+  }, []);
+
+  // ✅ ฟัง event จาก NotificationScreen แล้วอัปเดต badge ทันที
+  useEffect(() => {
+    const subSeen = DeviceEventEmitter.addListener("notifications:seen", async ({ deviceId }: any) => {
+      // optional: ถ้าต้องการ "เข้า tab แล้วถือว่าอ่านหมด" ให้เคลียร์ unreadMap ด้วย
+      // แต่ส่วนใหญ่เราไม่ลบ readMap แค่ให้ NotificationScreen mark ตามรายการ
+      await computeUnread();
+    });
+
+    const subMapUpdated = DeviceEventEmitter.addListener("notifications:readmap_updated", async () => {
+      await computeUnread();
+    });
+
+    return () => {
+      subSeen.remove();
+      subMapUpdated.remove();
+    };
+  }, [computeUnread]);
+
+  // ✅ เวลา tab focus ให้คำนวณ + subscribe ใหม่
   useFocusEffect(
     useCallback(() => {
-      let unsub: any;
-
-      const load = async () => {
-        const deviceId = await AsyncStorage.getItem("activeDevice");
-        if (!deviceId) {
-          setUnreadCount(0);
-          return;
-        }
-
-        const lastRead =
-          Number(
-            await AsyncStorage.getItem(
-              `notification_last_read_${deviceId}`
-            )
-          ) || 0;
-
-        const ref = dbRef(rtdb, `devices/${deviceId}/alerts`);
-
-        unsub = onValue(ref, (snap) => {
-          const v = snap.val() || {};
-          let count = 0;
-
-          Object.values(v).forEach((a: any) => {
-            const t = a.atUtc ? Date.parse(a.atUtc) : 0;
-            if (t > lastRead) count++;
-          });
-
-          setUnreadCount(count);
-        });
-      };
-
-      load();
-
+      computeUnread();
       return () => {
-        unsub && unsub();
+        if (unsubRef.current) {
+          unsubRef.current();
+          unsubRef.current = null;
+        }
       };
-    }, [])
+    }, [computeUnread])
   );
 
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor:
-          Colors[colorScheme ?? "light"].tint,
+        tabBarActiveTintColor: Colors[colorScheme ?? "light"].tint,
         tabBarStyle: Platform.select({
           ios: { position: "absolute" },
           default: {},
@@ -72,9 +110,7 @@ export default function TabLayout() {
         name="home"
         options={{
           title: "หน้าหลัก",
-          tabBarIcon: ({ color }) => (
-            <FontAwesome6 name="house" size={24} color={color} />
-          ),
+          tabBarIcon: ({ color }) => <FontAwesome6 name="house" size={24} color={color} />,
         }}
       />
 
@@ -82,9 +118,7 @@ export default function TabLayout() {
         name="devices"
         options={{
           title: "อุปกรณ์",
-          tabBarIcon: ({ color }) => (
-            <MaterialIcons name="devices" size={24} color={color} />
-          ),
+          tabBarIcon: ({ color }) => <MaterialIcons name="devices" size={24} color={color} />,
         }}
       />
 
@@ -92,26 +126,16 @@ export default function TabLayout() {
         name="maps"
         options={{
           title: "แผนที่",
-          tabBarIcon: ({ color }) => (
-            <FontAwesome5
-              name="map-marked-alt"
-              size={24}
-              color={color}
-            />
-          ),
+          tabBarIcon: ({ color }) => <FontAwesome5 name="map-marked-alt" size={24} color={color} />,
         }}
       />
 
-      {/* 🔔 Notification */}
       <Tabs.Screen
         name="notification"
         options={{
           title: "แจ้งเตือน",
-          tabBarIcon: ({ color }) => (
-            <FontAwesome6 name="bell" size={24} color={color} />
-          ),
-          tabBarBadge:
-            unreadCount > 0 ? unreadCount : undefined,
+          tabBarIcon: ({ color }) => <FontAwesome6 name="bell" size={24} color={color} />,
+          tabBarBadge: unreadCount > 0 ? unreadCount : undefined,
         }}
       />
 
@@ -119,13 +143,7 @@ export default function TabLayout() {
         name="profile"
         options={{
           title: "บัญชีผู้ใช้",
-          tabBarIcon: ({ color }) => (
-            <FontAwesome6
-              name="user-pen"
-              size={24}
-              color={color}
-            />
-          ),
+          tabBarIcon: ({ color }) => <FontAwesome6 name="user-pen" size={24} color={color} />,
         }}
       />
     </Tabs>

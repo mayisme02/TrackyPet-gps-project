@@ -458,8 +458,8 @@ export default function NotificationScreen() {
 
 const styles = StyleSheet.create({
   sectionTitle: {
-    fontSize: 16,
-    fontWeight: "900",
+    fontSize: 14,
+    fontWeight: "700",
     marginTop: 14,
     marginBottom: 8,
     color: "#111827",

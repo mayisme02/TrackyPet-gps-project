@@ -38,17 +38,17 @@ import {
   updateDoc,
   setDoc,
 } from "firebase/firestore";
+import { pushAlertAndLog } from "@/utils/alertService";
 
 /* ================= CONFIG ================= */
-const BACKEND_URL = "http://localhost:3000";
-const MIN_MOVE_DISTANCE = 5;
+const BACKEND_URL = "http://192.168.31.136:3000";
+const MIN_MOVE_DISTANCE = 3;
 
 /* ✅ storage keys */
 const ROUTE_FILTER_STORAGE_KEY = "routeFilter_v1";
 const ACTIVE_GEOFENCE_STORAGE_KEY = "activeGeofence_v1";
 const ROUTE_RECORDING_ENDED_EVENT = "routeRecordingEnded";
 
-/* ================= TYPES ================= */
 type DeviceLocation = {
   latitude: number;
   longitude: number;
@@ -142,10 +142,24 @@ export default function MapTracker() {
   const [activeGeofenceUntil, setActiveGeofenceUntil] = useState<Date | null>(null);
 
   const [deviceName, setDeviceName] = useState<string>("GPS Tracker");
+  // Anti-spam / hysteresis (กัน GPS แกว่งริมขอบ)
+  const GEOFENCE_EXIT_CONFIRM_MS = 8000;   // ต้องอยู่นอกต่อเนื่อง 8 วิ ถึงจะแจ้ง
+  const GEOFENCE_REARM_CONFIRM_MS = 8000;  // ต้องกลับเข้าในต่อเนื่อง 8 วิ ถึงจะ re-arm ให้แจ้งครั้งต่อไป
+
+  const exitArmedRef = useRef(true);
+  const outsideSinceRef = useRef<number | null>(null);
+  const insideSinceRef = useRef<number | null>(null);
 
   /* ================= RECORDING ================= */
   const [isRecording, setIsRecording] = useState(false);
   const [recordId, setRecordId] = useState<string | null>(null);
+
+  // ✅ Callout recording UI state
+  const [calloutRecordingInfo, setCalloutRecordingInfo] = useState<{
+    savedAtIso: string;
+    fromIso: string;
+    toIso: string;
+  } | null>(null);
 
   const stopTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const startTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -169,6 +183,9 @@ export default function MapTracker() {
   const prevInsideRef = useRef<boolean | null>(null);
   const lastMetricsPushRef = useRef<number>(0);
 
+  const isCalloutRecording = !!calloutRecordingInfo || isRecording;
+  // const calloutSavedAtIso = calloutRecordingInfo?.savedAtIso ?? null;
+
   const clearActiveGeofence = useCallback(async () => {
     setActiveGeofence(null);
     setActiveGeofenceUntil(null);
@@ -191,6 +208,13 @@ export default function MapTracker() {
     setIsTracking(false);
     setRecordId(null);
     recordingCtxRef.current = null;
+
+    setCalloutRecordingInfo(null);
+    setRestorePetCallout(false);
+
+    await clearActiveGeofence();
+    setSavedRouteFilter(null);
+    await AsyncStorage.removeItem(ROUTE_FILTER_STORAGE_KEY);
 
     await clearActiveGeofence();
 
@@ -233,21 +257,72 @@ export default function MapTracker() {
 
       const now = new Date();
       const atUtc = now.toISOString();
+      const atMs = now.getTime();
       const atTh = now.toLocaleString("th-TH", { dateStyle: "long", timeStyle: "medium" });
 
       const message =
-        type === "exit" ? `สัตว์เลี้ยงออกนอกพื้นที่ (${Math.round(distance)} ม.)` : `สัตว์เลี้ยงกลับเข้าพื้นที่`;
+        type === "exit"
+          ? `สัตว์เลี้ยงออกนอกพื้นที่ (${Math.round(distance)} ม.)`
+          : `สัตว์เลี้ยงกลับเข้าพื้นที่`;
 
-      await push(dbRef(rtdb, `devices/${deviceCode}/alerts`), {
+      // ✅ 1) เขียน RTDB ทั้ง alerts + logs (และผูกสัตว์ไว้กับ alert)
+      const rid = recordingCtxRef.current?.recordId ?? recordId ?? null;
+
+      await pushAlertAndLog({
+        deviceId: deviceCode,
         type,
-        message,
+        message, // จะส่งหรือไม่ส่งก็ได้
+        radiusKm: geofenceRadius / 1000,
         atUtc,
         atTh,
-        radiusKm: geofenceRadius / 1000,
-        device: deviceCode,
+
+        petId: petId ?? null,
+        petName: petName ?? null,
+        photoURL: petPhotoURL ?? null,
+
+        routeId: rid, // กดแล้วไป RouteHistory ได้
       });
+
+      // ✅ 2) ส่วน Firestore ของคุณ (เก็บต่อได้เหมือนเดิม)
+      try {
+        if (!auth.currentUser) return;
+        const uid = auth.currentUser.uid;
+
+        const rid = recordingCtxRef.current?.recordId ?? recordId ?? null;
+
+        await addDoc(collection(db, "users", uid, "alerts"), {
+          type,
+          kind: "GEOFENCE",
+          message,
+          deviceCode,
+          petId: petId ?? null,
+          petName: petName ?? null,
+          routeId: rid,
+          atIso: atUtc,
+          atMs,
+          lat: petLocation?.latitude ?? null,
+          lng: petLocation?.longitude ?? null,
+          createdAt: serverTimestamp(),
+          read: false,
+        });
+
+        if (rid) {
+          await addDoc(collection(db, "users", uid, "routeHistories", rid, "alerts"), {
+            type,
+            kind: "GEOFENCE",
+            message,
+            deviceCode,
+            petId: petId ?? null,
+            atIso: atUtc,
+            atMs,
+            lat: petLocation?.latitude ?? null,
+            lng: petLocation?.longitude ?? null,
+            createdAt: serverTimestamp(),
+          });
+        }
+      } catch { }
     },
-    [deviceCode, geofenceRadius]
+    [deviceCode, geofenceRadius, petId, petName, petLocation, recordId]
   );
 
   /* ================= FORMAT ================= */
@@ -348,47 +423,81 @@ export default function MapTracker() {
       setLocation(current);
       setPetLocation(current);
 
-      // ===== FILTER JITTER =====
+      // ===== FILTER JITTER (✅ show path when moved >= 3m) =====
       const tsMs = Date.parse(timestamp) || Date.now();
       const acc = Number(current.accuracy ?? 999);
+
+      // กันจุดที่ accuracy แย่มาก (ส่วนใหญ่เป็น noise)
       if (acc > MAX_ACCEPT_ACCURACY) return true;
 
       const prev = lastAcceptedRef.current;
-      let dynamicMin = Math.max(MIN_MOVE_DISTANCE, acc * 0.6);
+      const minMove = MIN_MOVE_DISTANCE; // ✅ fix threshold = 3m ตามที่ต้องการ
 
       if (prev) {
         const dt = Math.max(1, (tsMs - prev.tsMs) / 1000);
         const dist = distanceInMeters(prev.lat, prev.lng, current.latitude, current.longitude);
         const speed = dist / dt;
+
+        // กัน teleport / ค่าโดดผิดปกติ
         if (speed > MAX_PLAUSIBLE_SPEED) return true;
-        if (dist < dynamicMin) return true;
+
+        // ✅ เดินเกิน 3 เมตรค่อยรับเข้าเส้นทาง
+        if (dist < minMove) return true;
       }
 
       lastAcceptedRef.current = { lat: current.latitude, lng: current.longitude, tsMs };
 
       const p: TrackPoint = { latitude: current.latitude, longitude: current.longitude, timestamp };
-      appendPoint(p, dynamicMin);
+      appendPoint(p, minMove); // ✅ ใช้ 3m ตรง ๆ
 
-      // ===== GEOFENCE CHECK =====
       if (activeGeofence && activeGeofence.length >= 3) {
         const inside = isPointInPolygon(
           { latitude: current.latitude, longitude: current.longitude },
           activeGeofence
         );
 
-        const prevInside = prevInsideRef.current;
+        const nowMs = Date.now();
 
-        if (prevInside === true && !inside) {
-          void sendGeofenceAlert("exit", 0);
-          if (isRecording) geofenceExitCountRef.current += 1;
-        }
-
-        if (prevInside === false && inside) {
-          void sendGeofenceAlert("enter", 0);
-        }
-
+        // เก็บไว้เพื่อ UI (โชว์ว่าอยู่ใน/นอก)
         prevInsideRef.current = inside;
         setIsInsideGeofence(inside);
+
+        if (inside) {
+          // กลับเข้าเขต -> เคลียร์ outside timer
+          outsideSinceRef.current = null;
+
+          // ✅ เคยแจ้ง exit ไปแล้ว (exitArmedRef=false) แปลว่ากำลังกลับเข้าพื้นที่
+          // รอเข้าเขต "ต่อเนื่อง" 8 วิ แล้วค่อยยิง enter 1 ครั้ง
+          if (!exitArmedRef.current) {
+            if (!insideSinceRef.current) insideSinceRef.current = nowMs;
+
+            if (nowMs - insideSinceRef.current >= GEOFENCE_REARM_CONFIRM_MS) {
+              void sendGeofenceAlert("enter", 0); // ✅ เพิ่มบรรทัดนี้
+
+              exitArmedRef.current = true; // re-arm
+              insideSinceRef.current = null;
+            }
+          } else {
+            insideSinceRef.current = null;
+          }
+        } else {
+          // อยู่นอกเขต -> เคลียร์ inside timer
+          insideSinceRef.current = null;
+
+          // แจ้ง exit ได้แค่เมื่อ "armed" และอยู่นอกต่อเนื่องตามเวลาที่กำหนด
+          if (exitArmedRef.current) {
+            if (!outsideSinceRef.current) outsideSinceRef.current = nowMs;
+
+            if (nowMs - outsideSinceRef.current >= GEOFENCE_EXIT_CONFIRM_MS) {
+              void sendGeofenceAlert("exit", 0);
+              if (isRecording) geofenceExitCountRef.current += 1;
+
+              exitArmedRef.current = false;
+              outsideSinceRef.current = null;
+            }
+          }
+        }
+
       }
 
       // ===== SAVE POINT + METRICS =====
@@ -504,6 +613,10 @@ export default function MapTracker() {
     prevInsideRef.current = null;
     setIsInsideGeofence(null);
     lastMetricsPushRef.current = 0;
+
+    exitArmedRef.current = true;
+    outsideSinceRef.current = null;
+    insideSinceRef.current = null;
 
     const geoSnapshot = normalizeGeo(activeGeofence);
 
@@ -716,9 +829,14 @@ export default function MapTracker() {
       ROUTE_RECORDING_ENDED_EVENT,
       (payload?: { routeId?: string; deviceCode?: string | null }) => {
         if (payload?.deviceCode && deviceCode && payload.deviceCode !== deviceCode) return;
+
+        // ✅ reset สถานะกำลังติดตาม/กำลังบันทึกทั้งหมด
         void resetAfterRecordingEnd();
+
+        petMarkerRef.current?.hideCallout?.();
       }
     );
+
     return () => sub.remove();
   }, [deviceCode, resetAfterRecordingEnd]);
 
@@ -1027,6 +1145,16 @@ export default function MapTracker() {
     const startAt = savedRouteFilter!.from;
     const stopAt = savedRouteFilter!.to;
 
+    const savedAtIso = new Date().toISOString();
+    setCalloutRecordingInfo({
+      savedAtIso,
+      fromIso: startAt.toISOString(),
+      toIso: stopAt.toISOString(),
+    });
+
+    // ให้ callout เด้งขึ้นทันที
+    setRestorePetCallout(true);
+
     if (stopAt.getTime() <= startAt.getTime()) {
       Alert.alert("ช่วงเวลาไม่ถูกต้อง", "TO ต้องมากกว่า FROM");
       return;
@@ -1147,6 +1275,7 @@ export default function MapTracker() {
             <Callout tooltip>
               <View style={styles.calloutWrapper}>
                 <View style={styles.calloutHandle} />
+
                 <View style={styles.calloutCard}>
                   <View style={styles.cardHeader}>
                     <Text style={styles.cardTitle}>{petName ?? "สัตว์เลี้ยง"}</Text>
@@ -1154,9 +1283,15 @@ export default function MapTracker() {
                       <Text style={styles.badgeText}>{deviceName}</Text>
                     </View>
                   </View>
-
                   <View style={styles.divider} />
 
+                  {/* แสดงสถานะ */}
+                  {isCalloutRecording && (
+                    <View style={styles.row}>
+                      <Text style={styles.icon}>🟢</Text>
+                      <Text style={styles.recordingText}>กำลังติดตาม</Text>
+                    </View>
+                  )}
                   <View style={styles.row}>
                     <Text style={styles.icon}>📅</Text>
                     <Text style={styles.text}>{formatThaiDate(petLocation.timestamp)}</Text>
@@ -1209,7 +1344,6 @@ export default function MapTracker() {
               {renderRightStatus(hasDeviceSelected)}
             </TouchableOpacity>
 
-            {/* Geofence */}
             {/* Geofence */}
             <TouchableOpacity
               style={styles.sheetRow}
@@ -1469,7 +1603,6 @@ export default function MapTracker() {
   );
 }
 
-/* ================= STYLES ================= */
 const styles = StyleSheet.create({
   container: { flex: 1 },
 
@@ -1949,5 +2082,17 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: "900",
     color: "#ffffff",
+  },
+  recordingRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 10,
+    flexWrap: "wrap",
+    gap: 6,
+  },
+  recordingText: {
+    fontSize: 14.5,
+    fontWeight: "600",
+    color: "#008917",
   },
 });

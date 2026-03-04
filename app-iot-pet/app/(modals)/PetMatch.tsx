@@ -108,6 +108,7 @@ export default function PetMatch() {
       collection(db, "users", uid, "routeHistories"),
       where("status", "==", "recording"),
       where("petId", "==", petId),
+      where("deviceCode", "==", parsedDevice.code),
       limit(1)
     );
 
@@ -142,11 +143,19 @@ export default function PetMatch() {
   /* ================= CHECK PET USED ================= */
   const petAlreadyUsed = async (petId: string) => {
     const uid = auth.currentUser!.uid;
-    const snap = await getDocs(collection(db, "users", uid, "deviceMatches"));
 
-    return snap.docs.some(
-      (d) => d.data().petId === petId && d.id !== parsedDevice.code
+    const q = query(
+      collection(db, "users", uid, "deviceMatches"),
+      where("petId", "==", petId),
+      limit(1)
     );
+    const snap = await getDocs(q);
+
+    if (snap.empty) return false;
+
+    // ถ้าเป็น match ของ device นี้เอง => ไม่ถือว่าถูกใช้โดย device อื่น
+    const matchedDocId = snap.docs[0].id;
+    return matchedDocId !== parsedDevice.code;
   };
 
   /* ================= SELECT PET ================= */
@@ -181,7 +190,8 @@ export default function PetMatch() {
                 photoURL: pet.photoURL || null,
                 status: "CONNECTED",
                 updatedAt: serverTimestamp(),
-              }
+              },
+              { merge: true }
             );
           },
         },

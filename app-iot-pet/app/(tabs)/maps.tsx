@@ -41,7 +41,7 @@ import {
 import { pushAlertAndLog } from "@/utils/alertService";
 
 /* ================= CONFIG ================= */
-const BACKEND_URL = "http://localhost:3000";
+const BACKEND_URL = "http://192.168.31.136:3000";
 const MIN_MOVE_DISTANCE = 3;
 
 /* ✅ storage keys */
@@ -49,7 +49,6 @@ const ROUTE_FILTER_STORAGE_KEY = "routeFilter_v1";
 const ACTIVE_GEOFENCE_STORAGE_KEY = "activeGeofence_v1";
 const ROUTE_RECORDING_ENDED_EVENT = "routeRecordingEnded";
 
-/* ================= TYPES ================= */
 type DeviceLocation = {
   latitude: number;
   longitude: number;

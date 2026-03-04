@@ -39,6 +39,10 @@ type ListItem =
   | { kind: "section"; id: string; title: string }
   | { kind: "alert"; data: AlertItem };
 
+/* ================= STORAGE KEYS ================= */
+const NOTIF_LAST_DEVICE_KEY = "notifications_device_last_v1";
+const NOTIF_CACHE_PREFIX = "notifications_cache_";
+
 /* ================= HELPERS ================= */
 const cleanMessage = (msg?: string) => {
   if (!msg) return "";
@@ -55,7 +59,11 @@ const toDateHeaderTH = (iso?: string) => {
   if (!iso) return "ไม่ทราบวันที่";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "ไม่ทราบวันที่";
-  return d.toLocaleDateString("th-TH", { year: "numeric", month: "long", day: "numeric" });
+  return d.toLocaleDateString("th-TH", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
 };
 
 const timeAgoTH = (iso?: string, nowMs?: number) => {
@@ -106,17 +114,74 @@ export default function NotificationScreen() {
     return () => clearInterval(id);
   }, []);
 
-  /* ================= LOAD ACTIVE DEVICE ================= */
+  /* ================= LOAD DEVICE (active -> last) ================= */
   useEffect(() => {
     let mounted = true;
+
     (async () => {
-      const active = await AsyncStorage.getItem("activeDevice");
-      if (!mounted) return;
-      setDeviceId(active || null);
+      try {
+        const active = await AsyncStorage.getItem("activeDevice");
+        const last = await AsyncStorage.getItem(NOTIF_LAST_DEVICE_KEY);
+
+        const useId = active || last || null;
+        if (!mounted) return;
+
+        setDeviceId(useId);
+
+        if (useId) {
+          await AsyncStorage.setItem(NOTIF_LAST_DEVICE_KEY, useId);
+          // ✅ preload cache (เร็วขึ้น/กันวูบ)
+          try {
+            const cached = await AsyncStorage.getItem(`${NOTIF_CACHE_PREFIX}${useId}`);
+            if (cached && mounted) setAlerts(JSON.parse(cached));
+          } catch {}
+        }
+      } finally {
+        // ไม่ setLoading(false) ตรงนี้ เพราะยังรอ subscribeAlerts อยู่
+      }
     })();
+
     return () => {
       mounted = false;
     };
+  }, []);
+
+  /* ================= LISTEN ACTIVE DEVICE CHANGES ================= */
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener(
+      "activeDeviceChanged",
+      async (payload?: { code?: string | null }) => {
+        const nextCode =
+          payload?.code ?? (await AsyncStorage.getItem("activeDevice"));
+
+        // ถ้ามี active ใหม่ -> ใช้ตัวใหม่ และจำเป็น last
+        if (nextCode) {
+          setDeviceId(nextCode);
+          await AsyncStorage.setItem(NOTIF_LAST_DEVICE_KEY, nextCode);
+
+          // preload cache
+          try {
+            const cached = await AsyncStorage.getItem(`${NOTIF_CACHE_PREFIX}${nextCode}`);
+            if (cached) setAlerts(JSON.parse(cached));
+          } catch {}
+
+          return;
+        }
+
+        // ถ้าโดนลบ activeDevice (disconnect) -> ใช้ last ต่อไป (ห้าม set null แล้วล้าง)
+        const last = await AsyncStorage.getItem(NOTIF_LAST_DEVICE_KEY);
+        setDeviceId(last || null);
+
+        if (last) {
+          try {
+            const cached = await AsyncStorage.getItem(`${NOTIF_CACHE_PREFIX}${last}`);
+            if (cached) setAlerts(JSON.parse(cached));
+          } catch {}
+        }
+      }
+    );
+
+    return () => sub.remove();
   }, []);
 
   /* ================= LOAD READ MAP ================= */
@@ -140,7 +205,11 @@ export default function NotificationScreen() {
   useFocusEffect(
     useCallback(() => {
       (async () => {
-        const active = deviceId || (await AsyncStorage.getItem("activeDevice"));
+        const active =
+          deviceId ||
+          (await AsyncStorage.getItem("activeDevice")) ||
+          (await AsyncStorage.getItem(NOTIF_LAST_DEVICE_KEY));
+
         if (!active) return;
 
         const now = Date.now();
@@ -150,9 +219,14 @@ export default function NotificationScreen() {
     }, [deviceId])
   );
 
-  /* ================= SUBSCRIBE ALERTS ================= */
+  /* ================= SUBSCRIBE ALERTS (use deviceId/last, not only activeDevice) ================= */
   const subscribeAlerts = useCallback(async () => {
-    const active = await AsyncStorage.getItem("activeDevice");
+    const active =
+      deviceId ||
+      (await AsyncStorage.getItem("activeDevice")) ||
+      (await AsyncStorage.getItem(NOTIF_LAST_DEVICE_KEY));
+
+    // ไม่มีทั้ง active และ last -> ไม่มีอะไรให้โชว์
     if (!active) {
       setDeviceId(null);
       setAlerts([]);
@@ -163,32 +237,48 @@ export default function NotificationScreen() {
     setDeviceId(active);
     setLoading(true);
 
+    // จำเป็น last เสมอ เพื่อให้ disconnect แล้วยังอยู่
+    try {
+      await AsyncStorage.setItem(NOTIF_LAST_DEVICE_KEY, active);
+    } catch {}
+
+    // preload cache ก่อน subscribe (กันหน้าว่าง)
+    try {
+      const cached = await AsyncStorage.getItem(`${NOTIF_CACHE_PREFIX}${active}`);
+      if (cached) setAlerts(JSON.parse(cached));
+    } catch {}
+
     const ref = dbRef(rtdb, `devices/${active}/alerts`);
     const unsub = onValue(
       ref,
-      (snap) => {
+      async (snap) => {
         const v = snap.val() || {};
         const rows: AlertItem[] = Object.keys(v).map((k) => ({ key: k, ...(v[k] || {}) }));
 
-        const filtered = rows.filter((a) => {
-          const t = (a.type || "").toString().toLowerCase();
-          return t === "exit" || t === "enter";
-        });
-
-        filtered.sort((a, b) => {
-          const ta = a.atUtc ? Date.parse(a.atUtc) : 0;
-          const tb = b.atUtc ? Date.parse(b.atUtc) : 0;
-          return tb - ta;
-        });
+        const filtered = rows
+          .filter((a) => {
+            const t = (a.type || "").toString().toLowerCase();
+            return t === "exit" || t === "enter";
+          })
+          .sort((a, b) => {
+            const ta = a.atUtc ? Date.parse(a.atUtc) : 0;
+            const tb = b.atUtc ? Date.parse(b.atUtc) : 0;
+            return tb - ta;
+          });
 
         setAlerts(filtered);
         setLoading(false);
+
+        // cache ไว้เผื่อ activeDevice ถูกลบ/ออฟไลน์
+        try {
+          await AsyncStorage.setItem(`${NOTIF_CACHE_PREFIX}${active}`, JSON.stringify(filtered));
+        } catch {}
       },
       () => setLoading(false)
     );
 
     return () => unsub();
-  }, []);
+  }, [deviceId]);
 
   useFocusEffect(
     useCallback(() => {

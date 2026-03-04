@@ -133,7 +133,7 @@ export default function Devices() {
       setLoading(true);
 
       // ⚠️ โปรดักชันจริงให้ใช้โดเมน https://api.yourapp.com แทน IP LAN
-      const res = await fetch("http://localhost:3000/api/device/location", {
+      const res = await fetch("http://192.168.31.136:3000/api/device/location", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ deviceCode: code }),

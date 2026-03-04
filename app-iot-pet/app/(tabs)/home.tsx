@@ -139,11 +139,10 @@ export default function HomeScreen() {
     });
   }, []);
 
-  /* ================= LOAD LAST LOCATION ================= */
   const fetchLastLocation = async (code: string) => {
     try {
       setLocationLoading(true);
-      const res = await fetch("http://localhost:3000/api/device/location", {
+      const res = await fetch("http://192.168.31.136:3000/api/device/location", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ deviceCode: code }),

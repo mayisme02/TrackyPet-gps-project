@@ -8,6 +8,7 @@ import {
   Image,
   Modal,
   TextInput,
+  DeviceEventEmitter,
 } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import { useRouter } from "expo-router";
@@ -33,13 +34,16 @@ export default function Devices() {
   const [devices, setDevices] = useState<Device[]>([]);
   const [deviceMatches, setDeviceMatches] = useState<Record<string, any>>({});
 
+  const ACTIVE_DEVICE_CHANGED_EVENT = "activeDeviceChanged";
+  const DEVICES_CHANGED_EVENT = "devicesChanged";
+
   /* ===== ADD DEVICE ===== */
   const [modalVisible, setModalVisible] = useState(false);
   const [tempCode, setTempCode] = useState("");
   const [loading, setLoading] = useState(false);
 
   /* ================= LOAD DEVICES (LOCAL) ================= */
-  const loadDevices = async () => {
+  const loadDevices = async () => { 
     try {
       const stored = await AsyncStorage.getItem("devices");
       const parsed: any[] = stored ? JSON.parse(stored) : [];
@@ -161,7 +165,7 @@ export default function Devices() {
     if (!ok) return;
 
     const newDevice: Device = {
-      id: code, // ✅ ใช้ code เป็น id กันซ้ำ
+      id: code,
       code,
       type: "GPS_TRACKER_A7670",
       name: "LilyGo A7670E",
@@ -172,6 +176,9 @@ export default function Devices() {
 
     await AsyncStorage.setItem("devices", JSON.stringify(updated));
     await AsyncStorage.setItem("activeDevice", code);
+
+    DeviceEventEmitter.emit("devicesChanged");
+    DeviceEventEmitter.emit("activeDeviceChanged", { code });
 
     setDevices(updated);
     setModalVisible(false);

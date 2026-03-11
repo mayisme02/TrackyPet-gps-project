@@ -17,7 +17,7 @@
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/LogoApp.png",
-        "backgroundColor": "#ffffff"
+        "backgroundColor": "#FFEEAA"
       },
       "edgeToEdgeEnabled": true,
       "config": {
@@ -39,7 +39,7 @@
           "image": "./assets/images/LogoApp.png",
           "imageWidth": 200,
           "resizeMode": "contain",
-          "backgroundColor": "#ffffff"
+          "backgroundColor": "#FFEEAA"
         }
       ],
       "expo-font"

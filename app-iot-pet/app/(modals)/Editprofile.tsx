@@ -30,7 +30,6 @@ export default function EditProfile() {
 
   const currentImage = downloadUrl ?? localUri ?? null;
 
-  /* ================= LOAD PROFILE ================= */
   useEffect(() => {
     const fetchProfile = async () => {
       try {

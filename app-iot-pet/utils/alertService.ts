@@ -1,56 +1,36 @@
 import { rtdb } from "../firebase/firebase";
-import { ref as dbRef, push } from "firebase/database";
+import { ref as dbRef, push, set } from "firebase/database";
 
-type AlertType = "exit" | "enter";
-
-export async function pushAlertAndLog(params: {
+type PushAlertPayload = {
   deviceId: string;
-  type: AlertType;
+  type: string;
   message?: string;
   radiusKm?: number;
-  atUtc?: string;
-  atTh?: string;
-
-  // ✅ ผูกสัตว์กับ alert
+  atUtc: string;
+  atTh: string;
   petId?: string | null;
   petName?: string | null;
   photoURL?: string | null;
-
-  // ✅ ผูกกับ route history (สำคัญสำหรับกดแล้วไปหน้ารายละเอียด)
   routeId?: string | null;
-}) {
-  const {
-    deviceId,
-    type,
-    radiusKm,
-    atUtc = new Date().toISOString(),
-    atTh,
-    petId = null,
-    petName = null,
-    photoURL = null,
-    routeId = null,
-  } = params;
+  ownerUid?: string | null;
+};
 
-  const name = petName?.trim() ? petName.trim() : "สัตว์เลี้ยง";
-  const message =
-    params.message?.trim() ||
-    (type === "exit" ? `${name} ออกนอกพื้นที่` : `${name} กลับเข้าพื้นที่`);
+export async function pushAlertAndLog(payload: PushAlertPayload) {
+  const alertRef = push(dbRef(rtdb, `devices/${payload.deviceId}/alerts`));
+  const logRef = push(dbRef(rtdb, `devices/${payload.deviceId}/logs`));
 
-  const payload = {
-    device: deviceId,
-    type,
-    message,
-    radiusKm: radiusKm ?? null,
-    atUtc,
-    atTh: atTh ?? null,
-
-    petId,
-    petName,
-    photoURL,
-
-    routeId,
+  const data = {
+    type: payload.type,
+    message: payload.message ?? "",
+    radiusKm: payload.radiusKm ?? null,
+    atUtc: payload.atUtc,
+    atTh: payload.atTh,
+    petId: payload.petId ?? null,
+    petName: payload.petName ?? null,
+    photoURL: payload.photoURL ?? null,
+    routeId: payload.routeId ?? null,
+    ownerUid: payload.ownerUid ?? null,
   };
 
-  await push(dbRef(rtdb, `devices/${deviceId}/alerts`), payload);
-  await push(dbRef(rtdb, `devices/${deviceId}/logs`), { kind: "alert", ...payload });
+  await Promise.all([set(alertRef, data), set(logRef, data)]);
 }

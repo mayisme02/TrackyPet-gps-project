@@ -40,8 +40,7 @@ import {
 } from "firebase/firestore";
 import { pushAlertAndLog } from "@/utils/alertService";
 
-/* ================= CONFIG ================= */
-const BACKEND_URL = "http://192.168.31.136:3000";
+const BACKEND_URL = "http://172.20.10.2:3000";
 const MIN_MOVE_DISTANCE = 3;
 
 /* ✅ storage keys */
@@ -252,45 +251,64 @@ export default function MapTracker() {
   }
 
   const sendGeofenceAlert = useCallback(
-    async (type: "exit" | "enter", distance: number) => {
-      if (!deviceCode) return;
+  async (type: "exit" | "enter", distance: number) => {
+    if (!deviceCode) return;
 
-      const now = new Date();
-      const atUtc = now.toISOString();
-      const atMs = now.getTime();
-      const atTh = now.toLocaleString("th-TH", { dateStyle: "long", timeStyle: "medium" });
+    const now = new Date();
+    const atUtc = now.toISOString();
+    const atMs = now.getTime();
+    const atTh = now.toLocaleString("th-TH", {
+      dateStyle: "long",
+      timeStyle: "medium",
+    });
 
-      const message =
-        type === "exit"
-          ? `สัตว์เลี้ยงออกนอกพื้นที่ (${Math.round(distance)} ม.)`
-          : `สัตว์เลี้ยงกลับเข้าพื้นที่`;
+    const ownerUid = auth.currentUser?.uid ?? null;
 
-      // ✅ 1) เขียน RTDB ทั้ง alerts + logs (และผูกสัตว์ไว้กับ alert)
-      const rid = recordingCtxRef.current?.recordId ?? recordId ?? null;
+    const message =
+      type === "exit"
+        ? `สัตว์เลี้ยงออกนอกพื้นที่ (${Math.round(distance)} ม.)`
+        : `สัตว์เลี้ยงกลับเข้าพื้นที่`;
 
-      await pushAlertAndLog({
-        deviceId: deviceCode,
+    // route id ของการบันทึกปัจจุบัน
+    const rid = recordingCtxRef.current?.recordId ?? recordId ?? null;
+
+    // ✅ เขียน RTDB alerts + logs
+    await pushAlertAndLog({
+      deviceId: deviceCode,
+      type,
+      message,
+      radiusKm: geofenceRadius / 1000,
+      atUtc,
+      atTh,
+      petId: petId ?? null,
+      petName: petName ?? null,
+      photoURL: petPhotoURL ?? null,
+      routeId: rid,
+      ownerUid,
+    });
+
+    try {
+      if (!auth.currentUser) return;
+      const uid = auth.currentUser.uid;
+
+      await addDoc(collection(db, "users", uid, "alerts"), {
         type,
-        message, // จะส่งหรือไม่ส่งก็ได้
-        radiusKm: geofenceRadius / 1000,
-        atUtc,
-        atTh,
-
+        kind: "GEOFENCE",
+        message,
+        deviceCode,
         petId: petId ?? null,
         petName: petName ?? null,
-        photoURL: petPhotoURL ?? null,
-
-        routeId: rid, // กดแล้วไป RouteHistory ได้
+        routeId: rid,
+        atIso: atUtc,
+        atMs,
+        lat: petLocation?.latitude ?? null,
+        lng: petLocation?.longitude ?? null,
+        createdAt: serverTimestamp(),
+        read: false,
       });
 
-      // ✅ 2) ส่วน Firestore ของคุณ (เก็บต่อได้เหมือนเดิม)
-      try {
-        if (!auth.currentUser) return;
-        const uid = auth.currentUser.uid;
-
-        const rid = recordingCtxRef.current?.recordId ?? recordId ?? null;
-
-        await addDoc(collection(db, "users", uid, "alerts"), {
+      if (rid) {
+        await addDoc(collection(db, "users", uid, "routeHistories", rid, "alerts"), {
           type,
           kind: "GEOFENCE",
           message,
@@ -303,27 +321,12 @@ export default function MapTracker() {
           lat: petLocation?.latitude ?? null,
           lng: petLocation?.longitude ?? null,
           createdAt: serverTimestamp(),
-          read: false,
         });
-
-        if (rid) {
-          await addDoc(collection(db, "users", uid, "routeHistories", rid, "alerts"), {
-            type,
-            kind: "GEOFENCE",
-            message,
-            deviceCode,
-            petId: petId ?? null,
-            atIso: atUtc,
-            atMs,
-            lat: petLocation?.latitude ?? null,
-            lng: petLocation?.longitude ?? null,
-            createdAt: serverTimestamp(),
-          });
-        }
-      } catch { }
-    },
-    [deviceCode, geofenceRadius, petId, petName, petLocation, recordId]
-  );
+      }
+    } catch {}
+  },
+  [deviceCode, geofenceRadius, petId, petName, petPhotoURL, petLocation, recordId]
+);
 
   /* ================= FORMAT ================= */
   const formatThaiDate = (iso: string) =>
@@ -441,14 +444,14 @@ export default function MapTracker() {
         // กัน teleport / ค่าโดดผิดปกติ
         if (speed > MAX_PLAUSIBLE_SPEED) return true;
 
-        // ✅ เดินเกิน 3 เมตรค่อยรับเข้าเส้นทาง
+        // เดินเกิน 3 เมตรค่อยรับเข้าเส้นทาง
         if (dist < minMove) return true;
       }
 
       lastAcceptedRef.current = { lat: current.latitude, lng: current.longitude, tsMs };
 
       const p: TrackPoint = { latitude: current.latitude, longitude: current.longitude, timestamp };
-      appendPoint(p, minMove); // ✅ ใช้ 3m ตรง ๆ
+      appendPoint(p, minMove); 
 
       if (activeGeofence && activeGeofence.length >= 3) {
         const inside = isPointInPolygon(

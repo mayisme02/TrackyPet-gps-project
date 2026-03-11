@@ -1,8 +1,7 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   View,
   Text,
-  StyleSheet,
   TouchableOpacity,
   Image,
   Alert,
@@ -25,15 +24,14 @@ import {
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { DEVICE_TYPES } from "../../assets/constants/deviceData";
 import ProfileHeader from "@/components/ProfileHeader";
+import {
+  styles,
+  AVATAR_SIZE,
+  CARD_PADDING,
+  ACTIVE_INSET,
+} from "@/assets/styles/petMatch.styles";
 
-/* =====================
-   CONSTANTS
-====================== */
-const AVATAR_SIZE = 48;
-const ROW_HEIGHT = 64;
-const CARD_PADDING = 16;
-const ACTIVE_INSET = 8;
-
+// TYPES
 type UserDevice = {
   id: string;
   code: string;
@@ -59,10 +57,6 @@ export default function PetMatch() {
   const [pets, setPets] = useState<Pet[]>([]);
   const [currentMatch, setCurrentMatch] = useState<any>(null);
 
-  /**
-   * ✅ LOCK เฉพาะ "สัตว์เลี้ยงที่เชื่อมกับอุปกรณ์นี้" เท่านั้น
-   * ถ้า petId ปัจจุบันมี routeHistories.status=recording -> ห้ามเปลี่ยนไปตัวอื่น
-   */
   const [recordingForThisPet, setRecordingForThisPet] = useState<{
     routeId: string;
     petId: string;
@@ -103,7 +97,6 @@ export default function PetMatch() {
       return;
     }
 
-    // ✅ ฟังเฉพาะ recording ของ pet ที่กำลัง match กับ device นี้
     const qRec = query(
       collection(db, "users", uid, "routeHistories"),
       where("status", "==", "recording"),
@@ -127,10 +120,9 @@ export default function PetMatch() {
         deviceCode: data?.deviceCode ?? null,
       });
     });
-  }, [currentMatch?.petId]);
+  }, [currentMatch?.petId, parsedDevice.code]);
 
   const guardIfRecordingThisPet = () => {
-    // ✅ ล็อกเฉพาะตอน "pet ที่เชื่อมอยู่นี้" กำลัง recording
     if (!recordingForThisPet) return false;
 
     Alert.alert(
@@ -153,14 +145,12 @@ export default function PetMatch() {
 
     if (snap.empty) return false;
 
-    // ถ้าเป็น match ของ device นี้เอง => ไม่ถือว่าถูกใช้โดย device อื่น
     const matchedDocId = snap.docs[0].id;
     return matchedDocId !== parsedDevice.code;
   };
 
   /* ================= SELECT PET ================= */
   const onSelectPet = async (pet: Pet) => {
-    // ✅ ถ้ากำลังบันทึกของ pet ตัวที่เชื่อมกับ device นี้ -> ห้ามเปลี่ยน
     if (guardIfRecordingThisPet()) return;
 
     if (currentMatch?.petId === pet.id) return;
@@ -201,7 +191,6 @@ export default function PetMatch() {
 
   /* ================= DISCONNECT ================= */
   const onPressStatus = () => {
-    // ✅ ถ้ากำลังบันทึกของ pet ตัวนี้ -> ห้ามยกเลิกการเชื่อมต่อ
     if (guardIfRecordingThisPet()) return;
 
     if (!currentMatch) return;
@@ -239,14 +228,13 @@ export default function PetMatch() {
       />
 
       <View style={styles.container}>
-        {/* ===== DEVICE CARD ===== */}
         <View style={styles.card}>
           <View style={styles.deviceTop}>
             <Image
               source={{ uri: deviceType.image.uri }}
               style={styles.deviceImage}
             />
-            <View style={{ flex: 1 }}>
+            <View style={styles.flex1}>
               <Text style={styles.deviceName}>{parsedDevice.name}</Text>
               <Text style={styles.deviceDesc}>{deviceType.description}</Text>
             </View>
@@ -267,11 +255,12 @@ export default function PetMatch() {
                 </View>
               )}
               <View>
-                <Text style={styles.petName}>{currentMatch?.petName ?? "ว่าง"}</Text>
+                <Text style={styles.petName}>
+                  {currentMatch?.petName ?? "ว่าง"}
+                </Text>
 
-                {/* ✅ แสดง hint เล็ก ๆ ว่าล็อกเพราะกำลังบันทึก */}
                 {isLocked && (
-                  <Text style={{ marginTop: 2, color: "#008D49", fontWeight: "700", fontSize: 12 }}>
+                  <Text style={styles.recordingHint}>
                     กำลังบันทึกเส้นทาง…
                   </Text>
                 )}
@@ -283,7 +272,7 @@ export default function PetMatch() {
                 style={[
                   styles.statusPill,
                   !currentMatch && styles.statusPillInactive,
-                  isLocked && { opacity: 0.6 },
+                  isLocked && styles.statusPillLocked,
                 ]}
               >
                 <Text
@@ -299,7 +288,6 @@ export default function PetMatch() {
           </View>
         </View>
 
-        {/* ===== PET LIST ===== */}
         <Text style={styles.sectionTitle}>เลือกสัตว์เลี้ยง</Text>
 
         <View style={styles.card}>
@@ -310,18 +298,20 @@ export default function PetMatch() {
             return (
               <View key={item.id}>
                 <TouchableOpacity
-                  // ✅ ล็อก “การเปลี่ยนตัวอื่น” เฉพาะตอนมี recording ของ pet ที่เชื่อมอยู่
                   disabled={active || isLocked}
                   onPress={() => onSelectPet(item)}
                   style={[
                     styles.petItem,
                     active && styles.petItemActive,
-                    isLocked && !active && { opacity: 0.6 },
+                    isLocked && !active && styles.petItemDisabled,
                   ]}
                 >
                   <View style={styles.petRow}>
                     {item.photoURL ? (
-                      <Image source={{ uri: item.photoURL }} style={styles.petAvatar} />
+                      <Image
+                        source={{ uri: item.photoURL }}
+                        style={styles.petAvatar}
+                      />
                     ) : (
                       <View style={styles.petAvatarEmpty}>
                         <MaterialIcons name="pets" size={22} color="#9CA3AF" />
@@ -331,7 +321,11 @@ export default function PetMatch() {
                   </View>
 
                   {active && (
-                    <Ionicons name="checkmark-circle" size={24} color="#009B4B" />
+                    <Ionicons
+                      name="checkmark-circle"
+                      size={24}
+                      color="#009B4B"
+                    />
                   )}
                 </TouchableOpacity>
 
@@ -344,132 +338,3 @@ export default function PetMatch() {
     </>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    padding: 16,
-    backgroundColor: "#F7F8FA",
-  },
-
-  card: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 20,
-    padding: CARD_PADDING,
-    marginBottom: 20,
-    shadowColor: "#000",
-    shadowOpacity: 0.06,
-    shadowRadius: 12,
-    elevation: 3,
-  },
-
-  deviceTop: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 16,
-  },
-  deviceImage: {
-    width: 72,
-    height: 72,
-    borderRadius: 16,
-  },
-  deviceName: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: "#111827",
-  },
-  deviceDesc: {
-    fontSize: 14,
-    color: "#6B7280",
-    marginTop: 4,
-  },
-
-  divider: {
-    height: 1,
-    backgroundColor: "#E5E7EB",
-    marginVertical: 14,
-  },
-
-  deviceBottom: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-
-  petRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-  },
-  petAvatar: {
-    width: AVATAR_SIZE,
-    height: AVATAR_SIZE,
-    borderRadius: AVATAR_SIZE / 2,
-  },
-  petAvatarEmpty: {
-    width: AVATAR_SIZE,
-    height: AVATAR_SIZE,
-    borderRadius: AVATAR_SIZE / 2,
-    backgroundColor: "#E5E7EB",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  petName: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#111827",
-  },
-
-  statusPill: {
-    backgroundColor: "#009B4B",
-    paddingHorizontal: 15,
-    paddingVertical: 6,
-    borderRadius: 999,
-  },
-  statusPillInactive: {
-    backgroundColor: "#F1F5F9",
-  },
-  statusText: {
-    fontSize: 13,
-    fontWeight: "500",
-    color: "#ffffff",
-  },
-  statusTextInactive: {
-    color: "#6B7280",
-  },
-
-  sectionTitle: {
-    fontSize: 17,
-    fontWeight: "700",
-    marginBottom: 12,
-    color: "#111827",
-  },
-
-  petItem: {
-    height: ROW_HEIGHT,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-
-  petItemActive: {
-    backgroundColor: "#F9FFFC",
-    borderWidth: 0.5,
-    borderRadius: 12,
-    borderColor: "#009B4B",
-    marginHorizontal: -(CARD_PADDING - ACTIVE_INSET),
-    paddingHorizontal: CARD_PADDING - ACTIVE_INSET,
-  },
-
-  petItemName: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#111827",
-  },
-
-  petDivider: {
-    height: StyleSheet.hairlineWidth,
-    backgroundColor: "#E5E7EB",
-    marginLeft: AVATAR_SIZE + 12,
-  },
-});

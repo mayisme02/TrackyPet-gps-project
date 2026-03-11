@@ -5,7 +5,6 @@ import {
   Text,
   Image,
   TouchableOpacity,
-  StyleSheet,
   Alert,
 } from "react-native";
 import { useRouter, useLocalSearchParams } from "expo-router";
@@ -14,6 +13,7 @@ import AntDesign from "@expo/vector-icons/AntDesign";
 import { auth, db } from "../../firebase/firebase";
 import { onSnapshot, collection, deleteDoc, doc } from "firebase/firestore";
 import ProfileHeader from "@/components/ProfileHeader";
+import { styles } from "@/assets/styles/petDetail.styles";
 
 type Pet = {
   id: string;
@@ -33,8 +33,6 @@ type DeviceMatch = {
   petId: string;
 };
 
-/* ================= SCREEN ================= */
-
 export default function PetDetail() {
   const router = useRouter();
   const { pet } = useLocalSearchParams<{ pet: string }>();
@@ -43,8 +41,6 @@ export default function PetDetail() {
   const [deviceMatch, setDeviceMatch] = useState<DeviceMatch | null>(null);
 
   if (!petData) return null;
-
-  /* ================= LOAD DEVICE MATCH ================= */
 
   useEffect(() => {
     if (!auth.currentUser) return;
@@ -59,8 +55,6 @@ export default function PetDetail() {
     });
   }, [petData.id]);
 
-  /* ================= ACTIONS ================= */
-
   const handleEdit = () => {
     router.push({
       pathname: "/(modals)/EditPet",
@@ -68,7 +62,6 @@ export default function PetDetail() {
     });
   };
 
-  // ✅ ไปหน้า RouteHistoryPet โดยส่ง petId (และชื่อ/รูปไว้ทำหัวข้อ)
   const handleRouteHistory = () => {
     router.push({
       pathname: "/(modals)/RouteHistoryPet",
@@ -108,7 +101,6 @@ export default function PetDetail() {
       />
 
       <ScrollView contentContainerStyle={styles.scroll}>
-        {/* Image */}
         {petData.photoURL ? (
           <Image source={{ uri: petData.photoURL }} style={styles.image} />
         ) : (
@@ -117,7 +109,6 @@ export default function PetDetail() {
           </View>
         )}
 
-        {/* Info */}
         <View style={styles.card}>
           <Text style={styles.petName}>{petData.name}</Text>
           <Text style={styles.petBreed}>{petData.breed}</Text>
@@ -130,7 +121,6 @@ export default function PetDetail() {
           </View>
         </View>
 
-        {/* Menu */}
         <View style={styles.section}>
           <MenuRow
             icon={<MaterialIcons name="gps-fixed" size={20} color="#ffffff" />}
@@ -161,7 +151,7 @@ export default function PetDetail() {
           <MenuRow
             icon={<MaterialIcons name="history" size={20} color="#ffffff" />}
             title="ประวัติเส้นทางย้อนหลัง"
-            onPress={handleRouteHistory} // ✅ สำคัญ: ผูกฟังก์ชันตรงนี้
+            onPress={handleRouteHistory}
           />
 
           <MenuRow
@@ -178,8 +168,6 @@ export default function PetDetail() {
     </>
   );
 }
-
-/* ================= SUB COMPONENTS ================= */
 
 function InfoBox({ label, value }: { label: string; value: string }) {
   return (
@@ -212,111 +200,3 @@ function MenuRow({
     </TouchableOpacity>
   );
 }
-
-/* ================= STYLES ================= */
-
-const styles = StyleSheet.create({
-  scroll: {
-    paddingBottom: 40,
-    backgroundColor: "#F2F2F7",
-  },
-  image: {
-    width: "100%",
-    height: 280,
-  },
-  placeholderImage: {
-    width: "100%",
-    height: 280,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#EFEFF4",
-  },
-  card: {
-    backgroundColor: "#fff",
-    marginHorizontal: 16,
-    marginTop: -30,
-    borderRadius: 20,
-    padding: 20,
-  },
-  petName: {
-    fontSize: 24,
-    fontWeight: "700",
-  },
-  petBreed: {
-    fontSize: 15,
-    color: "#8E8E93",
-    marginTop: 4,
-  },
-  infoGrid: {
-    flexDirection: "row",
-    marginTop: 10,
-    gap: 10,
-  },
-  infoBox: {
-    flex: 1,
-    backgroundColor: "#E6E6E6",
-    borderRadius: 14,
-    paddingVertical: 14,
-    alignItems: "center",
-  },
-  infoLabel: {
-    fontSize: 12,
-    color: "#8E8E93",
-  },
-  infoValue: {
-    fontSize: 15,
-    fontWeight: "600",
-  },
-  section: {
-    marginTop: 10,
-    marginHorizontal: 16,
-    backgroundColor: "#fff",
-    borderRadius: 20,
-    overflow: "hidden",
-  },
-  menuRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderBottomWidth: 0.5,
-    borderBottomColor: "#E5E5EA",
-  },
-  menuIcon: {
-    width: 38,
-    height: 38,
-    borderRadius: 10,
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: 12,
-    backgroundColor: "#f2bb14",
-  },
-  menuTitle: {
-    fontSize: 16,
-  },
-  menuSubtitle: {
-    alignSelf: "flex-start",
-    fontSize: 10,
-    fontWeight: "600",
-    color: "#ffffff",
-    backgroundColor: "#009B4B",
-    paddingHorizontal: 10,
-    paddingVertical: 2,
-    borderRadius: 999,
-    marginTop: 2,
-    overflow: "hidden",
-  },
-  deleteButton: {
-    marginTop: 12,
-    marginHorizontal: 16,
-    paddingVertical: 14,
-    borderRadius: 14,
-    backgroundColor: "#DFDFDF",
-    alignItems: "center",
-  },
-  deleteText: {
-    color: "#E80C00",
-    fontSize: 16,
-    fontWeight: "500",
-  },
-});

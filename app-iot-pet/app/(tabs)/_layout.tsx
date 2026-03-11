@@ -5,10 +5,24 @@ import FontAwesome6 from "@expo/vector-icons/FontAwesome6";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { FontAwesome5 } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { rtdb } from "../../firebase/firebase";
+import { auth, rtdb } from "../../firebase/firebase";
 import { ref as dbRef, onValue } from "firebase/database";
 import { Colors } from "@/assets/constants/Colors";
 import { useColorScheme } from "@/hooks/useColorScheme";
+import * as Notifications from "expo-notifications";
+import { onAuthStateChanged } from "firebase/auth";
+import { savePushTokenToFirestore } from "@/utils/pushNotifications";
+import { useRouter } from "expo-router";
+
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: true,
+    shouldShowBanner: true,
+    shouldShowList: true,
+  }),
+});
 
 export default function TabLayout() {
   const colorScheme = useColorScheme();
@@ -64,6 +78,16 @@ export default function TabLayout() {
     }
   }, []);
 
+  useEffect(() => {
+  const unsub = onAuthStateChanged(auth, async (user) => {
+    if (user) {
+      await savePushTokenToFirestore();
+    }
+  });
+
+  return unsub;
+}, []);
+
   // ✅ ฟัง event จาก NotificationScreen แล้วอัปเดต badge ทันที
   useEffect(() => {
     const subSeen = DeviceEventEmitter.addListener("notifications:seen", async ({ deviceId }: any) => {
@@ -94,6 +118,27 @@ export default function TabLayout() {
       };
     }, [computeUnread])
   );
+
+  const router = useRouter();
+
+useEffect(() => {
+  const sub = Notifications.addNotificationResponseReceivedListener((response) => {
+    const data = response.notification.request.content.data as {
+      routeId?: string;
+    };
+
+    if (data?.routeId) {
+      router.push({
+        pathname: "/RouteHistory",
+        params: { routeId: data.routeId },
+      });
+    } else {
+      router.push("/(tabs)/notification");
+    }
+  });
+
+  return () => sub.remove();
+}, [router]);
 
   return (
     <Tabs

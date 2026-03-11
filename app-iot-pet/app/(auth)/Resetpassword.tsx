@@ -93,7 +93,7 @@ export default function ResetPasswordScreen() {
 
   return (
     <ImageBackground
-      source={require('../../assets/images/homecover.jpg')} // ใส่ path รูปหมาของคุณ
+      source={require('../../assets/images/homecover.jpg')} 
       style={styles.background}
       resizeMode="cover"
     >

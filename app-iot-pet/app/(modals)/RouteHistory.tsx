@@ -12,7 +12,7 @@ import { collection, doc, onSnapshot } from "firebase/firestore";
 type RoutePoint = {
   latitude: number;
   longitude: number;
-  timestamp: string; // ISO string
+  timestamp: string;
 };
 
 type GeoPoint = { latitude: number; longitude: number };
@@ -23,32 +23,38 @@ type RouteHistoryDoc = {
   photoURL?: string | null;
   deviceCode?: string;
 
-  from: string; // ISO (planned)
-  to: string; // ISO (planned)
+  from: string;
+  to: string;
   createdAt?: any;
 
   status?: string;
 
-  // geofence ณ เวลาบันทึก
   geofence?: GeoPoint[] | null;
   geofenceSnapshot?: { points?: GeoPoint[]; savedAt?: any } | null;
 
-  // metrics (อาจไม่อัปเดตบางช่วง)
   distanceMeters?: number;
   durationSeconds?: number;
   exitCount?: number;
 
-  // เวลาจริง (บันทึกจากหน้า Maps)
   startedAtIso?: string | null;
   endedAtIso?: string | null;
 
-  // เวลาจริง (Timestamp)
   startedAt?: any;
   endedAt?: any;
 
-  // realtime fields
   lastLiveIso?: string | null;
   lastLiveMs?: number | null;
+};
+
+type PetProfile = {
+  id: string;
+  name?: string;
+  photoURL?: string | null;
+  breed?: string;
+  age?: string;
+  weight?: string;
+  height?: string;
+  gender?: string;
 };
 
 /* ================= DISTANCE HELPERS (fallback) ================= */
@@ -69,8 +75,7 @@ const haversineMeters = (a: LatLng, b: LatLng) => {
   return R * c;
 };
 
-// กัน GPS jump: ถ้าช่วงใดกระโดดไกลเกิน (เมตร) ไม่เอามาคิดระยะ (แต่ยังวาดเส้นตามจริง)
-const MAX_SEGMENT_M = 300; // ปรับได้ (200-500)
+const MAX_SEGMENT_M = 300;
 
 /* ================= SCREEN ================= */
 export default function RouteHistory() {
@@ -104,6 +109,7 @@ export default function RouteHistory() {
       : null
   );
 
+  const [petProfile, setPetProfile] = useState<PetProfile | null>(null);
   const [points, setPoints] = useState<RoutePoint[]>([]);
   const [savedGeofence, setSavedGeofence] = useState<GeoPoint[] | null>(null);
 
@@ -217,6 +223,11 @@ export default function RouteHistory() {
     return Number.isFinite(ms) ? ms : 0;
   };
 
+  /* ================= DISPLAY PET INFO (latest from pets doc) ================= */
+  const displayPetName = petProfile?.name || route?.petName || fallbackRoute?.petName || "-";
+  const displayPhoto =
+    petProfile?.photoURL || route?.photoURL || fallbackRoute?.photoURL || "";
+
   /* ================= SUBSCRIBE ROUTE DOC ================= */
   useEffect(() => {
     if (!auth.currentUser) return;
@@ -237,6 +248,42 @@ export default function RouteHistory() {
       (err) => console.log("route doc onSnapshot error:", err)
     );
   }, [effectiveRouteId]);
+
+  /* ================= SUBSCRIBE PET DOC (to receive EditPet changes) ================= */
+  useEffect(() => {
+    if (!auth.currentUser) return;
+
+    const uid = auth.currentUser.uid;
+    const effectivePetId =
+      route?.petId || fallbackRoute?.petId || null;
+
+    if (!effectivePetId) {
+      setPetProfile(null);
+      return;
+    }
+
+    const petRef = doc(db, "users", uid, "pets", effectivePetId);
+
+    return onSnapshot(
+      petRef,
+      (snap) => {
+        if (!snap.exists()) {
+          setPetProfile(null);
+          return;
+        }
+
+        const data = snap.data() as Omit<PetProfile, "id">;
+        setPetProfile({
+          id: snap.id,
+          ...data,
+        });
+      },
+      (err) => {
+        console.log("pet doc onSnapshot error:", err);
+        setPetProfile(null);
+      }
+    );
+  }, [route?.petId, fallbackRoute?.petId]);
 
   /* ================= SUBSCRIBE POINTS ================= */
   useEffect(() => {
@@ -323,7 +370,7 @@ export default function RouteHistory() {
     };
   }, [lineCoords, savedGeofence]);
 
-  /* ================= FIT (fix: retry when map not ready / data late) ================= */
+  /* ================= FIT ================= */
   const doFit = useCallback(() => {
     if (!mapRef.current) return;
 
@@ -358,7 +405,6 @@ export default function RouteHistory() {
   }, [lineCoords, savedGeofence, insets.top]);
 
   useEffect(() => {
-    // ทำ 2 เฟส: เร็วๆ + retry (แก้ “ต้องกดหลายรอบถึงขึ้นเส้น”)
     const t1 = setTimeout(() => doFit(), 250);
     const t2 = setTimeout(() => doFit(), 900);
     return () => {
@@ -397,14 +443,13 @@ export default function RouteHistory() {
     return 0;
   }, [route?.durationSeconds, startTs, endTs]);
 
-  /* ================= DISTANCE EFFECTIVE (fix: fallback from points) ================= */
+  /* ================= DISTANCE EFFECTIVE ================= */
   const distanceFromPoints = useMemo(() => {
     if (lineCoords.length < 2) return 0;
 
     let sum = 0;
     for (let i = 1; i < lineCoords.length; i++) {
       const d = haversineMeters(lineCoords[i - 1], lineCoords[i]);
-      // กัน jump
       if (Number.isFinite(d) && d > 0 && d <= MAX_SEGMENT_M) sum += d;
     }
     return Math.round(sum);
@@ -413,7 +458,7 @@ export default function RouteHistory() {
   const distanceMetersEffective = useMemo(() => {
     const v = Number(route?.distanceMeters ?? NaN);
     if (Number.isFinite(v) && v > 0) return v;
-    return distanceFromPoints; // ✅ fallback
+    return distanceFromPoints;
   }, [route?.distanceMeters, distanceFromPoints]);
 
   const exitCountEffective = useMemo(() => {
@@ -500,7 +545,6 @@ export default function RouteHistory() {
 
   return (
     <View style={styles.screen}>
-      {/* Header overlay */}
       <View style={styles.headerOverlay} pointerEvents="box-none">
         <ProfileHeader
           title="เส้นทางย้อนหลัง"
@@ -512,17 +556,15 @@ export default function RouteHistory() {
         />
       </View>
 
-      {/* Map เต็มพื้นที่ใต้ header */}
       <View style={[styles.mapWrap, { marginTop: HEADER_H }]}>
         <MapView
-          key={effectiveRouteId} // remount เวลาเปลี่ยน routeId
+          key={effectiveRouteId}
           ref={mapRef}
           style={StyleSheet.absoluteFill}
           initialRegion={initialRegion}
           onPress={mapOnPress}
           onMapReady={() => {
             setMapReady(true);
-            // เฟสแรก fit ทันทีเมื่อ map พร้อม
             setTimeout(() => doFit(), 150);
           }}
         >
@@ -536,7 +578,6 @@ export default function RouteHistory() {
             />
           )}
 
-          {/* ✅ วาดเส้นทันที ไม่ต้องรอ mapReady (แก้ “กดหลายรอบถึงขึ้น”) */}
           {lineCoords.length > 1 && (
             <Polyline coordinates={lineCoords} strokeColor="#E28F00" strokeWidth={8} zIndex={5} />
           )}
@@ -583,11 +624,10 @@ export default function RouteHistory() {
         </MapView>
       </View>
 
-      {/* Info ลอยทับ Map */}
       <View style={[styles.infoSection, { position: "absolute", left: 16, right: 16, bottom: INFO_BOTTOM }]}>
         <View style={styles.topRow}>
-          {route?.photoURL ? (
-            <Image source={{ uri: route.photoURL }} style={styles.avatar} />
+          {displayPhoto ? (
+            <Image source={{ uri: displayPhoto }} style={styles.avatar} />
           ) : (
             <View style={styles.placeholder}>
               <MaterialIcons name="pets" size={26} color="#9CA3AF" />
@@ -595,7 +635,7 @@ export default function RouteHistory() {
           )}
 
           <View style={{ flex: 1 }}>
-            <Text style={styles.petName}>{route?.petName ?? "-"}</Text>
+            <Text style={styles.petName}>{displayPetName}</Text>
             <Text style={styles.range}>{rangeLine}</Text>
 
             <Text style={styles.subMeta}>
@@ -729,7 +769,6 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
 
-  // Callout
   calloutWrapper: { alignItems: "center" },
   calloutHandle: {
     width: 48,

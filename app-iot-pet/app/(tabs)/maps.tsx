@@ -40,7 +40,7 @@ import {
 } from "firebase/firestore";
 import { pushAlertAndLog } from "@/utils/alertService";
 
-const BACKEND_URL = "http://172.20.10.2:3000";
+const BACKEND_URL = "http://192.168.31.136:3000";
 const MIN_MOVE_DISTANCE = 3;
 
 /* ✅ storage keys */
@@ -1271,7 +1271,7 @@ export default function MapTracker() {
               </View>
             ) : (
               <View style={styles.pawMarker} onLayout={() => setMarkerReady(true)}>
-                <MaterialIcons name="pets" size={26} color="#7A4A00" />
+                <MaterialIcons name="settings-remote" size={26} color="#7A4A00" />
               </View>
             )}
 
@@ -1624,7 +1624,7 @@ const styles = StyleSheet.create({
     width: 56,
     height: 56,
     borderRadius: 28,
-    backgroundColor: "#F5E6C8",
+    backgroundColor: "#FFD65D",
     justifyContent: "center",
     alignItems: "center",
     borderWidth: 3,

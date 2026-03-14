@@ -31,7 +31,7 @@ import { onAuthStateChanged } from "firebase/auth";
 import { SwipeListView } from "react-native-swipe-list-view";
 import ProfileHeader from "@/components/ProfileHeader";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
+import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import { styles } from "@/assets/styles/RouteHistoryList";
 
 // ✅ Calendar
@@ -92,6 +92,14 @@ type RealTimeMap = Record<
   }
 >;
 
+type PetMap = Record<
+  string,
+  {
+    name?: string;
+    photoURL?: string | null;
+  }
+>;
+
 const ROUTE_FILTER_STORAGE_KEY = "routeFilter_v1";
 const ACTIVE_GEOFENCE_STORAGE_KEY = "activeGeofence_v1";
 const ROUTE_RECORDING_ENDED_EVENT = "routeRecordingEnded";
@@ -103,6 +111,7 @@ export default function RouteHistoryList() {
 
   const [routes, setRoutes] = useState<RouteHistory[]>([]);
   const [realTimes, setRealTimes] = useState<RealTimeMap>({});
+  const [petMap, setPetMap] = useState<PetMap>({});
 
   const fetchingRef = useRef<Set<string>>(new Set());
   const blockCardPressRef = useRef(false);
@@ -239,7 +248,9 @@ export default function RouteHistoryList() {
 
   const openStopRecordingConfirm = useCallback(
     (route: RouteHistory) => {
-      Alert.alert("หยุดการบันทึกทันที", `ต้องการหยุดการบันทึกของ ${route.petName ?? "สัตว์เลี้ยง"} ใช่ไหม?`, [
+      const latestPetName = petMap[route.petId]?.name?.trim() || route.petName || "สัตว์เลี้ยง";
+
+      Alert.alert("หยุดการบันทึกทันที", `ต้องการหยุดการบันทึกของ ${latestPetName} ใช่ไหม?`, [
         {
           text: "ยกเลิก",
           style: "cancel",
@@ -254,7 +265,7 @@ export default function RouteHistoryList() {
         },
       ]);
     },
-    [stopRecordingNow]
+    [stopRecordingNow, petMap]
   );
 
   useEffect(() => {
@@ -318,6 +329,30 @@ export default function RouteHistoryList() {
 
       data.sort((a, b) => getSortMs(b) - getSortMs(a));
       setRoutes(data);
+    });
+  }, [uid]);
+
+  // ✅ โหลดข้อมูล pets ล่าสุด เพื่อให้ชื่อ/รูปที่แก้ไขแล้วอัปเดตตาม
+  useEffect(() => {
+    if (!uid) {
+      setPetMap({});
+      return;
+    }
+
+    const qPets = query(collection(db, "users", uid, "pets"));
+
+    return onSnapshot(qPets, (snapshot) => {
+      const nextMap: PetMap = {};
+
+      snapshot.docs.forEach((d) => {
+        const data = d.data() as any;
+        nextMap[d.id] = {
+          name: typeof data?.name === "string" ? data.name : "",
+          photoURL: data?.photoURL ?? null,
+        };
+      });
+
+      setPetMap(nextMap);
     });
   }, [uid]);
 
@@ -501,6 +536,10 @@ export default function RouteHistoryList() {
 
     const timeText = startIso && endIso ? formatTimeRange(startIso, endIso) : formatTimeRange(item.from, item.to);
 
+    const latestPet = petMap[item.petId];
+    const displayName = latestPet?.name?.trim() || item.petName || "-";
+    const displayPhoto = latestPet?.photoURL ?? item.photoURL ?? null;
+
     return (
       <Pressable
         style={styles.card}
@@ -512,13 +551,20 @@ export default function RouteHistoryList() {
 
           router.push({
             pathname: "/(modals)/RouteHistory",
-            params: { routeId: item.id, route: JSON.stringify(item) },
+            params: {
+              routeId: item.id,
+              route: JSON.stringify({
+                ...item,
+                petName: displayName,
+                photoURL: displayPhoto,
+              }),
+            },
           });
         }}
       >
         <View>
-          {item.photoURL ? (
-            <Image source={{ uri: item.photoURL }} style={styles.avatar} />
+          {displayPhoto ? (
+            <Image source={{ uri: displayPhoto }} style={styles.avatar} />
           ) : (
             <View style={styles.placeholder}>
               <MaterialIcons name="pets" size={28} color="#9CA3AF" />
@@ -529,7 +575,7 @@ export default function RouteHistoryList() {
         <View style={styles.info}>
           <View style={styles.topRow}>
             <Text style={styles.name} numberOfLines={1}>
-              {item.petName ?? "-"}
+              {displayName}
             </Text>
 
             <TouchableOpacity
@@ -573,13 +619,20 @@ export default function RouteHistoryList() {
     );
   };
 
-  const renderHiddenItem = ({ item }: { item: RouteHistory }, rowMap: { [key: string]: any }) => (
-    <View style={styles.hiddenContainer}>
-      <TouchableOpacity style={styles.deleteButton} onPress={() => confirmDelete(rowMap, item.id, item.id, item.petName)}>
-        <FontAwesome6 name="trash" size={18} color="#fff" />
-      </TouchableOpacity>
-    </View>
-  );
+  const renderHiddenItem = ({ item }: { item: RouteHistory }, rowMap: { [key: string]: any }) => {
+    const latestPetName = petMap[item.petId]?.name?.trim() || item.petName;
+
+    return (
+      <View style={styles.hiddenContainer}>
+        <TouchableOpacity
+          style={styles.deleteButton}
+          onPress={() => confirmDelete(rowMap, item.id, item.id, latestPetName)}
+        >
+          <FontAwesome6 name="trash" size={18} color="#fff" />
+        </TouchableOpacity>
+      </View>
+    );
+  };
 
   const onDayPress = useCallback((d: DateData) => {
     // toggle: แตะซ้ำ = ยกเลิก filter
@@ -617,7 +670,6 @@ export default function RouteHistoryList() {
             textDayHeaderFontWeight: "800",
             arrowColor: "#0F172A",
             todayTextColor: "#8C4D00",
-          
           }}
           style={styles.calendar}
         />

@@ -159,7 +159,7 @@ export default function HomeScreen() {
     try {
       setLocationLoading(true);
 
-      const res = await fetch("http://172.20.10.2:3000/api/device/location", {
+      const res = await fetch("http://192.168.31.136:3000/api/device/location", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ deviceCode: code }),
@@ -228,8 +228,8 @@ export default function HomeScreen() {
           const list = stored ? JSON.parse(stored) : [];
           const updated = Array.isArray(list)
             ? list.filter(
-                (d: any) => String(d?.code ?? "").toUpperCase() !== targetCode
-              )
+              (d: any) => String(d?.code ?? "").toUpperCase() !== targetCode
+            )
             : [];
 
           await AsyncStorage.setItem("devices", JSON.stringify(updated));
@@ -243,7 +243,7 @@ export default function HomeScreen() {
             const uid = auth.currentUser.uid;
             try {
               await deleteDoc(doc(db, "users", uid, "deviceMatches", targetCode));
-            } catch {}
+            } catch { }
           }
 
           setDevice(null);
@@ -305,16 +305,25 @@ export default function HomeScreen() {
     <ParallaxScrollView
       headerBackgroundColor={{ light: "#f2bb14", dark: "#f2bb14" }}
       headerImage={
-        <SafeAreaView style={styles.header}>
+        <View style={styles.header}>
           <View style={styles.headerRow}>
             {avatar ? (
               <Image source={{ uri: avatar }} style={styles.avatar} />
             ) : (
-              <Ionicons name="person-circle-outline" size={48} color="#fff" />
+              <View style={styles.avatarPlaceholder}>
+                <Ionicons name="person" size={26} color="#9E9E9E" />
+              </View>
             )}
-            <Text style={styles.greeting}>สวัสดี! {name}</Text>
+
+            <Text
+              style={styles.greeting}
+              numberOfLines={1}
+              ellipsizeMode="tail"
+            >
+              สวัสดี! {name}
+            </Text>
           </View>
-        </SafeAreaView>
+        </View>
       }
     >
       {/* ===== PET SECTION ===== */}
@@ -476,22 +485,18 @@ export default function HomeScreen() {
 }
 
 const styles = StyleSheet.create({
-  loading: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-
   header: {
-    justifyContent: "center",
+    width: "100%",
+    height: "100%",
+    justifyContent: "flex-end",
     paddingHorizontal: 20,
+    paddingBottom: 20,
   },
 
   headerRow: {
+    width: "100%",
     flexDirection: "row",
     alignItems: "center",
-    marginHorizontal: 5,
-    marginTop: 20,
   },
 
   avatar: {
@@ -500,12 +505,26 @@ const styles = StyleSheet.create({
     borderRadius: 22,
   },
 
+  avatarPlaceholder: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "#E6E6E6",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+
   greeting: {
+    marginLeft: 14,
     fontSize: 20,
     fontWeight: "700",
-    marginLeft: 12,
     color: "#1F1F1F",
-    flexShrink: 1,
+    flex: 1,
+  },
+  loading: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
   },
 
   sectionHeader: {

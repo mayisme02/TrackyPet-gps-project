@@ -939,7 +939,7 @@ export default function MapTracker() {
   }, [savedRouteFilter, clearActiveGeofence]);
 
   /* ================= ADD DEVICE ================= */
-const confirmAddDevice = async () => {
+  const confirmAddDevice = async () => {
   try {
     const uid = auth.currentUser?.uid;
     if (!uid) {
@@ -964,25 +964,11 @@ const confirmAddDevice = async () => {
       return;
     }
 
+    // 1) เช็กว่า API ใช้งานได้
     const ok = await fetchLocation(code);
     if (!ok) return;
 
-    // ✅ เช็ค ownerUid ก่อน
-    const ownerRef = ref(rtdb, `devices/${code}/ownerUid`);
-    const ownerSnap = await get(ownerRef);
-
-    if (ownerSnap.exists()) {
-      const ownerUid = ownerSnap.val();
-
-      if (ownerUid !== uid) {
-        Alert.alert("อุปกรณ์นี้ถูกใช้งานแล้ว", "อุปกรณ์นี้ถูกผูกกับบัญชีอื่น");
-        return;
-      }
-    } else {
-      // ✅ ยังไม่มี owner -> ตั้ง owner ให้ device นี้
-      await set(ownerRef, uid);
-    }
-
+    // 2) เพิ่มอุปกรณ์ลง local ก่อน
     const newDevice: Device = {
       id: code,
       code,
@@ -996,6 +982,7 @@ const confirmAddDevice = async () => {
     await AsyncStorage.setItem(devicesKey, JSON.stringify(updated));
     await AsyncStorage.setItem(activeDeviceKey, code);
 
+    // 3) อัปเดต state ของหน้าปัจจุบัน
     setDeviceCode(code);
 
     const deviceInfo = DEVICE_TYPES[newDevice.type || "GPS_TRACKER_A7670"];
@@ -1010,9 +997,28 @@ const confirmAddDevice = async () => {
     setModalVisible(false);
     setTempCode("");
 
+    // 4) แจ้งหน้าอื่นให้ reload
     DeviceEventEmitter.emit("devicesChanged");
     DeviceEventEmitter.emit("activeDeviceChanged", { code });
-  } catch {
+
+    // 5) ถ้าจะเก็บ ownerUid ค่อยทำทีหลังแบบไม่ทำให้การเพิ่มล้ม
+    try {
+      const ownerRef = ref(rtdb, `devices/${code}/ownerUid`);
+      const ownerSnap = await get(ownerRef);
+
+      if (ownerSnap.exists()) {
+        const ownerUid = ownerSnap.val();
+        if (ownerUid !== uid) {
+          console.log("ownerUid belongs to another user");
+        }
+      } else {
+        await set(ownerRef, uid);
+      }
+    } catch (e) {
+      console.log("ownerUid warning:", e);
+    }
+  } catch (e) {
+    console.log("confirmAddDevice error:", e);
     Alert.alert("เกิดข้อผิดพลาด", "ไม่สามารถเพิ่มอุปกรณ์ได้");
   }
 };

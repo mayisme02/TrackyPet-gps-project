@@ -137,7 +137,7 @@ export default function HomeScreen() {
 
     setDevice({
       code: found.code,
-      type: found.type ?? "GPS_TRACKER",
+      type: found.type ?? "GPS_TRACKER_A7670",
     });
   };
 

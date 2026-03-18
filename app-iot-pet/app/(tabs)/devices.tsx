@@ -186,71 +186,69 @@ export default function Devices() {
   };
 
   const confirmAddDevice = async () => {
+  try {
+    const uid = auth.currentUser?.uid;
+    if (!uid) {
+      Alert.alert("ยังไม่ได้เข้าสู่ระบบ", "กรุณาเข้าสู่ระบบก่อน");
+      return;
+    }
+
+    const code = tempCode.trim().toUpperCase();
+    if (!code) {
+      Alert.alert("กรุณากรอกรหัสอุปกรณ์");
+      return;
+    }
+
+    const devicesKey = getDevicesStorageKey(uid);
+    const activeDeviceKey = getActiveDeviceStorageKey(uid);
+
+    const stored = await AsyncStorage.getItem(devicesKey);
+    const list: Device[] = stored ? JSON.parse(stored) : [];
+
+    if (list.some((d) => d.code === code)) {
+      Alert.alert("อุปกรณ์ถูกเพิ่มแล้ว");
+      return;
+    }
+
+    const ok = await fetchLocation(code);
+    if (!ok) return;
+
+    const newDevice: Device = {
+      id: code,
+      code,
+      type: "GPS_TRACKER_A7670",
+      name: "LilyGo A7670E",
+      createdAt: new Date().toISOString(),
+    };
+
+    const updated = [...list, newDevice];
+
+    await AsyncStorage.setItem(devicesKey, JSON.stringify(updated));
+    await AsyncStorage.setItem(activeDeviceKey, code);
+
+    setDevices(updated);
+    setModalVisible(false);
+    setTempCode("");
+
+    DeviceEventEmitter.emit(DEVICES_CHANGED_EVENT, { code });
+    DeviceEventEmitter.emit(ACTIVE_DEVICE_CHANGED_EVENT, { code });
+
+    // optional ownerUid
     try {
-      const uid = auth.currentUser?.uid;
-      if (!uid) {
-        Alert.alert("ยังไม่ได้เข้าสู่ระบบ", "กรุณาเข้าสู่ระบบก่อน");
-        return;
-      }
-
-      const code = tempCode.trim().toUpperCase();
-      if (!code) {
-        Alert.alert("กรุณากรอกรหัสอุปกรณ์");
-        return;
-      }
-
-      const devicesKey = getDevicesStorageKey(uid);
-      const activeDeviceKey = getActiveDeviceStorageKey(uid);
-
-      const stored = await AsyncStorage.getItem(devicesKey);
-      const list: Device[] = stored ? JSON.parse(stored) : [];
-
-      if (list.some((d) => d.code === code)) {
-        Alert.alert("อุปกรณ์ถูกเพิ่มแล้ว");
-        return;
-      }
-
-      const ok = await fetchLocation(code);
-      if (!ok) return;
-
-      // เช็ค owner
       const ownerRef = ref(rtdb, `devices/${code}/ownerUid`);
       const ownerSnap = await get(ownerRef);
 
-      if (ownerSnap.exists()) {
-        const ownerUid = ownerSnap.val();
-        if (ownerUid !== uid) {
-          Alert.alert("อุปกรณ์นี้ถูกใช้งานแล้ว", "อุปกรณ์นี้ถูกผูกกับบัญชีอื่น");
-          return;
-        }
-      } else {
+      if (!ownerSnap.exists()) {
         await set(ownerRef, uid);
       }
-
-      const newDevice: Device = {
-        id: code,
-        code,
-        type: "GPS_TRACKER_A7670",
-        name: "LilyGo A7670E",
-        createdAt: new Date().toISOString(),
-      };
-
-      const updated = [...list, newDevice];
-
-      await AsyncStorage.setItem(devicesKey, JSON.stringify(updated));
-      await AsyncStorage.setItem(activeDeviceKey, code);
-
-      setDevices(updated);
-      setModalVisible(false);
-      setTempCode("");
-
-      DeviceEventEmitter.emit(DEVICES_CHANGED_EVENT, { code });
-      DeviceEventEmitter.emit(ACTIVE_DEVICE_CHANGED_EVENT, { code });
     } catch (e) {
-      console.log("confirmAddDevice error:", e);
-      Alert.alert("เกิดข้อผิดพลาด", "ไม่สามารถเพิ่มอุปกรณ์ได้");
+      console.log("ownerUid warning:", e);
     }
-  };
+  } catch (e) {
+    console.log("confirmAddDevice error:", e);
+    Alert.alert("เกิดข้อผิดพลาด", "ไม่สามารถเพิ่มอุปกรณ์ได้");
+  }
+};
 
   /* ================= RENDER ITEM ================= */
   const renderItem = ({ item }: { item: Device }) => {

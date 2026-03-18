@@ -1,6 +1,23 @@
 import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
-import { View, Text, StyleSheet, TouchableOpacity, Image, Platform } from "react-native";
-import MapView, { Polyline, Marker, Region, LatLng, Callout, Polygon } from "react-native-maps";
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  Image,
+  Platform,
+  Animated,
+  Easing,
+} from "react-native";
+import MapView, {
+  Polyline,
+  Marker,
+  Region,
+  LatLng,
+  Callout,
+  Polygon,
+  AnimatedRegion,
+} from "react-native-maps";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { auth, db } from "../../firebase/firebase";
@@ -57,7 +74,13 @@ type PetProfile = {
   gender?: string;
 };
 
-/* ================= DISTANCE HELPERS (fallback) ================= */
+type DirectionMarker = {
+  key: string;
+  coordinate: LatLng;
+  rotation: number;
+};
+
+/* ================= DISTANCE HELPERS ================= */
 const toRad = (deg: number) => (deg * Math.PI) / 180;
 
 const haversineMeters = (a: LatLng, b: LatLng) => {
@@ -75,7 +98,22 @@ const haversineMeters = (a: LatLng, b: LatLng) => {
   return R * c;
 };
 
+const bearingDegrees = (a: LatLng, b: LatLng) => {
+  const lat1 = toRad(a.latitude);
+  const lat2 = toRad(b.latitude);
+  const dLng = toRad(b.longitude - a.longitude);
+
+  const y = Math.sin(dLng) * Math.cos(lat2);
+  const x =
+    Math.cos(lat1) * Math.sin(lat2) -
+    Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLng);
+
+  const brng = (Math.atan2(y, x) * 180) / Math.PI;
+  return (brng + 360) % 360;
+};
+
 const MAX_SEGMENT_M = 300;
+const MIN_DIRECTION_GAP_METERS = 80;
 
 /* ================= SCREEN ================= */
 export default function RouteHistory() {
@@ -92,7 +130,12 @@ export default function RouteHistory() {
   const endMarkerRef = useRef<React.ElementRef<typeof Marker>>(null);
   const suppressMapPressRef = useRef(false);
 
+  const animatedMarkerRef = useRef<React.ElementRef<typeof Marker> | null>(null);
+  const animationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isAnimatingRef = useRef(false);
+
   const [mapReady, setMapReady] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(false);
 
   const fallbackRoute: (RouteHistoryDoc & { id?: string }) | null = useMemo(() => {
     if (!routeJson) return null;
@@ -223,10 +266,9 @@ export default function RouteHistory() {
     return Number.isFinite(ms) ? ms : 0;
   };
 
-  /* ================= DISPLAY PET INFO (latest from pets doc) ================= */
+  /* ================= DISPLAY PET INFO ================= */
   const displayPetName = petProfile?.name || route?.petName || fallbackRoute?.petName || "-";
-  const displayPhoto =
-    petProfile?.photoURL || route?.photoURL || fallbackRoute?.photoURL || "";
+  const displayPhoto = petProfile?.photoURL || route?.photoURL || fallbackRoute?.photoURL || "";
 
   /* ================= SUBSCRIBE ROUTE DOC ================= */
   useEffect(() => {
@@ -249,13 +291,12 @@ export default function RouteHistory() {
     );
   }, [effectiveRouteId]);
 
-  /* ================= SUBSCRIBE PET DOC (to receive EditPet changes) ================= */
+  /* ================= SUBSCRIBE PET DOC ================= */
   useEffect(() => {
     if (!auth.currentUser) return;
 
     const uid = auth.currentUser.uid;
-    const effectivePetId =
-      route?.petId || fallbackRoute?.petId || null;
+    const effectivePetId = route?.petId || fallbackRoute?.petId || null;
 
     if (!effectivePetId) {
       setPetProfile(null);
@@ -330,7 +371,7 @@ export default function RouteHistory() {
     else setSavedGeofence(null);
   }, [routeGeofenceSnapshot]);
 
-  /* ================= LINE COORDS (always render) ================= */
+  /* ================= LINE COORDS ================= */
   const lineCoords: LatLng[] = useMemo(() => {
     const out: LatLng[] = [];
     for (const p of points) {
@@ -343,6 +384,94 @@ export default function RouteHistory() {
     }
     return out;
   }, [points]);
+
+  /* ================= DIRECTION MARKERS ================= */
+  const directionMarkers: DirectionMarker[] = useMemo(() => {
+    if (lineCoords.length < 2) return [];
+
+    const markers: DirectionMarker[] = [];
+    let accumulated = 0;
+
+    for (let i = 1; i < lineCoords.length; i++) {
+      const prev = lineCoords[i - 1];
+      const curr = lineCoords[i];
+
+      const segDist = haversineMeters(prev, curr);
+      if (!Number.isFinite(segDist) || segDist < 8 || segDist > MAX_SEGMENT_M) continue;
+
+      accumulated += segDist;
+
+      if (accumulated >= MIN_DIRECTION_GAP_METERS) {
+        markers.push({
+          key: `dir-${i}`,
+          coordinate: {
+            latitude: (prev.latitude + curr.latitude) / 2,
+            longitude: (prev.longitude + curr.longitude) / 2,
+          },
+          rotation: bearingDegrees(prev, curr),
+        });
+
+        accumulated = 0;
+      }
+    }
+
+    return markers;
+  }, [lineCoords]);
+
+  /* ================= START / END ================= */
+  const startPoint = points.length > 0 ? points[0] : null;
+  const endPoint = points.length > 0 ? points[points.length - 1] : null;
+
+  const status = getStatus(route);
+
+  const startTs =
+    (route?.startedAtIso ?? "") || toIso(route?.startedAt) || startPoint?.timestamp || route?.from || "";
+
+  const endTs =
+    status === "recording"
+      ? route?.lastLiveIso || endPoint?.timestamp || route?.to || ""
+      : (route?.endedAtIso ?? "") || toIso(route?.endedAt) || endPoint?.timestamp || route?.to || "";
+
+  const rangeLine = useMemo(() => {
+    if (startTs && endTs) return `${formatThaiDate(startTs)} • ${formatThaiTime(startTs)} - ${formatThaiTime(endTs)} น.`;
+    return "-";
+  }, [startTs, endTs]);
+
+  const durationSecEffective = useMemo(() => {
+    const v = Number(route?.durationSeconds ?? NaN);
+    if (Number.isFinite(v) && v >= 0) return v;
+
+    if (startTs && endTs) {
+      const ms = Date.parse(endTs) - Date.parse(startTs);
+      return Number.isFinite(ms) && ms > 0 ? Math.round(ms / 1000) : 0;
+    }
+    return 0;
+  }, [route?.durationSeconds, startTs, endTs]);
+
+  const distanceFromPoints = useMemo(() => {
+    if (lineCoords.length < 2) return 0;
+
+    let sum = 0;
+    for (let i = 1; i < lineCoords.length; i++) {
+      const d = haversineMeters(lineCoords[i - 1], lineCoords[i]);
+      if (Number.isFinite(d) && d > 0 && d <= MAX_SEGMENT_M) sum += d;
+    }
+    return Math.round(sum);
+  }, [lineCoords]);
+
+  const distanceMetersEffective = useMemo(() => {
+    const v = Number(route?.distanceMeters ?? NaN);
+    if (Number.isFinite(v) && v > 0) return v;
+    return distanceFromPoints;
+  }, [route?.distanceMeters, distanceFromPoints]);
+
+  const exitCountEffective = useMemo(() => {
+    const v = Number(route?.exitCount ?? NaN);
+    return Number.isFinite(v) && v >= 0 ? v : 0;
+  }, [route?.exitCount]);
+
+  const startMarkerIso = startTs || startPoint?.timestamp || "";
+  const endMarkerIso = endTs || endPoint?.timestamp || "";
 
   /* ================= INITIAL REGION ================= */
   const initialRegion: Region = useMemo(() => {
@@ -369,6 +498,125 @@ export default function RouteHistory() {
       longitudeDelta: 0.2,
     };
   }, [lineCoords, savedGeofence]);
+
+  /* ================= ANIMATION ================= */
+  const rotationAnim = useRef(new Animated.Value(0)).current;
+
+  const animatedCoordinate = useRef(
+    new AnimatedRegion({
+      latitude: initialRegion.latitude,
+      longitude: initialRegion.longitude,
+    })
+  ).current;
+
+  const animatedRotation = rotationAnim.interpolate({
+    inputRange: [0, 360],
+    outputRange: ["0deg", "360deg"],
+  });
+
+  const animatedInverseRotation = rotationAnim.interpolate({
+    inputRange: [0, 360],
+    outputRange: ["0deg", "-360deg"],
+  });
+
+  const animateRotation = useCallback(
+    (toValue: number) => {
+      Animated.timing(rotationAnim, {
+        toValue,
+        duration: 350,
+        easing: Easing.linear,
+        useNativeDriver: true,
+      }).start();
+    },
+    [rotationAnim]
+  );
+
+  const getSegmentDuration = useCallback((from: LatLng, to: LatLng) => {
+    const dist = haversineMeters(from, to);
+    if (!Number.isFinite(dist) || dist <= 0) return 600;
+
+    const speedMetersPerSec = 8;
+    const duration = (dist / speedMetersPerSec) * 1000;
+    return Math.max(400, Math.min(duration, 2200));
+  }, []);
+
+  const stopRouteAnimation = useCallback(() => {
+    isAnimatingRef.current = false;
+    setIsPlaying(false);
+
+    if (animationTimerRef.current) {
+      clearTimeout(animationTimerRef.current);
+      animationTimerRef.current = null;
+    }
+  }, []);
+
+  const startRouteAnimation = useCallback(() => {
+    if (lineCoords.length < 2) return;
+
+    stopRouteAnimation();
+    isAnimatingRef.current = true;
+    setIsPlaying(true);
+
+    const first = lineCoords[0];
+    animatedCoordinate.setValue({
+      latitude: first.latitude,
+      longitude: first.longitude,
+      latitudeDelta: 0,
+      longitudeDelta: 0
+    });
+
+    const runStep = (index: number) => {
+      if (!isAnimatingRef.current) return;
+
+      if (index >= lineCoords.length - 1) {
+        isAnimatingRef.current = false;
+        setIsPlaying(false);
+        return;
+      }
+
+      const from = lineCoords[index];
+      const to = lineCoords[index + 1];
+
+      animateRotation(bearingDegrees(from, to));
+
+      const duration = getSegmentDuration(from, to);
+
+      animatedCoordinate
+        .timing({
+          latitude: to.latitude,
+          longitude: to.longitude,
+          duration,
+          useNativeDriver: false,
+          toValue: 0,
+          latitudeDelta: 0,
+          longitudeDelta: 0
+        })
+        .start();
+
+      animationTimerRef.current = setTimeout(() => {
+        runStep(index + 1);
+      }, duration);
+    };
+
+    runStep(0);
+  }, [animateRotation, animatedCoordinate, getSegmentDuration, lineCoords, stopRouteAnimation]);
+
+  useEffect(() => {
+    if (lineCoords.length < 1) return;
+
+    const first = lineCoords[0];
+    animatedCoordinate.setValue({
+      latitude: first.latitude,
+      longitude: first.longitude,
+      latitudeDelta: 0,
+      longitudeDelta: 0
+    });
+    rotationAnim.setValue(0);
+
+    return () => {
+      stopRouteAnimation();
+    };
+  }, [animatedCoordinate, lineCoords, rotationAnim, stopRouteAnimation]);
 
   /* ================= FIT ================= */
   const doFit = useCallback(() => {
@@ -412,62 +660,6 @@ export default function RouteHistory() {
       clearTimeout(t2);
     };
   }, [doFit, effectiveRouteId, mapReady]);
-
-  /* ================= START/END + TIME RANGE ================= */
-  const startPoint = points.length > 0 ? points[0] : null;
-  const endPoint = points.length > 0 ? points[points.length - 1] : null;
-
-  const status = getStatus(route);
-
-  const startTs =
-    (route?.startedAtIso ?? "") || toIso(route?.startedAt) || startPoint?.timestamp || route?.from || "";
-
-  const endTs =
-    status === "recording"
-      ? route?.lastLiveIso || endPoint?.timestamp || route?.to || ""
-      : (route?.endedAtIso ?? "") || toIso(route?.endedAt) || endPoint?.timestamp || route?.to || "";
-
-  const rangeLine = useMemo(() => {
-    if (startTs && endTs) return `${formatThaiDate(startTs)} • ${formatThaiTime(startTs)} - ${formatThaiTime(endTs)} น.`;
-    return "-";
-  }, [startTs, endTs]);
-
-  const durationSecEffective = useMemo(() => {
-    const v = Number(route?.durationSeconds ?? NaN);
-    if (Number.isFinite(v) && v >= 0) return v;
-
-    if (startTs && endTs) {
-      const ms = Date.parse(endTs) - Date.parse(startTs);
-      return Number.isFinite(ms) && ms > 0 ? Math.round(ms / 1000) : 0;
-    }
-    return 0;
-  }, [route?.durationSeconds, startTs, endTs]);
-
-  /* ================= DISTANCE EFFECTIVE ================= */
-  const distanceFromPoints = useMemo(() => {
-    if (lineCoords.length < 2) return 0;
-
-    let sum = 0;
-    for (let i = 1; i < lineCoords.length; i++) {
-      const d = haversineMeters(lineCoords[i - 1], lineCoords[i]);
-      if (Number.isFinite(d) && d > 0 && d <= MAX_SEGMENT_M) sum += d;
-    }
-    return Math.round(sum);
-  }, [lineCoords]);
-
-  const distanceMetersEffective = useMemo(() => {
-    const v = Number(route?.distanceMeters ?? NaN);
-    if (Number.isFinite(v) && v > 0) return v;
-    return distanceFromPoints;
-  }, [route?.distanceMeters, distanceFromPoints]);
-
-  const exitCountEffective = useMemo(() => {
-    const v = Number(route?.exitCount ?? NaN);
-    return Number.isFinite(v) && v >= 0 ? v : 0;
-  }, [route?.exitCount]);
-
-  const startMarkerIso = startTs || startPoint?.timestamp || "";
-  const endMarkerIso = endTs || endPoint?.timestamp || "";
 
   /* ================= MAP INTERACTIONS ================= */
   const mapOnPress = () => {
@@ -582,6 +774,61 @@ export default function RouteHistory() {
             <Polyline coordinates={lineCoords} strokeColor="#E28F00" strokeWidth={8} zIndex={5} />
           )}
 
+          {directionMarkers.map((item) => (
+            <Marker
+              key={item.key}
+              coordinate={item.coordinate}
+              anchor={{ x: 0.5, y: 0.5 }}
+              tracksViewChanges={false}
+              zIndex={6}
+            >
+              <View
+                style={[
+                  styles.directionArrowWrap,
+                  { transform: [{ rotate: `${item.rotation}deg` }] },
+                ]}
+              >
+                <MaterialIcons name="navigation" size={18} color="#E28F00" />
+              </View>
+            </Marker>
+          ))}
+
+          {lineCoords.length > 1 && (
+            <Marker.Animated
+              ref={animatedMarkerRef}
+              coordinate={animatedCoordinate as any}
+              anchor={{ x: 0.5, y: 0.5 }}
+              zIndex={7}
+            >
+              <Animated.View
+                style={[
+                  styles.animatedPetOuter,
+                  {
+                    transform: [{ rotate: animatedRotation }],
+                  },
+                ]}
+              >
+                <View style={styles.headingArrow}>
+                  <MaterialIcons name="navigation" size={14} color="#f59e0b" />
+                </View>
+
+                <Animated.View
+                  style={{
+                    transform: [{ rotate: animatedInverseRotation }],
+                  }}
+                >
+                  <View style={styles.animatedPetWrap}>
+                    {displayPhoto ? (
+                      <Image source={{ uri: displayPhoto }} style={styles.animatedPetAvatar} />
+                    ) : (
+                      <MaterialIcons name="pets" size={22} color="#fff" />
+                    )}
+                  </View>
+                </Animated.View>
+              </Animated.View>
+            </Marker.Animated>
+          )}
+
           {startPoint && (
             <Marker
               ref={startMarkerRef}
@@ -622,6 +869,16 @@ export default function RouteHistory() {
             </Marker>
           )}
         </MapView>
+
+        {lineCoords.length > 1 && (
+          <TouchableOpacity
+            style={[styles.playButton, { top: 16, right: 16 }]}
+            onPress={isPlaying ? stopRouteAnimation : startRouteAnimation}
+          >
+            <Ionicons name={isPlaying ? "pause" : "play"} size={18} color="#fff" />
+            <Text style={styles.playButtonText}>{isPlaying ? "หยุด" : "เล่นเส้นทาง"}</Text>
+          </TouchableOpacity>
+        )}
       </View>
 
       <View style={[styles.infoSection, { position: "absolute", left: 16, right: 16, bottom: INFO_BOTTOM }]}>
@@ -725,7 +982,12 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
 
-  subMeta: { marginTop: 4, fontSize: 13, color: "#6B7280", fontWeight: "700" },
+  subMeta: {
+    marginTop: 4,
+    fontSize: 13,
+    color: "#6B7280",
+    fontWeight: "700",
+  },
 
   metricsRow: {
     marginTop: 12,
@@ -768,6 +1030,7 @@ const styles = StyleSheet.create({
   },
 
   calloutWrapper: { alignItems: "center" },
+
   calloutHandle: {
     width: 48,
     height: 5,
@@ -775,6 +1038,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#E5E7EB",
     marginBottom: 8,
   },
+
   calloutCard: {
     backgroundColor: "#fff",
     borderRadius: 18,
@@ -788,19 +1052,28 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 8 },
     elevation: 6,
   },
+
   cardHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     gap: 10,
     alignItems: "center",
   },
+
   cardTitle: { fontSize: 16, fontWeight: "800", color: "#111827" },
+
   badge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999 },
+
   badgeText: { fontSize: 12, fontWeight: "800" },
+
   divider: { height: 1, backgroundColor: "#EEE", marginVertical: 10 },
+
   rowLine: { flexDirection: "row", alignItems: "center", marginTop: 6 },
+
   icon: { fontSize: 16, marginRight: 8 },
+
   text: { fontSize: 14.5, color: "#333", fontWeight: "700" },
+
   monoText: {
     fontSize: 14,
     color: "#444",
@@ -809,4 +1082,87 @@ const styles = StyleSheet.create({
   },
 
   mapPin: { width: 28, height: 28 },
+
+  directionArrowWrap: {
+    width: 24,
+    height: 24,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "rgba(255,255,255,0.92)",
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "#FDE6B8",
+    shadowColor: "#000",
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
+  },
+
+  playButton: {
+    position: "absolute",
+    zIndex: 60,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "#111827",
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 999,
+    shadowColor: "#000",
+    shadowOpacity: 0.14,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 5,
+  },
+
+  playButtonText: {
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: "800",
+  },
+
+  animatedPetOuter: {
+    width: 42,
+    height: 52,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+
+  headingArrow: {
+    position: "absolute",
+    top: -2,
+    zIndex: 2,
+    backgroundColor: "#fff",
+    borderRadius: 999,
+    padding: 2,
+    shadowColor: "#000",
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    shadowOffset: { width: 0, height: 1 },
+    elevation: 2,
+  },
+
+  animatedPetWrap: {
+    width: 42,
+    height: 42,
+    borderRadius: 999,
+    backgroundColor: "#f59e0b",
+    justifyContent: "center",
+    alignItems: "center",
+    borderWidth: 3,
+    borderColor: "#fff",
+    shadowColor: "#000",
+    shadowOpacity: 0.18,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 6,
+    overflow: "hidden",
+  },
+
+  animatedPetAvatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+  },
 });

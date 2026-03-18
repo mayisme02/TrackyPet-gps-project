@@ -13,7 +13,8 @@ import {
 import { useFocusEffect } from "@react-navigation/native";
 import { useRouter } from "expo-router";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { auth, db } from "../../firebase/firebase";
+import { auth, db, rtdb } from "../../firebase/firebase";
+import { ref, set, get } from "firebase/database";
 import { collection, onSnapshot, deleteDoc, doc } from "firebase/firestore";
 import { MaterialIcons } from "@expo/vector-icons";
 import { DEVICE_TYPES } from "../../assets/constants/deviceData";
@@ -28,34 +29,45 @@ type Device = {
   type?: string;
 };
 
+const ACTIVE_DEVICE_CHANGED_EVENT = "activeDeviceChanged";
+const DEVICES_CHANGED_EVENT = "devicesChanged";
+
+const getDevicesStorageKey = (uid: string) => `devices_${uid}`;
+const getActiveDeviceStorageKey = (uid: string) => `activeDevice_${uid}`;
+
 export default function Devices() {
   const router = useRouter();
 
   const [devices, setDevices] = useState<Device[]>([]);
   const [deviceMatches, setDeviceMatches] = useState<Record<string, any>>({});
 
-  const ACTIVE_DEVICE_CHANGED_EVENT = "activeDeviceChanged";
-  const DEVICES_CHANGED_EVENT = "devicesChanged";
-
-  /* ===== ADD DEVICE ===== */
   const [modalVisible, setModalVisible] = useState(false);
   const [tempCode, setTempCode] = useState("");
   const [loading, setLoading] = useState(false);
 
-  /* ================= LOAD DEVICES (LOCAL) ================= */
-  const loadDevices = async () => { 
+  /* ================= LOAD DEVICES (LOCAL, PER USER) ================= */
+  const loadDevices = async () => {
     try {
-      const stored = await AsyncStorage.getItem("devices");
+      const uid = auth.currentUser?.uid;
+      if (!uid) {
+        setDevices([]);
+        return;
+      }
+
+      const devicesKey = getDevicesStorageKey(uid);
+      const stored = await AsyncStorage.getItem(devicesKey);
       const parsed: any[] = stored ? JSON.parse(stored) : [];
 
-      // ✅ Normalize + migrate old data + remove invalid items
       const normalized: Device[] = parsed
         .map((d) => {
-          const code = String(d?.code ?? "").trim().toUpperCase();
+          const code = String(d?.code ?? "")
+            .trim()
+            .toUpperCase();
+
           if (!code) return null;
 
           return {
-            id: String(d?.id ?? code), // fallback id = code
+            id: String(d?.id ?? code),
             code,
             name: String(d?.name ?? "LilyGo A7670E"),
             type: String(d?.type ?? "GPS_TRACKER_A7670"),
@@ -64,7 +76,6 @@ export default function Devices() {
         })
         .filter(Boolean) as Device[];
 
-      // ✅ De-duplicate by code
       const seen = new Set<string>();
       const deduped = normalized.filter((d) => {
         if (seen.has(d.code)) return false;
@@ -73,7 +84,7 @@ export default function Devices() {
       });
 
       setDevices(deduped);
-      await AsyncStorage.setItem("devices", JSON.stringify(deduped));
+      await AsyncStorage.setItem(devicesKey, JSON.stringify(deduped));
     } catch {
       setDevices([]);
     }
@@ -101,6 +112,22 @@ export default function Devices() {
     }, [])
   );
 
+  useFocusEffect(
+  React.useCallback(() => {
+    void loadDevices();
+    const unsub = subscribeMatches();
+
+    const sub = DeviceEventEmitter.addListener(DEVICES_CHANGED_EVENT, () => {
+      void loadDevices();
+    });
+
+    return () => {
+      unsub && unsub();
+      sub.remove();
+    };
+  }, [])
+);
+
   /* ================= DELETE DEVICE ================= */
   const deleteDevice = (device: Device) => {
     Alert.alert("ยกเลิกการเชื่อมต่ออุปกรณ์", "", [
@@ -109,18 +136,28 @@ export default function Devices() {
         text: "ยืนยัน",
         style: "destructive",
         onPress: async () => {
-          const updated = devices.filter((d) => d.code !== device.code);
-          await AsyncStorage.setItem("devices", JSON.stringify(updated));
-          setDevices(updated);
+          try {
+            const uid = auth.currentUser?.uid;
+            if (!uid) return;
 
-          const active = await AsyncStorage.getItem("activeDevice");
-          if (active === device.code) {
-            await AsyncStorage.removeItem("activeDevice");
-          }
+            const devicesKey = getDevicesStorageKey(uid);
+            const activeDeviceKey = getActiveDeviceStorageKey(uid);
 
-          if (auth.currentUser) {
-            const uid = auth.currentUser.uid;
+            const updated = devices.filter((d) => d.code !== device.code);
+            await AsyncStorage.setItem(devicesKey, JSON.stringify(updated));
+            setDevices(updated);
+
+            const active = await AsyncStorage.getItem(activeDeviceKey);
+            if (active === device.code) {
+              await AsyncStorage.removeItem(activeDeviceKey);
+              DeviceEventEmitter.emit(ACTIVE_DEVICE_CHANGED_EVENT, { code: null });
+            }
+
             await deleteDoc(doc(db, "users", uid, "deviceMatches", device.code));
+
+            DeviceEventEmitter.emit(DEVICES_CHANGED_EVENT);
+          } catch {
+            Alert.alert("เกิดข้อผิดพลาด", "ไม่สามารถลบอุปกรณ์ได้");
           }
         },
       },
@@ -132,7 +169,6 @@ export default function Devices() {
     try {
       setLoading(true);
 
-      // ⚠️ โปรดักชันจริงให้ใช้โดเมน https://api.yourapp.com แทน IP LAN
       const res = await fetch("http://192.168.31.136:3000/api/device/location", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -150,39 +186,70 @@ export default function Devices() {
   };
 
   const confirmAddDevice = async () => {
-    const code = tempCode.trim().toUpperCase();
-    if (!code) return;
+    try {
+      const uid = auth.currentUser?.uid;
+      if (!uid) {
+        Alert.alert("ยังไม่ได้เข้าสู่ระบบ", "กรุณาเข้าสู่ระบบก่อน");
+        return;
+      }
 
-    const stored = await AsyncStorage.getItem("devices");
-    const list: Device[] = stored ? JSON.parse(stored) : [];
+      const code = tempCode.trim().toUpperCase();
+      if (!code) {
+        Alert.alert("กรุณากรอกรหัสอุปกรณ์");
+        return;
+      }
 
-    if (list.some((d: any) => String(d?.code ?? "").toUpperCase() === code)) {
-      Alert.alert("อุปกรณ์ถูกเพิ่มแล้ว");
-      return;
+      const devicesKey = getDevicesStorageKey(uid);
+      const activeDeviceKey = getActiveDeviceStorageKey(uid);
+
+      const stored = await AsyncStorage.getItem(devicesKey);
+      const list: Device[] = stored ? JSON.parse(stored) : [];
+
+      if (list.some((d) => d.code === code)) {
+        Alert.alert("อุปกรณ์ถูกเพิ่มแล้ว");
+        return;
+      }
+
+      const ok = await fetchLocation(code);
+      if (!ok) return;
+
+      // เช็ค owner
+      const ownerRef = ref(rtdb, `devices/${code}/ownerUid`);
+      const ownerSnap = await get(ownerRef);
+
+      if (ownerSnap.exists()) {
+        const ownerUid = ownerSnap.val();
+        if (ownerUid !== uid) {
+          Alert.alert("อุปกรณ์นี้ถูกใช้งานแล้ว", "อุปกรณ์นี้ถูกผูกกับบัญชีอื่น");
+          return;
+        }
+      } else {
+        await set(ownerRef, uid);
+      }
+
+      const newDevice: Device = {
+        id: code,
+        code,
+        type: "GPS_TRACKER_A7670",
+        name: "LilyGo A7670E",
+        createdAt: new Date().toISOString(),
+      };
+
+      const updated = [...list, newDevice];
+
+      await AsyncStorage.setItem(devicesKey, JSON.stringify(updated));
+      await AsyncStorage.setItem(activeDeviceKey, code);
+
+      setDevices(updated);
+      setModalVisible(false);
+      setTempCode("");
+
+      DeviceEventEmitter.emit(DEVICES_CHANGED_EVENT, { code });
+      DeviceEventEmitter.emit(ACTIVE_DEVICE_CHANGED_EVENT, { code });
+    } catch (e) {
+      console.log("confirmAddDevice error:", e);
+      Alert.alert("เกิดข้อผิดพลาด", "ไม่สามารถเพิ่มอุปกรณ์ได้");
     }
-
-    const ok = await fetchLocation(code);
-    if (!ok) return;
-
-    const newDevice: Device = {
-      id: code,
-      code,
-      type: "GPS_TRACKER_A7670",
-      name: "LilyGo A7670E",
-      createdAt: new Date().toISOString(),
-    };
-
-    const updated = [...list, newDevice];
-
-    await AsyncStorage.setItem("devices", JSON.stringify(updated));
-    await AsyncStorage.setItem("activeDevice", code);
-
-    DeviceEventEmitter.emit("devicesChanged");
-    DeviceEventEmitter.emit("activeDeviceChanged", { code });
-
-    setDevices(updated);
-    setModalVisible(false);
-    setTempCode("");
   };
 
   /* ================= RENDER ITEM ================= */
@@ -204,10 +271,7 @@ export default function Devices() {
         }
       >
         <View style={styles.card}>
-          <Image
-            source={{ uri: deviceType.image.uri }}
-            style={styles.deviceImage}
-          />
+          <Image source={{ uri: deviceType.image.uri }} style={styles.deviceImage} />
 
           <View style={{ flex: 1 }}>
             <Text style={styles.deviceName}>{item.name}</Text>
@@ -215,7 +279,6 @@ export default function Devices() {
             {match ? (
               <TouchableOpacity
                 onPress={(e: any) => {
-                  // ✅ กันกดแล้วเด้งเข้า PetMatch
                   e?.stopPropagation?.();
                   deleteDevice(item);
                 }}
@@ -248,23 +311,19 @@ export default function Devices() {
 
   return (
     <>
-      {/* ✅ ให้ FlatList เป็นตัว scroll หลักตัวเดียว */}
       <FlatList
         data={devices}
-        keyExtractor={(item) => item.code} // ✅ unique + stable
+        keyExtractor={(item) => item.code}
         renderItem={renderItem}
         style={{ backgroundColor: "#F3F4F6" }}
         contentContainerStyle={{
           paddingHorizontal: 16,
           paddingBottom: 24,
           paddingTop: 12,
-          flexGrow: 1, // ✅ ทำให้ empty อยู่กลางได้
+          flexGrow: 1,
         }}
         ListHeaderComponent={
-          // ✅ ทำให้ header เต็มขอบจอ (แม้ list จะมี padding)
-          <View
-            style={{ marginHorizontal: -16, marginTop: -12, marginBottom: 12 }}
-          >
+          <View style={{ marginHorizontal: -16, marginTop: -12, marginBottom: 12 }}>
             <ProfileHeader
               title="อุปกรณ์"
               right={
@@ -280,17 +339,13 @@ export default function Devices() {
         }
         ListEmptyComponent={
           <View style={styles.emptyWrap}>
-            {/* ✅ ใช้ icon แบบเดียวกับ Tab */}
             <MaterialIcons name="devices" size={90} color="#D1D5DB" />
             <Text style={styles.emptyTitle}>ยังไม่มีอุปกรณ์</Text>
-            <Text style={styles.emptySub}>
-              กดปุ่ม + เพื่อเพิ่มอุปกรณ์ติดตาม
-            </Text>
+            <Text style={styles.emptySub}>กดปุ่ม + เพื่อเพิ่มอุปกรณ์ติดตาม</Text>
           </View>
         }
       />
 
-      {/* ===== ADD DEVICE MODAL ===== */}
       <Modal visible={modalVisible} transparent animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={styles.modalBox}>

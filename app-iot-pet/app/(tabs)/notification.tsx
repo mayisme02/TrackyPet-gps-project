@@ -33,15 +33,12 @@ type AlertItem = {
   photoURL?: string | null;
 
   routeId?: string | null;
+  ownerUid?: string | null; // ✅ เพิ่ม
 };
 
 type ListItem =
   | { kind: "section"; id: string; title: string }
   | { kind: "alert"; data: AlertItem };
-
-/* ================= STORAGE KEYS ================= */
-const NOTIF_LAST_DEVICE_KEY = "notifications_device_last_v1";
-const NOTIF_CACHE_PREFIX = "notifications_cache_";
 
 /* ================= HELPERS ================= */
 const cleanMessage = (msg?: string) => {
@@ -88,31 +85,71 @@ const timeAgoTH = (iso?: string, nowMs?: number) => {
   return `${diffYr} ปีที่แล้ว`;
 };
 
+/* ================= USER-SCOPED STORAGE ================= */
+const getKeys = (uid: string) => ({
+  activeDeviceKey: `activeDevice_${uid}`,
+  notifLastDeviceKey: `notifications_device_last_v1_${uid}`,
+  notifCachePrefix: `notifications_cache_${uid}_`,
+  lastReadPrefix: `notification_last_read_${uid}_`,
+  readMapPrefix: `notification_read_${uid}_`,
+});
+
 export default function NotificationScreen() {
   const router = useRouter();
 
   const [loading, setLoading] = useState(true);
   const [alerts, setAlerts] = useState<AlertItem[]>([]);
   const [deviceId, setDeviceId] = useState<string | null>(null);
+  const [uid, setUid] = useState<string | null>(auth.currentUser?.uid ?? null);
 
-  // tick ให้ timeago อัปเดต realtime
   const [nowTick, setNowTick] = useState(() => Date.now());
-
-  // readMap ต่อ device
   const [readMap, setReadMap] = useState<Record<string, boolean>>({});
-
-  // กันกดซ้ำตอนกำลังเช็ค/นำทาง
   const [openingKey, setOpeningKey] = useState<string | null>(null);
 
+  const storage = useMemo(() => {
+    if (!uid) return null;
+    return getKeys(uid);
+  }, [uid]);
+
   const readKey = useMemo(() => {
-    if (!deviceId) return null;
-    return `notification_read_${deviceId}`;
-  }, [deviceId]);
+    if (!deviceId || !storage) return null;
+    return `${storage.readMapPrefix}${deviceId}`;
+  }, [deviceId, storage]);
 
   useEffect(() => {
     const id = setInterval(() => setNowTick(Date.now()), 30000);
     return () => clearInterval(id);
   }, []);
+
+  // sync uid เมื่อมีการ login/logout
+  useEffect(() => {
+    const unsub = auth.onAuthStateChanged((user) => {
+      setUid(user?.uid ?? null);
+      if (!user) {
+        setDeviceId(null);
+        setAlerts([]);
+        setReadMap({});
+        setLoading(false);
+      }
+    });
+    return unsub;
+  }, []);
+
+  // ✅ helper: ตรวจว่า device เป็นของ user นี้จริงไหม
+  const validateDeviceOwnership = useCallback(
+    async (currentUid: string, targetDeviceId: string) => {
+      try {
+        // เปลี่ยน path นี้ให้ตรงกับโครงสร้างจริงของโปรเจคคุณ
+        // สมมติว่าเก็บ device ของแต่ละ user ไว้ที่ users/{uid}/devices/{deviceId}
+        const deviceRef = doc(db, "users", currentUid, "devices", targetDeviceId);
+        const snap = await getDoc(deviceRef);
+        return snap.exists();
+      } catch {
+        return false;
+      }
+    },
+    []
+  );
 
   /* ================= LOAD DEVICE (active -> last) ================= */
   useEffect(() => {
@@ -120,69 +157,116 @@ export default function NotificationScreen() {
 
     (async () => {
       try {
-        const active = await AsyncStorage.getItem("activeDevice");
-        const last = await AsyncStorage.getItem(NOTIF_LAST_DEVICE_KEY);
+        const currentUid = auth.currentUser?.uid;
+        if (!currentUid || !mounted) {
+          setLoading(false);
+          return;
+        }
 
-        const useId = active || last || null;
+        const keys = getKeys(currentUid);
+        const active = await AsyncStorage.getItem(keys.activeDeviceKey);
+        const last = await AsyncStorage.getItem(keys.notifLastDeviceKey);
+
+        let useId = active || last || null;
+
+        // ✅ ถ้ามี device ให้เช็ค ownership ก่อน
+        if (useId) {
+          const isOwner = await validateDeviceOwnership(currentUid, useId);
+          if (!isOwner) {
+            useId = null;
+            await AsyncStorage.multiRemove([
+              keys.activeDeviceKey,
+              keys.notifLastDeviceKey,
+            ]);
+          }
+        }
+
         if (!mounted) return;
-
+        setUid(currentUid);
         setDeviceId(useId);
 
         if (useId) {
-          await AsyncStorage.setItem(NOTIF_LAST_DEVICE_KEY, useId);
-          // ✅ preload cache (เร็วขึ้น/กันวูบ)
+          await AsyncStorage.setItem(keys.notifLastDeviceKey, useId);
+
           try {
-            const cached = await AsyncStorage.getItem(`${NOTIF_CACHE_PREFIX}${useId}`);
+            const cached = await AsyncStorage.getItem(
+              `${keys.notifCachePrefix}${useId}`
+            );
             if (cached && mounted) setAlerts(JSON.parse(cached));
           } catch {}
+        } else {
+          setAlerts([]);
         }
       } finally {
-        // ไม่ setLoading(false) ตรงนี้ เพราะยังรอ subscribeAlerts อยู่
       }
     })();
 
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [validateDeviceOwnership]);
 
   /* ================= LISTEN ACTIVE DEVICE CHANGES ================= */
   useEffect(() => {
     const sub = DeviceEventEmitter.addListener(
       "activeDeviceChanged",
       async (payload?: { code?: string | null }) => {
-        const nextCode =
-          payload?.code ?? (await AsyncStorage.getItem("activeDevice"));
+        const currentUid = auth.currentUser?.uid;
+        if (!currentUid) {
+          setDeviceId(null);
+          setAlerts([]);
+          return;
+        }
 
-        // ถ้ามี active ใหม่ -> ใช้ตัวใหม่ และจำเป็น last
+        const keys = getKeys(currentUid);
+        let nextCode =
+          payload?.code ?? (await AsyncStorage.getItem(keys.activeDeviceKey));
+
+        if (nextCode) {
+          const isOwner = await validateDeviceOwnership(currentUid, nextCode);
+          if (!isOwner) {
+            nextCode = null;
+            await AsyncStorage.removeItem(keys.activeDeviceKey);
+          }
+        }
+
         if (nextCode) {
           setDeviceId(nextCode);
-          await AsyncStorage.setItem(NOTIF_LAST_DEVICE_KEY, nextCode);
+          await AsyncStorage.setItem(keys.notifLastDeviceKey, nextCode);
 
-          // preload cache
           try {
-            const cached = await AsyncStorage.getItem(`${NOTIF_CACHE_PREFIX}${nextCode}`);
+            const cached = await AsyncStorage.getItem(
+              `${keys.notifCachePrefix}${nextCode}`
+            );
             if (cached) setAlerts(JSON.parse(cached));
           } catch {}
 
           return;
         }
 
-        // ถ้าโดนลบ activeDevice (disconnect) -> ใช้ last ต่อไป (ห้าม set null แล้วล้าง)
-        const last = await AsyncStorage.getItem(NOTIF_LAST_DEVICE_KEY);
-        setDeviceId(last || null);
+        const last = await AsyncStorage.getItem(keys.notifLastDeviceKey);
 
         if (last) {
-          try {
-            const cached = await AsyncStorage.getItem(`${NOTIF_CACHE_PREFIX}${last}`);
-            if (cached) setAlerts(JSON.parse(cached));
-          } catch {}
+          const isOwner = await validateDeviceOwnership(currentUid, last);
+          if (isOwner) {
+            setDeviceId(last);
+            try {
+              const cached = await AsyncStorage.getItem(
+                `${keys.notifCachePrefix}${last}`
+              );
+              if (cached) setAlerts(JSON.parse(cached));
+            } catch {}
+            return;
+          }
         }
+
+        setDeviceId(null);
+        setAlerts([]);
       }
     );
 
     return () => sub.remove();
-  }, []);
+  }, [validateDeviceOwnership]);
 
   /* ================= LOAD READ MAP ================= */
   useEffect(() => {
@@ -190,43 +274,63 @@ export default function NotificationScreen() {
       setReadMap({});
       return;
     }
+
     let mounted = true;
     (async () => {
       const raw = await AsyncStorage.getItem(readKey);
       if (!mounted) return;
       setReadMap(raw ? JSON.parse(raw) : {});
     })();
+
     return () => {
       mounted = false;
     };
   }, [readKey]);
 
-  /* ================= MARK SCREEN SEEN (เคลียร์ badge ฝั่ง TabLayout) ================= */
+  /* ================= MARK SCREEN SEEN ================= */
   useFocusEffect(
     useCallback(() => {
       (async () => {
+        const currentUid = auth.currentUser?.uid;
+        if (!currentUid) return;
+
+        const keys = getKeys(currentUid);
+
         const active =
           deviceId ||
-          (await AsyncStorage.getItem("activeDevice")) ||
-          (await AsyncStorage.getItem(NOTIF_LAST_DEVICE_KEY));
+          (await AsyncStorage.getItem(keys.activeDeviceKey)) ||
+          (await AsyncStorage.getItem(keys.notifLastDeviceKey));
 
         if (!active) return;
 
         const now = Date.now();
-        await AsyncStorage.setItem(`notification_last_read_${active}`, String(now));
-        DeviceEventEmitter.emit("notifications:seen", { deviceId: active, lastRead: now });
+        await AsyncStorage.setItem(`${keys.lastReadPrefix}${active}`, String(now));
+        DeviceEventEmitter.emit("notifications:seen", {
+          deviceId: active,
+          lastRead: now,
+          uid: currentUid,
+        });
       })();
     }, [deviceId])
   );
 
-  /* ================= SUBSCRIBE ALERTS (use deviceId/last, not only activeDevice) ================= */
+  /* ================= SUBSCRIBE ALERTS ================= */
   const subscribeAlerts = useCallback(async () => {
+    const currentUid = auth.currentUser?.uid;
+    if (!currentUid) {
+      setDeviceId(null);
+      setAlerts([]);
+      setLoading(false);
+      return () => {};
+    }
+
+    const keys = getKeys(currentUid);
+
     const active =
       deviceId ||
-      (await AsyncStorage.getItem("activeDevice")) ||
-      (await AsyncStorage.getItem(NOTIF_LAST_DEVICE_KEY));
+      (await AsyncStorage.getItem(keys.activeDeviceKey)) ||
+      (await AsyncStorage.getItem(keys.notifLastDeviceKey));
 
-    // ไม่มีทั้ง active และ last -> ไม่มีอะไรให้โชว์
     if (!active) {
       setDeviceId(null);
       setAlerts([]);
@@ -234,17 +338,24 @@ export default function NotificationScreen() {
       return () => {};
     }
 
+    const isOwner = await validateDeviceOwnership(currentUid, active);
+    if (!isOwner) {
+      setDeviceId(null);
+      setAlerts([]);
+      setLoading(false);
+      await AsyncStorage.multiRemove([keys.activeDeviceKey, keys.notifLastDeviceKey]);
+      return () => {};
+    }
+
     setDeviceId(active);
     setLoading(true);
 
-    // จำเป็น last เสมอ เพื่อให้ disconnect แล้วยังอยู่
     try {
-      await AsyncStorage.setItem(NOTIF_LAST_DEVICE_KEY, active);
+      await AsyncStorage.setItem(keys.notifLastDeviceKey, active);
     } catch {}
 
-    // preload cache ก่อน subscribe (กันหน้าว่าง)
     try {
-      const cached = await AsyncStorage.getItem(`${NOTIF_CACHE_PREFIX}${active}`);
+      const cached = await AsyncStorage.getItem(`${keys.notifCachePrefix}${active}`);
       if (cached) setAlerts(JSON.parse(cached));
     } catch {}
 
@@ -253,12 +364,20 @@ export default function NotificationScreen() {
       ref,
       async (snap) => {
         const v = snap.val() || {};
-        const rows: AlertItem[] = Object.keys(v).map((k) => ({ key: k, ...(v[k] || {}) }));
+        const rows: AlertItem[] = Object.keys(v).map((k) => ({
+          key: k,
+          ...(v[k] || {}),
+        }));
 
         const filtered = rows
           .filter((a) => {
             const t = (a.type || "").toString().toLowerCase();
-            return t === "exit" || t === "enter";
+            const typeOk = t === "exit" || t === "enter";
+
+            // ✅ ถ้ามี ownerUid ให้ต้องตรงกับ user ปัจจุบัน
+            const ownerOk = !a.ownerUid || a.ownerUid === currentUid;
+
+            return typeOk && ownerOk;
           })
           .sort((a, b) => {
             const ta = a.atUtc ? Date.parse(a.atUtc) : 0;
@@ -269,16 +388,18 @@ export default function NotificationScreen() {
         setAlerts(filtered);
         setLoading(false);
 
-        // cache ไว้เผื่อ activeDevice ถูกลบ/ออฟไลน์
         try {
-          await AsyncStorage.setItem(`${NOTIF_CACHE_PREFIX}${active}`, JSON.stringify(filtered));
+          await AsyncStorage.setItem(
+            `${keys.notifCachePrefix}${active}`,
+            JSON.stringify(filtered)
+          );
         } catch {}
       },
       () => setLoading(false)
     );
 
     return () => unsub();
-  }, [deviceId]);
+  }, [deviceId, validateDeviceOwnership]);
 
   useFocusEffect(
     useCallback(() => {
@@ -288,10 +409,10 @@ export default function NotificationScreen() {
     }, [subscribeAlerts])
   );
 
-  /* ================= DELETE ONE (LONG PRESS) ================= */
+  /* ================= DELETE ONE ================= */
   const deleteOne = useCallback(
     (a: AlertItem) => {
-      if (!deviceId) return;
+      if (!deviceId || !uid) return;
 
       Alert.alert("ลบการแจ้งเตือน?", "ต้องการลบรายการนี้หรือไม่", [
         { text: "ยกเลิก", style: "cancel" },
@@ -308,45 +429,45 @@ export default function NotificationScreen() {
               delete next[a.key];
               setReadMap(next);
               await AsyncStorage.setItem(readKey, JSON.stringify(next));
-              DeviceEventEmitter.emit("notifications:readmap_updated", { deviceId });
+              DeviceEventEmitter.emit("notifications:readmap_updated", {
+                deviceId,
+                uid,
+              });
             }
           },
         },
       ]);
     },
-    [deviceId, readKey, readMap]
+    [deviceId, readKey, readMap, uid]
   );
 
-  /* ================= CLICK: MARK READ + GO (WITH VALIDATION) ================= */
+  /* ================= CLICK ================= */
   const openAlert = useCallback(
     async (a: AlertItem) => {
       if (!a.key) return;
-      if (openingKey) return; // กันกดซ้ำ
+      if (openingKey) return;
       setOpeningKey(a.key);
 
       try {
-        // 1) mark read
         if (readKey) {
           const next = { ...readMap, [a.key]: true };
           setReadMap(next);
           await AsyncStorage.setItem(readKey, JSON.stringify(next));
-          DeviceEventEmitter.emit("notifications:readmap_updated", { deviceId });
+          DeviceEventEmitter.emit("notifications:readmap_updated", { deviceId, uid });
         }
 
-        // 2) ต้องมี routeId ถึงจะไป RouteHistory ได้
         if (!a.routeId) {
           Alert.alert("ไม่มีข้อมูลเส้นทาง", "รายการนี้ไม่มีข้อมูลเส้นทาง หรือถูกลบไปแล้ว");
           return;
         }
 
-        // 3) เช็คว่าเอกสาร routeHistories ยังมีอยู่ไหม
         if (!auth.currentUser) {
           Alert.alert("ยังไม่ได้เข้าสู่ระบบ", "กรุณาเข้าสู่ระบบก่อนเพื่อดูข้อมูลเส้นทาง");
           return;
         }
 
-        const uid = auth.currentUser.uid;
-        const rref = doc(db, "users", uid, "routeHistories", a.routeId);
+        const currentUid = auth.currentUser.uid;
+        const rref = doc(db, "users", currentUid, "routeHistories", a.routeId);
         const rsnap = await getDoc(rref);
 
         if (!rsnap.exists()) {
@@ -354,7 +475,6 @@ export default function NotificationScreen() {
           return;
         }
 
-        // 4) มีจริง -> ไปหน้า RouteHistory
         router.push({
           pathname: "/RouteHistory",
           params: { routeId: a.routeId },
@@ -365,10 +485,10 @@ export default function NotificationScreen() {
         setOpeningKey(null);
       }
     },
-    [openingKey, readKey, readMap, deviceId, router]
+    [openingKey, readKey, readMap, deviceId, router, uid]
   );
 
-  /* ================= BUILD LIST: GROUP BY DATE ================= */
+  /* ================= BUILD LIST ================= */
   const listData: ListItem[] = useMemo(() => {
     if (!alerts.length) return [];
     const out: ListItem[] = [];
@@ -386,7 +506,6 @@ export default function NotificationScreen() {
     return out;
   }, [alerts]);
 
-  /* ================= RENDER ================= */
   const renderItem = ({ item }: { item: ListItem }) => {
     if (item.kind === "section") return <Text style={styles.sectionTitle}>{item.title}</Text>;
 

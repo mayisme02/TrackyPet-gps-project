@@ -9,6 +9,7 @@ import {
   ScrollView,
   Pressable,
   Alert,
+  DeviceEventEmitter,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
@@ -50,6 +51,12 @@ interface MatchedPet {
   petName: string;
   photoURL?: string | null;
 }
+
+const ACTIVE_DEVICE_CHANGED_EVENT = "activeDeviceChanged";
+const DEVICES_CHANGED_EVENT = "devicesChanged";
+
+const getDevicesStorageKey = (uid: string) => `devices_${uid}`;
+const getActiveDeviceStorageKey = (uid: string) => `activeDevice_${uid}`;
 
 export default function HomeScreen() {
   const [profile, setProfile] = useState<any>(null);
@@ -104,18 +111,35 @@ export default function HomeScreen() {
   }, []);
 
   /* ================= LOAD ACTIVE DEVICE ================= */
-  useFocusEffect(
-    React.useCallback(() => {
-      const load = async () => {
-        const code = await AsyncStorage.getItem("activeDevice");
-        const stored = await AsyncStorage.getItem("devices");
-        const devices = stored ? JSON.parse(stored) : [];
-        const found = devices.find((d: any) => d.code === code);
-        setDevice(found ? { code: found.code, type: found.type } : null);
-      };
-      load();
-    }, [])
-  );
+  const loadActiveDevice = async () => {
+    const uid = auth.currentUser?.uid;
+    if (!uid) return; // อย่ารีบ setDevice(null)
+
+    const activeDeviceKey = getActiveDeviceStorageKey(uid);
+    const devicesKey = getDevicesStorageKey(uid);
+
+    const code = await AsyncStorage.getItem(activeDeviceKey);
+    const stored = await AsyncStorage.getItem(devicesKey);
+    const devices = stored ? JSON.parse(stored) : [];
+
+    if (!Array.isArray(devices) || devices.length === 0) {
+      setDevice(null);
+      return;
+    }
+
+    let found = devices.find((d: any) => d.code === code);
+
+    // ✅ fallback: ถ้า activeDevice ไม่มี/หาไม่เจอ ให้ใช้ตัวแรกแทน
+    if (!found) {
+      found = devices[0];
+      await AsyncStorage.setItem(activeDeviceKey, found.code);
+    }
+
+    setDevice({
+      code: found.code,
+      type: found.type ?? "GPS_TRACKER",
+    });
+  };
 
   /* ================= LOAD MATCHED PET ================= */
   useEffect(() => {
@@ -213,6 +237,21 @@ export default function HomeScreen() {
     }
   }, [lastLocation]);
 
+  useFocusEffect(
+    React.useCallback(() => {
+      void loadActiveDevice();
+
+      const sub = DeviceEventEmitter.addListener(
+        ACTIVE_DEVICE_CHANGED_EVENT,
+        () => {
+          void loadActiveDevice();
+        }
+      );
+
+      return () => sub.remove();
+    }, [])
+  );
+
   const disconnectActiveDevice = () => {
     if (!device?.code) return;
 
@@ -222,9 +261,14 @@ export default function HomeScreen() {
         text: "ยืนยัน",
         style: "destructive",
         onPress: async () => {
-          const targetCode = device.code;
+          const uid = auth.currentUser?.uid;
+          if (!uid) return;
 
-          const stored = await AsyncStorage.getItem("devices");
+          const targetCode = device.code;
+          const devicesKey = getDevicesStorageKey(uid);
+          const activeDeviceKey = getActiveDeviceStorageKey(uid);
+
+          const stored = await AsyncStorage.getItem(devicesKey);
           const list = stored ? JSON.parse(stored) : [];
           const updated = Array.isArray(list)
             ? list.filter(
@@ -232,25 +276,25 @@ export default function HomeScreen() {
             )
             : [];
 
-          await AsyncStorage.setItem("devices", JSON.stringify(updated));
+          await AsyncStorage.setItem(devicesKey, JSON.stringify(updated));
 
-          const active = await AsyncStorage.getItem("activeDevice");
+          const active = await AsyncStorage.getItem(activeDeviceKey);
           if (active === targetCode) {
-            await AsyncStorage.removeItem("activeDevice");
+            await AsyncStorage.removeItem(activeDeviceKey);
           }
 
-          if (auth.currentUser) {
-            const uid = auth.currentUser.uid;
-            try {
-              await deleteDoc(doc(db, "users", uid, "deviceMatches", targetCode));
-            } catch { }
-          }
+          try {
+            await deleteDoc(doc(db, "users", uid, "deviceMatches", targetCode));
+          } catch { }
 
           setDevice(null);
           setMatchedPet(null);
           setLastLocation(null);
           setDistrictName(null);
           setProvinceName(null);
+
+          DeviceEventEmitter.emit(ACTIVE_DEVICE_CHANGED_EVENT, { code: null });
+          DeviceEventEmitter.emit(DEVICES_CHANGED_EVENT);
         },
       },
     ]);
@@ -326,7 +370,6 @@ export default function HomeScreen() {
         </View>
       }
     >
-      {/* ===== PET SECTION ===== */}
       <Pressable
         style={styles.sectionHeader}
         onPress={() => router.push("/(modals)/PetList")}
@@ -400,7 +443,6 @@ export default function HomeScreen() {
         </View>
       </TouchableOpacity>
 
-      {/* ===== DEVICE SECTION ===== */}
       <View style={styles.sectionHeader}>
         <Text style={styles.sectionTitle}>อุปกรณ์</Text>
       </View>
@@ -433,7 +475,6 @@ export default function HomeScreen() {
         )}
       </View>
 
-      {/* ===== LAST LOCATION ===== */}
       <View style={styles.sectionHeader}>
         <Text style={styles.sectionTitle}>ตำแหน่งล่าสุด</Text>
       </View>

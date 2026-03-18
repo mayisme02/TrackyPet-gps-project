@@ -24,7 +24,6 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useFocusEffect } from "@react-navigation/native";
 import { auth, db, rtdb } from "../../firebase/firebase";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
-import { ref as dbRef, push } from "firebase/database";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { DEVICE_TYPES } from "../../assets/constants/deviceData";
 import DateTimePicker from "@react-native-community/datetimepicker";
@@ -38,6 +37,7 @@ import {
   updateDoc,
   setDoc,
 } from "firebase/firestore";
+import { ref, set, get } from "firebase/database";
 import { pushAlertAndLog } from "@/utils/alertService";
 
 const BACKEND_URL = "http://192.168.31.136:3000";
@@ -148,6 +148,9 @@ export default function MapTracker() {
   const exitArmedRef = useRef(true);
   const outsideSinceRef = useRef<number | null>(null);
   const insideSinceRef = useRef<number | null>(null);
+
+  const getDevicesStorageKey = (uid: string) => `devices_${uid}`;
+  const getActiveDeviceStorageKey = (uid: string) => `activeDevice_${uid}`;
 
   /* ================= RECORDING ================= */
   const [isRecording, setIsRecording] = useState(false);
@@ -860,37 +863,50 @@ export default function MapTracker() {
 
   /* ================= LOAD ACTIVE DEVICE ================= */
   useFocusEffect(
-    useCallback(() => {
-      const load = async () => {
-        const active = await AsyncStorage.getItem("activeDevice");
-        if (!active) {
-          setDeviceCode(null);
-          setDeviceName("GPS Tracker");
+  useCallback(() => {
+    const load = async () => {
+      const uid = auth.currentUser?.uid;
+      if (!uid) return; // ✅ อย่ารีบล้าง state
 
-          setIsTracking(false);
-          setLocation(null);
-          setPetLocation(null);
-          setRawPath([]);
-          setDisplayPath([]);
-          setAccumulatedDistance(0);
-          return;
-        }
+      const activeDeviceKey = getActiveDeviceStorageKey(uid);
+      const devicesKey = getDevicesStorageKey(uid);
 
-        setDeviceCode(active);
+      const active = await AsyncStorage.getItem(activeDeviceKey);
+      const stored = await AsyncStorage.getItem(devicesKey);
+      const list: Device[] = stored ? JSON.parse(stored) : [];
 
-        const stored = await AsyncStorage.getItem("devices");
-        const list: Device[] = stored ? JSON.parse(stored) : [];
-        const device = list.find((d) => d.code === active);
+      if (!Array.isArray(list) || list.length === 0) {
+        setDeviceCode(null);
+        setDeviceName("GPS Tracker");
+        return;
+      }
 
-        if (device?.type && DEVICE_TYPES[device.type]) setDeviceName(DEVICE_TYPES[device.type].name);
-        else setDeviceName("GPS Tracker");
+      let device = list.find((d) => d.code === active);
 
-        setIsTracking(false);
-      };
+      // ✅ fallback
+      if (!device) {
+        device = list[0];
+        await AsyncStorage.setItem(activeDeviceKey, device.code);
+      }
 
+      setDeviceCode(device.code);
+
+      if (device?.type && DEVICE_TYPES[device.type]) {
+        setDeviceName(DEVICE_TYPES[device.type].name);
+      } else {
+        setDeviceName("GPS Tracker");
+      }
+    };
+
+    void load();
+
+    const sub = DeviceEventEmitter.addListener("activeDeviceChanged", () => {
       void load();
-    }, [])
-  );
+    });
+
+    return () => sub.remove();
+  }, [])
+);
 
   useEffect(() => {
     if (geofencePoints.length >= 2) setGeofencePath([...geofencePoints]);
@@ -923,11 +939,24 @@ export default function MapTracker() {
   }, [savedRouteFilter, clearActiveGeofence]);
 
   /* ================= ADD DEVICE ================= */
-  const confirmAddDevice = async () => {
-    const code = tempCode.trim().toUpperCase();
-    if (!code) return;
+const confirmAddDevice = async () => {
+  try {
+    const uid = auth.currentUser?.uid;
+    if (!uid) {
+      Alert.alert("ยังไม่ได้เข้าสู่ระบบ", "กรุณาเข้าสู่ระบบก่อน");
+      return;
+    }
 
-    const stored = await AsyncStorage.getItem("devices");
+    const code = tempCode.trim().toUpperCase();
+    if (!code) {
+      Alert.alert("กรุณากรอกรหัสอุปกรณ์");
+      return;
+    }
+
+    const devicesKey = getDevicesStorageKey(uid);
+    const activeDeviceKey = getActiveDeviceStorageKey(uid);
+
+    const stored = await AsyncStorage.getItem(devicesKey);
     const list: Device[] = stored ? JSON.parse(stored) : [];
 
     if (list.some((d) => d.code === code)) {
@@ -938,17 +967,39 @@ export default function MapTracker() {
     const ok = await fetchLocation(code);
     if (!ok) return;
 
-    const newDevice = {
+    // ✅ เช็ค ownerUid ก่อน
+    const ownerRef = ref(rtdb, `devices/${code}/ownerUid`);
+    const ownerSnap = await get(ownerRef);
+
+    if (ownerSnap.exists()) {
+      const ownerUid = ownerSnap.val();
+
+      if (ownerUid !== uid) {
+        Alert.alert("อุปกรณ์นี้ถูกใช้งานแล้ว", "อุปกรณ์นี้ถูกผูกกับบัญชีอื่น");
+        return;
+      }
+    } else {
+      // ✅ ยังไม่มี owner -> ตั้ง owner ให้ device นี้
+      await set(ownerRef, uid);
+    }
+
+    const newDevice: Device = {
+      id: code,
       code,
       type: "GPS_TRACKER_A7670",
+      name: "LilyGo A7670E",
       createdAt: new Date().toISOString(),
     };
 
     const updated = [...list, newDevice];
-    await AsyncStorage.setItem("devices", JSON.stringify(updated));
-    await AsyncStorage.setItem("activeDevice", code);
+
+    await AsyncStorage.setItem(devicesKey, JSON.stringify(updated));
+    await AsyncStorage.setItem(activeDeviceKey, code);
 
     setDeviceCode(code);
+
+    const deviceInfo = DEVICE_TYPES[newDevice.type || "GPS_TRACKER_A7670"];
+    setDeviceName(deviceInfo?.name ?? "GPS Tracker");
 
     lastAcceptedRef.current = null;
     prevInsideRef.current = null;
@@ -958,8 +1009,13 @@ export default function MapTracker() {
     setIsTracking(true);
     setModalVisible(false);
     setTempCode("");
-  };
 
+    DeviceEventEmitter.emit("devicesChanged");
+    DeviceEventEmitter.emit("activeDeviceChanged", { code });
+  } catch {
+    Alert.alert("เกิดข้อผิดพลาด", "ไม่สามารถเพิ่มอุปกรณ์ได้");
+  }
+};
   /* ================= GEOFENCE ACTIONS ================= */
   const cancelGeofence = () => {
     if (geofencePoints.length > 0) {
@@ -1281,7 +1337,7 @@ export default function MapTracker() {
 
                 <View style={styles.calloutCard}>
                   <View style={styles.cardHeader}>
-                    <Text style={styles.cardTitle}>{petName ?? "สัตว์เลี้ยง"}</Text>
+                    <Text style={styles.cardTitle}>{petName ?? "อุปกรณ์"}</Text>
                     <View style={styles.badge}>
                       <Text style={styles.badgeText}>{deviceName}</Text>
                     </View>

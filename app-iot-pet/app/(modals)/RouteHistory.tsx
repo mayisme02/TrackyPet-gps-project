@@ -638,13 +638,11 @@ export default function RouteHistory() {
             <Text style={styles.petName}>{displayPetName}</Text>
             <Text style={styles.range}>{rangeLine}</Text>
 
-            <Text style={styles.subMeta}>
-              {status === "recording"
-                ? `กำลังบันทึก • อัปเดทล่าสุด ${route?.lastLiveIso ? formatThaiTime(route.lastLiveIso) + " น." : "-"}`
-                : points.length > 0
-                ? `จุดเส้นทาง ${points.length} จุด`
-                : "ไม่มีข้อมูลเส้นทาง"}
-            </Text>
+            {status === "recording" && (
+              <Text style={styles.subMeta}>
+                กำลังบันทึก • อัปเดทล่าสุด {route?.lastLiveIso ? formatThaiTime(route.lastLiveIso) + " น." : "-"}
+              </Text>
+            )}
           </View>
         </View>
 

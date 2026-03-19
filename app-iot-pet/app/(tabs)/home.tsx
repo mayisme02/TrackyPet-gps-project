@@ -27,6 +27,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useFocusEffect } from "@react-navigation/native";
 import { DEVICE_TYPES } from "../../assets/constants/deviceData";
 import { styles } from "@/assets/styles/home.styles";
+import { BACKEND_URL } from "../../assets/constants/api";
 
 /* ================= TYPES ================= */
 interface Pet {
@@ -141,65 +142,65 @@ export default function HomeScreen() {
   };
 
   /* ================= LOAD MATCHED PET (LATEST PET DATA) ================= */
-useEffect(() => {
-  if (!auth.currentUser || !device?.code) {
-    setMatchedPet(null);
-    return;
-  }
+  useEffect(() => {
+    if (!auth.currentUser || !device?.code) {
+      setMatchedPet(null);
+      return;
+    }
 
-  const uid = auth.currentUser.uid;
-  let unsubPet: null | (() => void) = null;
+    const uid = auth.currentUser.uid;
+    let unsubPet: null | (() => void) = null;
 
-  const unsubMatch = onSnapshot(
-    doc(db, "users", uid, "deviceMatches", device.code),
-    (matchSnap) => {
-      if (unsubPet) {
-        unsubPet();
-        unsubPet = null;
-      }
+    const unsubMatch = onSnapshot(
+      doc(db, "users", uid, "deviceMatches", device.code),
+      (matchSnap) => {
+        if (unsubPet) {
+          unsubPet();
+          unsubPet = null;
+        }
 
-      if (!matchSnap.exists()) {
-        setMatchedPet(null);
-        return;
-      }
+        if (!matchSnap.exists()) {
+          setMatchedPet(null);
+          return;
+        }
 
-      const matchData = matchSnap.data() as any;
-      const matchedPetId = matchData.petId;
+        const matchData = matchSnap.data() as any;
+        const matchedPetId = matchData.petId;
 
-      if (!matchedPetId) {
-        setMatchedPet(null);
-        return;
-      }
+        if (!matchedPetId) {
+          setMatchedPet(null);
+          return;
+        }
 
-      unsubPet = onSnapshot(
-        doc(db, "users", uid, "pets", matchedPetId),
-        (petSnap) => {
-          if (!petSnap.exists()) {
+        unsubPet = onSnapshot(
+          doc(db, "users", uid, "pets", matchedPetId),
+          (petSnap) => {
+            if (!petSnap.exists()) {
+              setMatchedPet({
+                petId: matchedPetId,
+                petName: matchData.petName ?? "สัตว์เลี้ยง",
+                photoURL: matchData.photoURL ?? null,
+              });
+              return;
+            }
+
+            const petData = petSnap.data() as any;
+
             setMatchedPet({
               petId: matchedPetId,
-              petName: matchData.petName ?? "สัตว์เลี้ยง",
-              photoURL: matchData.photoURL ?? null,
+              petName: petData.name ?? matchData.petName ?? "สัตว์เลี้ยง",
+              photoURL: petData.photoURL ?? null,
             });
-            return;
           }
+        );
+      }
+    );
 
-          const petData = petSnap.data() as any;
-
-          setMatchedPet({
-            petId: matchedPetId,
-            petName: petData.name ?? matchData.petName ?? "สัตว์เลี้ยง",
-            photoURL: petData.photoURL ?? null,
-          });
-        }
-      );
-    }
-  );
-
-  return () => {
-    if (unsubPet) unsubPet();
-    unsubMatch();
-  };
-}, [device?.code]);
+    return () => {
+      if (unsubPet) unsubPet();
+      unsubMatch();
+    };
+  }, [device?.code]);
 
   /* ================= LOAD PET MATCH MAP ================= */
   useEffect(() => {
@@ -219,7 +220,7 @@ useEffect(() => {
     try {
       setLocationLoading(true);
 
-      const res = await fetch("http://192.168.31.136:3000/api/device/location", {
+      const res = await fetch(`${BACKEND_URL}/api/device/location`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ deviceCode: code }),

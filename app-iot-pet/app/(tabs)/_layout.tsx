@@ -5,52 +5,67 @@ import FontAwesome6 from "@expo/vector-icons/FontAwesome6";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { FontAwesome5 } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { rtdb } from "../../firebase/firebase";
-import { ref as dbRef, onValue } from "firebase/database";
+import { auth, db } from "../../firebase/firebase";
 import { Colors } from "@/assets/constants/Colors";
 import { useColorScheme } from "@/hooks/useColorScheme";
+import * as Notifications from "expo-notifications";
+import { onAuthStateChanged } from "firebase/auth";
+import { savePushTokenToFirestore } from "@/utils/pushNotifications";
+import { useRouter } from "expo-router";
+import { collection, onSnapshot, orderBy, query } from "firebase/firestore";
+
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: true,
+    shouldShowBanner: true,
+    shouldShowList: true,
+  }),
+});
+
+const getReadMapKey = (uid: string) => `notification_read_firestore_${uid}`;
 
 export default function TabLayout() {
   const colorScheme = useColorScheme();
   const [unreadCount, setUnreadCount] = useState(0);
+  const router = useRouter();
 
   const unsubRef = useRef<null | (() => void)>(null);
-  const loadingRef = useRef(false);
 
   const computeUnread = useCallback(async () => {
-    if (loadingRef.current) return;
-    loadingRef.current = true;
+    const user = auth.currentUser;
+    if (!user) {
+      setUnreadCount(0);
+      return;
+    }
+
+    const uid = user.uid;
 
     try {
-      const deviceId = await AsyncStorage.getItem("activeDevice");
-      if (!deviceId) {
-        setUnreadCount(0);
-        return;
-      }
-
-      // ✅ readMap ของ device นี้ (นับ unread ให้ตรงกับสีฟ้าใน NotificationScreen)
-      const readKey = `notification_read_${deviceId}`;
-      const readRaw = await AsyncStorage.getItem(readKey);
+      const readRaw = await AsyncStorage.getItem(getReadMapKey(uid));
       const readMap: Record<string, boolean> = readRaw ? JSON.parse(readRaw) : {};
 
-      // เคลียร์ sub เก่า
       if (unsubRef.current) {
         unsubRef.current();
         unsubRef.current = null;
       }
 
-      const ref = dbRef(rtdb, `devices/${deviceId}/alerts`);
-      const unsub = onValue(ref, (snap) => {
-        const v = snap.val() || {};
+      const q = query(
+        collection(db, "users", uid, "alerts"),
+        orderBy("atMs", "desc")
+      );
+
+      const unsub = onSnapshot(q, (snap) => {
         let count = 0;
 
-        Object.keys(v).forEach((key) => {
-          const a: any = v[key];
+        snap.forEach((docSnap) => {
+          const a = docSnap.data() as any;
+          const id = docSnap.id;
           const type = (a?.type || "").toString().toLowerCase();
-          if (type !== "exit" && type !== "enter") return;
 
-          // ✅ ถ้ายังไม่เคย mark read => นับ
-          if (!readMap[key]) count += 1;
+          if (type !== "exit" && type !== "enter") return;
+          if (!readMap[id]) count += 1;
         });
 
         setUnreadCount(count);
@@ -58,34 +73,40 @@ export default function TabLayout() {
 
       unsubRef.current = () => unsub();
     } catch {
-      // เงียบไว้
-    } finally {
-      loadingRef.current = false;
+      setUnreadCount(0);
     }
   }, []);
 
-  // ✅ ฟัง event จาก NotificationScreen แล้วอัปเดต badge ทันที
   useEffect(() => {
-    const subSeen = DeviceEventEmitter.addListener("notifications:seen", async ({ deviceId }: any) => {
-      // optional: ถ้าต้องการ "เข้า tab แล้วถือว่าอ่านหมด" ให้เคลียร์ unreadMap ด้วย
-      // แต่ส่วนใหญ่เราไม่ลบ readMap แค่ให้ NotificationScreen mark ตามรายการ
-      await computeUnread();
+    const unsub = onAuthStateChanged(auth, async (user) => {
+      if (user) {
+        await savePushTokenToFirestore();
+        await computeUnread();
+      } else {
+        setUnreadCount(0);
+      }
     });
 
-    const subMapUpdated = DeviceEventEmitter.addListener("notifications:readmap_updated", async () => {
-      await computeUnread();
-    });
+    return unsub;
+  }, [computeUnread]);
+
+  useEffect(() => {
+    const subMapUpdated = DeviceEventEmitter.addListener(
+      "notifications:readmap_updated",
+      async () => {
+        await computeUnread();
+      }
+    );
 
     return () => {
-      subSeen.remove();
       subMapUpdated.remove();
     };
   }, [computeUnread]);
 
-  // ✅ เวลา tab focus ให้คำนวณ + subscribe ใหม่
   useFocusEffect(
     useCallback(() => {
       computeUnread();
+
       return () => {
         if (unsubRef.current) {
           unsubRef.current();
@@ -94,6 +115,25 @@ export default function TabLayout() {
       };
     }, [computeUnread])
   );
+
+  useEffect(() => {
+    const sub = Notifications.addNotificationResponseReceivedListener((response) => {
+      const data = response.notification.request.content.data as {
+        routeId?: string;
+      };
+
+      if (data?.routeId) {
+        router.push({
+          pathname: "/RouteHistory",
+          params: { routeId: data.routeId },
+        });
+      } else {
+        router.push("/(tabs)/notification");
+      }
+    });
+
+    return () => sub.remove();
+  }, [router]);
 
   return (
     <Tabs

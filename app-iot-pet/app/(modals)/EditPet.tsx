@@ -9,6 +9,7 @@ import {
   Alert,
   ActivityIndicator,
 } from "react-native";
+
 import { useRouter, useLocalSearchParams } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import * as ImageManipulator from "expo-image-manipulator";
@@ -17,6 +18,13 @@ import { SelectCountry } from "react-native-element-dropdown";
 import { breedData } from "../../assets/constants/breedData";
 import { doc, updateDoc } from "firebase/firestore";
 import { auth, db } from "../../firebase/firebase";
+import {
+  collection,
+  query,
+  where,
+  getDocs,
+  writeBatch,
+} from "firebase/firestore";
 import ProfileHeader from "@/components/ProfileHeader";
 import { styles } from "@/assets/styles/editPet.styles";
 
@@ -77,6 +85,24 @@ export default function EditPet() {
 
       const petRef = doc(db, "users", user.uid, "pets", petData.id);
       await updateDoc(petRef, updatedPet);
+
+      // sync ไปยัง deviceMatches ที่ผูกกับ pet ตัวนี้
+      const matchesRef = collection(db, "users", user.uid, "deviceMatches");
+      const matchesQuery = query(matchesRef, where("petId", "==", petData.id));
+      const matchSnap = await getDocs(matchesQuery);
+
+      if (!matchSnap.empty) {
+        const batch = writeBatch(db);
+
+        matchSnap.forEach((matchDoc) => {
+          batch.update(matchDoc.ref, {
+            petName: name,
+            photoURL: photo || null,
+          });
+        });
+
+        await batch.commit();
+      }
 
       router.replace({
         pathname: "/(modals)/PetDetail",

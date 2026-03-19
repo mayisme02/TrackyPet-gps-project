@@ -1,19 +1,21 @@
 import React, { useCallback, useMemo, useState } from "react";
 import { View, Text, FlatList, StyleSheet, ActivityIndicator } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { rtdb } from "../firebase/firebase";
+import { rtdb, auth, db } from "../firebase/firebase";
 import { ref as dbRef, onValue } from "firebase/database";
 import { useFocusEffect } from "expo-router";
+import { doc, getDoc } from "firebase/firestore";
 
 type LogItem = {
   key: string;
-  kind?: string;      // "alert"
-  type?: string;      // "exit" | "enter"
+  kind?: string;
+  type?: string;
   message?: string;
   atUtc?: string;
   atTh?: string;
   device?: string;
   radiusKm?: number;
+  ownerUid?: string | null; // ✅ เพิ่ม
 };
 
 type ListItem =
@@ -31,17 +33,49 @@ const toDateHeaderTH = (iso?: string) => {
   });
 };
 
+const getActiveDeviceKey = (uid: string) => `activeDevice_${uid}`;
+
 export default function LogScreen() {
   const [loading, setLoading] = useState(true);
   const [logs, setLogs] = useState<LogItem[]>([]);
+
+  const validateDeviceOwnership = useCallback(
+    async (uid: string, deviceId: string) => {
+      try {
+        // เปลี่ยน path นี้ให้ตรงกับของจริง
+        const deviceRef = doc(db, "users", uid, "devices", deviceId);
+        const snap = await getDoc(deviceRef);
+        return snap.exists();
+      } catch {
+        return false;
+      }
+    },
+    []
+  );
 
   useFocusEffect(
     useCallback(() => {
       let unsub: any;
 
       const load = async () => {
-        const deviceId = await AsyncStorage.getItem("activeDevice");
+        const user = auth.currentUser;
+        if (!user) {
+          setLogs([]);
+          setLoading(false);
+          return;
+        }
+
+        const uid = user.uid;
+        const deviceId = await AsyncStorage.getItem(getActiveDeviceKey(uid));
+
         if (!deviceId) {
+          setLogs([]);
+          setLoading(false);
+          return;
+        }
+
+        const isOwner = await validateDeviceOwnership(uid, deviceId);
+        if (!isOwner) {
           setLogs([]);
           setLoading(false);
           return;
@@ -59,13 +93,15 @@ export default function LogScreen() {
               ...(v[k] || {}),
             }));
 
-            rows.sort((a, b) => {
-              const ta = a.atUtc ? Date.parse(a.atUtc) : 0;
-              const tb = b.atUtc ? Date.parse(b.atUtc) : 0;
-              return tb - ta;
-            });
+            const filtered = rows
+              .filter((x) => !x.ownerUid || x.ownerUid === uid)
+              .sort((a, b) => {
+                const ta = a.atUtc ? Date.parse(a.atUtc) : 0;
+                const tb = b.atUtc ? Date.parse(b.atUtc) : 0;
+                return tb - ta;
+              });
 
-            setLogs(rows);
+            setLogs(filtered);
             setLoading(false);
           },
           () => setLoading(false)
@@ -74,7 +110,7 @@ export default function LogScreen() {
 
       load();
       return () => unsub && unsub();
-    }, [])
+    }, [validateDeviceOwnership])
   );
 
   const listData: ListItem[] = useMemo(() => {

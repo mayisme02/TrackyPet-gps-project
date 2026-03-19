@@ -14,13 +14,10 @@ const {
   TB_PASSWORD,
 } = process.env;
 
-// DEVICE CODE → DEVICE ID MAP
 const DEVICE_MAP = {
   "PET-M3238-N3466": "3b8292b0-149d-11f1-abdd-ef910567fa1e",
-  // เป็นรหัสที่กำหนดไว้เพื่อเรียกใช้ api ผ่าน deviceID จาก thingsboard 
 };
 
-// LOGIN THINGSBOARD (JWT)
 async function loginThingsBoard() {
   const res = await axios.post(`${TB_BASE_URL}/api/auth/login`, {
     username: TB_USERNAME,
@@ -29,18 +26,16 @@ async function loginThingsBoard() {
   return res.data.token;
 }
 
-// FETCH GPS
 app.get("/", (req, res) => {
   res.json({
     status: "OK",
-    message: "Backend is running 🚀"
+    message: "Backend is running 🚀",
   });
 });
 
 app.post("/api/device/location", async (req, res) => {
   const { deviceCode } = req.body;
 
-  // 1️⃣ ตรวจ code
   if (!deviceCode) {
     return res.status(400).json({ error: "NO_DEVICE_CODE" });
   }
@@ -52,10 +47,8 @@ app.post("/api/device/location", async (req, res) => {
   }
 
   try {
-    // 2️⃣ Login TB
     const jwt = await loginThingsBoard();
 
-    // 3️⃣ ดึง telemetry
     const tbRes = await axios.get(
       `${TB_BASE_URL}/api/plugins/telemetry/DEVICE/${deviceId}/values/timeseries`,
       {
@@ -87,7 +80,7 @@ app.post("/api/device/location", async (req, res) => {
   }
 });
 
-// START SERVER
-app.listen(PORT || 3000, () => {
-  console.log(`🚀 Backend running on http://localhost:${PORT || 3000}`);
+const serverPort = PORT || 3000;
+app.listen(serverPort, "0.0.0.0", () => {
+  console.log(`🚀 Backend running on port ${serverPort}`);
 });

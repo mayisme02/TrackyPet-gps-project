@@ -1,18 +1,36 @@
 import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
-import { View, Text, StyleSheet, TouchableOpacity, Image, Platform } from "react-native";
-import MapView, { Polyline, Marker, Region, LatLng, Callout, Polygon } from "react-native-maps";
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  Image,
+  Platform,
+  Animated,
+  Easing,
+} from "react-native";
+import MapView, {
+  Polyline,
+  Marker,
+  Region,
+  LatLng,
+  Callout,
+  Polygon,
+  AnimatedRegion,
+} from "react-native-maps";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { auth, db } from "../../firebase/firebase";
 import ProfileHeader from "@/components/ProfileHeader";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { collection, doc, onSnapshot } from "firebase/firestore";
+import { styles } from "@/assets/styles/RouteHistory.styles";
 
 /* ================= TYPES ================= */
 type RoutePoint = {
   latitude: number;
   longitude: number;
-  timestamp: string; // ISO string
+  timestamp: string;
 };
 
 type GeoPoint = { latitude: number; longitude: number };
@@ -23,35 +41,47 @@ type RouteHistoryDoc = {
   photoURL?: string | null;
   deviceCode?: string;
 
-  from: string; // ISO (planned)
-  to: string; // ISO (planned)
+  from: string;
+  to: string;
   createdAt?: any;
 
   status?: string;
 
-  // geofence ณ เวลาบันทึก
   geofence?: GeoPoint[] | null;
   geofenceSnapshot?: { points?: GeoPoint[]; savedAt?: any } | null;
 
-  // metrics (อาจไม่อัปเดตบางช่วง)
   distanceMeters?: number;
   durationSeconds?: number;
   exitCount?: number;
 
-  // เวลาจริง (บันทึกจากหน้า Maps)
   startedAtIso?: string | null;
   endedAtIso?: string | null;
 
-  // เวลาจริง (Timestamp)
   startedAt?: any;
   endedAt?: any;
 
-  // realtime fields
   lastLiveIso?: string | null;
   lastLiveMs?: number | null;
 };
 
-/* ================= DISTANCE HELPERS (fallback) ================= */
+type PetProfile = {
+  id: string;
+  name?: string;
+  photoURL?: string | null;
+  breed?: string;
+  age?: string;
+  weight?: string;
+  height?: string;
+  gender?: string;
+};
+
+type DirectionMarker = {
+  key: string;
+  coordinate: LatLng;
+  rotation: number;
+};
+
+/* ================= DISTANCE HELPERS ================= */
 const toRad = (deg: number) => (deg * Math.PI) / 180;
 
 const haversineMeters = (a: LatLng, b: LatLng) => {
@@ -69,8 +99,22 @@ const haversineMeters = (a: LatLng, b: LatLng) => {
   return R * c;
 };
 
-// กัน GPS jump: ถ้าช่วงใดกระโดดไกลเกิน (เมตร) ไม่เอามาคิดระยะ (แต่ยังวาดเส้นตามจริง)
-const MAX_SEGMENT_M = 300; // ปรับได้ (200-500)
+const bearingDegrees = (a: LatLng, b: LatLng) => {
+  const lat1 = toRad(a.latitude);
+  const lat2 = toRad(b.latitude);
+  const dLng = toRad(b.longitude - a.longitude);
+
+  const y = Math.sin(dLng) * Math.cos(lat2);
+  const x =
+    Math.cos(lat1) * Math.sin(lat2) -
+    Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLng);
+
+  const brng = (Math.atan2(y, x) * 180) / Math.PI;
+  return (brng + 360) % 360;
+};
+
+const MAX_SEGMENT_M = 300;
+const MIN_DIRECTION_GAP_METERS = 80;
 
 /* ================= SCREEN ================= */
 export default function RouteHistory() {
@@ -87,7 +131,12 @@ export default function RouteHistory() {
   const endMarkerRef = useRef<React.ElementRef<typeof Marker>>(null);
   const suppressMapPressRef = useRef(false);
 
+  const animatedMarkerRef = useRef<React.ElementRef<typeof Marker> | null>(null);
+  const animationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isAnimatingRef = useRef(false);
+
   const [mapReady, setMapReady] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(false);
 
   const fallbackRoute: (RouteHistoryDoc & { id?: string }) | null = useMemo(() => {
     if (!routeJson) return null;
@@ -104,6 +153,7 @@ export default function RouteHistory() {
       : null
   );
 
+  const [petProfile, setPetProfile] = useState<PetProfile | null>(null);
   const [points, setPoints] = useState<RoutePoint[]>([]);
   const [savedGeofence, setSavedGeofence] = useState<GeoPoint[] | null>(null);
 
@@ -217,6 +267,10 @@ export default function RouteHistory() {
     return Number.isFinite(ms) ? ms : 0;
   };
 
+  /* ================= DISPLAY PET INFO ================= */
+  const displayPetName = petProfile?.name || route?.petName || fallbackRoute?.petName || "-";
+  const displayPhoto = petProfile?.photoURL || route?.photoURL || fallbackRoute?.photoURL || "";
+
   /* ================= SUBSCRIBE ROUTE DOC ================= */
   useEffect(() => {
     if (!auth.currentUser) return;
@@ -237,6 +291,41 @@ export default function RouteHistory() {
       (err) => console.log("route doc onSnapshot error:", err)
     );
   }, [effectiveRouteId]);
+
+  /* ================= SUBSCRIBE PET DOC ================= */
+  useEffect(() => {
+    if (!auth.currentUser) return;
+
+    const uid = auth.currentUser.uid;
+    const effectivePetId = route?.petId || fallbackRoute?.petId || null;
+
+    if (!effectivePetId) {
+      setPetProfile(null);
+      return;
+    }
+
+    const petRef = doc(db, "users", uid, "pets", effectivePetId);
+
+    return onSnapshot(
+      petRef,
+      (snap) => {
+        if (!snap.exists()) {
+          setPetProfile(null);
+          return;
+        }
+
+        const data = snap.data() as Omit<PetProfile, "id">;
+        setPetProfile({
+          id: snap.id,
+          ...data,
+        });
+      },
+      (err) => {
+        console.log("pet doc onSnapshot error:", err);
+        setPetProfile(null);
+      }
+    );
+  }, [route?.petId, fallbackRoute?.petId]);
 
   /* ================= SUBSCRIBE POINTS ================= */
   useEffect(() => {
@@ -283,7 +372,7 @@ export default function RouteHistory() {
     else setSavedGeofence(null);
   }, [routeGeofenceSnapshot]);
 
-  /* ================= LINE COORDS (always render) ================= */
+  /* ================= LINE COORDS ================= */
   const lineCoords: LatLng[] = useMemo(() => {
     const out: LatLng[] = [];
     for (const p of points) {
@@ -296,6 +385,94 @@ export default function RouteHistory() {
     }
     return out;
   }, [points]);
+
+  /* ================= DIRECTION MARKERS ================= */
+  const directionMarkers: DirectionMarker[] = useMemo(() => {
+    if (lineCoords.length < 2) return [];
+
+    const markers: DirectionMarker[] = [];
+    let accumulated = 0;
+
+    for (let i = 1; i < lineCoords.length; i++) {
+      const prev = lineCoords[i - 1];
+      const curr = lineCoords[i];
+
+      const segDist = haversineMeters(prev, curr);
+      if (!Number.isFinite(segDist) || segDist < 8 || segDist > MAX_SEGMENT_M) continue;
+
+      accumulated += segDist;
+
+      if (accumulated >= MIN_DIRECTION_GAP_METERS) {
+        markers.push({
+          key: `dir-${i}`,
+          coordinate: {
+            latitude: (prev.latitude + curr.latitude) / 2,
+            longitude: (prev.longitude + curr.longitude) / 2,
+          },
+          rotation: bearingDegrees(prev, curr),
+        });
+
+        accumulated = 0;
+      }
+    }
+
+    return markers;
+  }, [lineCoords]);
+
+  /* ================= START / END ================= */
+  const startPoint = points.length > 0 ? points[0] : null;
+  const endPoint = points.length > 0 ? points[points.length - 1] : null;
+
+  const status = getStatus(route);
+
+  const startTs =
+    (route?.startedAtIso ?? "") || toIso(route?.startedAt) || startPoint?.timestamp || route?.from || "";
+
+  const endTs =
+    status === "recording"
+      ? route?.lastLiveIso || endPoint?.timestamp || route?.to || ""
+      : (route?.endedAtIso ?? "") || toIso(route?.endedAt) || endPoint?.timestamp || route?.to || "";
+
+  const rangeLine = useMemo(() => {
+    if (startTs && endTs) return `${formatThaiDate(startTs)} • ${formatThaiTime(startTs)} - ${formatThaiTime(endTs)} น.`;
+    return "-";
+  }, [startTs, endTs]);
+
+  const durationSecEffective = useMemo(() => {
+    const v = Number(route?.durationSeconds ?? NaN);
+    if (Number.isFinite(v) && v >= 0) return v;
+
+    if (startTs && endTs) {
+      const ms = Date.parse(endTs) - Date.parse(startTs);
+      return Number.isFinite(ms) && ms > 0 ? Math.round(ms / 1000) : 0;
+    }
+    return 0;
+  }, [route?.durationSeconds, startTs, endTs]);
+
+  const distanceFromPoints = useMemo(() => {
+    if (lineCoords.length < 2) return 0;
+
+    let sum = 0;
+    for (let i = 1; i < lineCoords.length; i++) {
+      const d = haversineMeters(lineCoords[i - 1], lineCoords[i]);
+      if (Number.isFinite(d) && d > 0 && d <= MAX_SEGMENT_M) sum += d;
+    }
+    return Math.round(sum);
+  }, [lineCoords]);
+
+  const distanceMetersEffective = useMemo(() => {
+    const v = Number(route?.distanceMeters ?? NaN);
+    if (Number.isFinite(v) && v > 0) return v;
+    return distanceFromPoints;
+  }, [route?.distanceMeters, distanceFromPoints]);
+
+  const exitCountEffective = useMemo(() => {
+    const v = Number(route?.exitCount ?? NaN);
+    return Number.isFinite(v) && v >= 0 ? v : 0;
+  }, [route?.exitCount]);
+
+  const startMarkerIso = startTs || startPoint?.timestamp || "";
+  const endMarkerIso = endTs || endPoint?.timestamp || "";
 
   /* ================= INITIAL REGION ================= */
   const initialRegion: Region = useMemo(() => {
@@ -323,7 +500,126 @@ export default function RouteHistory() {
     };
   }, [lineCoords, savedGeofence]);
 
-  /* ================= FIT (fix: retry when map not ready / data late) ================= */
+  /* ================= ANIMATION ================= */
+  const rotationAnim = useRef(new Animated.Value(0)).current;
+
+  const animatedCoordinate = useRef(
+    new AnimatedRegion({
+      latitude: initialRegion.latitude,
+      longitude: initialRegion.longitude,
+    })
+  ).current;
+
+  const animatedRotation = rotationAnim.interpolate({
+    inputRange: [0, 360],
+    outputRange: ["0deg", "360deg"],
+  });
+
+  const animatedInverseRotation = rotationAnim.interpolate({
+    inputRange: [0, 360],
+    outputRange: ["0deg", "-360deg"],
+  });
+
+  const animateRotation = useCallback(
+    (toValue: number) => {
+      Animated.timing(rotationAnim, {
+        toValue,
+        duration: 350,
+        easing: Easing.linear,
+        useNativeDriver: true,
+      }).start();
+    },
+    [rotationAnim]
+  );
+
+  const getSegmentDuration = useCallback((from: LatLng, to: LatLng) => {
+    const dist = haversineMeters(from, to);
+    if (!Number.isFinite(dist) || dist <= 0) return 600;
+
+    const speedMetersPerSec = 8;
+    const duration = (dist / speedMetersPerSec) * 1000;
+    return Math.max(400, Math.min(duration, 2200));
+  }, []);
+
+  const stopRouteAnimation = useCallback(() => {
+    isAnimatingRef.current = false;
+    setIsPlaying(false);
+
+    if (animationTimerRef.current) {
+      clearTimeout(animationTimerRef.current);
+      animationTimerRef.current = null;
+    }
+  }, []);
+
+  const startRouteAnimation = useCallback(() => {
+    if (lineCoords.length < 2) return;
+
+    stopRouteAnimation();
+    isAnimatingRef.current = true;
+    setIsPlaying(true);
+
+    const first = lineCoords[0];
+    animatedCoordinate.setValue({
+      latitude: first.latitude,
+      longitude: first.longitude,
+      latitudeDelta: 0,
+      longitudeDelta: 0
+    });
+
+    const runStep = (index: number) => {
+      if (!isAnimatingRef.current) return;
+
+      if (index >= lineCoords.length - 1) {
+        isAnimatingRef.current = false;
+        setIsPlaying(false);
+        return;
+      }
+
+      const from = lineCoords[index];
+      const to = lineCoords[index + 1];
+
+      animateRotation(bearingDegrees(from, to));
+
+      const duration = getSegmentDuration(from, to);
+
+      animatedCoordinate
+        .timing({
+          latitude: to.latitude,
+          longitude: to.longitude,
+          duration,
+          useNativeDriver: false,
+          toValue: 0,
+          latitudeDelta: 0,
+          longitudeDelta: 0
+        })
+        .start();
+
+      animationTimerRef.current = setTimeout(() => {
+        runStep(index + 1);
+      }, duration);
+    };
+
+    runStep(0);
+  }, [animateRotation, animatedCoordinate, getSegmentDuration, lineCoords, stopRouteAnimation]);
+
+  useEffect(() => {
+    if (lineCoords.length < 1) return;
+
+    const first = lineCoords[0];
+    animatedCoordinate.setValue({
+      latitude: first.latitude,
+      longitude: first.longitude,
+      latitudeDelta: 0,
+      longitudeDelta: 0
+    });
+    rotationAnim.setValue(0);
+
+    return () => {
+      stopRouteAnimation();
+    };
+  }, [animatedCoordinate, lineCoords, rotationAnim, stopRouteAnimation]);
+
+  /* ================= FIT ================= */
   const doFit = useCallback(() => {
     if (!mapRef.current) return;
 
@@ -358,7 +654,6 @@ export default function RouteHistory() {
   }, [lineCoords, savedGeofence, insets.top]);
 
   useEffect(() => {
-    // ทำ 2 เฟส: เร็วๆ + retry (แก้ “ต้องกดหลายรอบถึงขึ้นเส้น”)
     const t1 = setTimeout(() => doFit(), 250);
     const t2 = setTimeout(() => doFit(), 900);
     return () => {
@@ -366,63 +661,6 @@ export default function RouteHistory() {
       clearTimeout(t2);
     };
   }, [doFit, effectiveRouteId, mapReady]);
-
-  /* ================= START/END + TIME RANGE ================= */
-  const startPoint = points.length > 0 ? points[0] : null;
-  const endPoint = points.length > 0 ? points[points.length - 1] : null;
-
-  const status = getStatus(route);
-
-  const startTs =
-    (route?.startedAtIso ?? "") || toIso(route?.startedAt) || startPoint?.timestamp || route?.from || "";
-
-  const endTs =
-    status === "recording"
-      ? route?.lastLiveIso || endPoint?.timestamp || route?.to || ""
-      : (route?.endedAtIso ?? "") || toIso(route?.endedAt) || endPoint?.timestamp || route?.to || "";
-
-  const rangeLine = useMemo(() => {
-    if (startTs && endTs) return `${formatThaiDate(startTs)} • ${formatThaiTime(startTs)} - ${formatThaiTime(endTs)} น.`;
-    return "-";
-  }, [startTs, endTs]);
-
-  const durationSecEffective = useMemo(() => {
-    const v = Number(route?.durationSeconds ?? NaN);
-    if (Number.isFinite(v) && v >= 0) return v;
-
-    if (startTs && endTs) {
-      const ms = Date.parse(endTs) - Date.parse(startTs);
-      return Number.isFinite(ms) && ms > 0 ? Math.round(ms / 1000) : 0;
-    }
-    return 0;
-  }, [route?.durationSeconds, startTs, endTs]);
-
-  /* ================= DISTANCE EFFECTIVE (fix: fallback from points) ================= */
-  const distanceFromPoints = useMemo(() => {
-    if (lineCoords.length < 2) return 0;
-
-    let sum = 0;
-    for (let i = 1; i < lineCoords.length; i++) {
-      const d = haversineMeters(lineCoords[i - 1], lineCoords[i]);
-      // กัน jump
-      if (Number.isFinite(d) && d > 0 && d <= MAX_SEGMENT_M) sum += d;
-    }
-    return Math.round(sum);
-  }, [lineCoords]);
-
-  const distanceMetersEffective = useMemo(() => {
-    const v = Number(route?.distanceMeters ?? NaN);
-    if (Number.isFinite(v) && v > 0) return v;
-    return distanceFromPoints; // ✅ fallback
-  }, [route?.distanceMeters, distanceFromPoints]);
-
-  const exitCountEffective = useMemo(() => {
-    const v = Number(route?.exitCount ?? NaN);
-    return Number.isFinite(v) && v >= 0 ? v : 0;
-  }, [route?.exitCount]);
-
-  const startMarkerIso = startTs || startPoint?.timestamp || "";
-  const endMarkerIso = endTs || endPoint?.timestamp || "";
 
   /* ================= MAP INTERACTIONS ================= */
   const mapOnPress = () => {
@@ -500,7 +738,6 @@ export default function RouteHistory() {
 
   return (
     <View style={styles.screen}>
-      {/* Header overlay */}
       <View style={styles.headerOverlay} pointerEvents="box-none">
         <ProfileHeader
           title="เส้นทางย้อนหลัง"
@@ -512,17 +749,15 @@ export default function RouteHistory() {
         />
       </View>
 
-      {/* Map เต็มพื้นที่ใต้ header */}
       <View style={[styles.mapWrap, { marginTop: HEADER_H }]}>
         <MapView
-          key={effectiveRouteId} // remount เวลาเปลี่ยน routeId
+          key={effectiveRouteId}
           ref={mapRef}
           style={StyleSheet.absoluteFill}
           initialRegion={initialRegion}
           onPress={mapOnPress}
           onMapReady={() => {
             setMapReady(true);
-            // เฟสแรก fit ทันทีเมื่อ map พร้อม
             setTimeout(() => doFit(), 150);
           }}
         >
@@ -536,9 +771,63 @@ export default function RouteHistory() {
             />
           )}
 
-          {/* ✅ วาดเส้นทันที ไม่ต้องรอ mapReady (แก้ “กดหลายรอบถึงขึ้น”) */}
           {lineCoords.length > 1 && (
             <Polyline coordinates={lineCoords} strokeColor="#E28F00" strokeWidth={8} zIndex={5} />
+          )}
+
+          {directionMarkers.map((item) => (
+            <Marker
+              key={item.key}
+              coordinate={item.coordinate}
+              anchor={{ x: 0.5, y: 0.5 }}
+              tracksViewChanges={false}
+              zIndex={6}
+            >
+              <View
+                style={[
+                  styles.directionArrowWrap,
+                  { transform: [{ rotate: `${item.rotation}deg` }] },
+                ]}
+              >
+                <MaterialIcons name="navigation" size={18} color="#E28F00" />
+              </View>
+            </Marker>
+          ))}
+
+          {lineCoords.length > 1 && (
+            <Marker.Animated
+              ref={animatedMarkerRef}
+              coordinate={animatedCoordinate as any}
+              anchor={{ x: 0.5, y: 0.5 }}
+              zIndex={7}
+            >
+              <Animated.View
+                style={[
+                  styles.animatedPetOuter,
+                  {
+                    transform: [{ rotate: animatedRotation }],
+                  },
+                ]}
+              >
+                <View style={styles.headingArrow}>
+                  <MaterialIcons name="navigation" size={14} color="#f59e0b" />
+                </View>
+
+                <Animated.View
+                  style={{
+                    transform: [{ rotate: animatedInverseRotation }],
+                  }}
+                >
+                  <View style={styles.animatedPetWrap}>
+                    {displayPhoto ? (
+                      <Image source={{ uri: displayPhoto }} style={styles.animatedPetAvatar} />
+                    ) : (
+                      <MaterialIcons name="pets" size={22} color="#fff" />
+                    )}
+                  </View>
+                </Animated.View>
+              </Animated.View>
+            </Marker.Animated>
           )}
 
           {startPoint && (
@@ -581,13 +870,22 @@ export default function RouteHistory() {
             </Marker>
           )}
         </MapView>
+
+        {lineCoords.length > 1 && (
+          <TouchableOpacity
+            style={[styles.playButton, { top: 16, right: 16 }]}
+            onPress={isPlaying ? stopRouteAnimation : startRouteAnimation}
+          >
+            <Ionicons name={isPlaying ? "pause" : "play"} size={18} color="#fff" />
+            <Text style={styles.playButtonText}>{isPlaying ? "หยุด" : "เล่นเส้นทาง"}</Text>
+          </TouchableOpacity>
+        )}
       </View>
 
-      {/* Info ลอยทับ Map */}
       <View style={[styles.infoSection, { position: "absolute", left: 16, right: 16, bottom: INFO_BOTTOM }]}>
         <View style={styles.topRow}>
-          {route?.photoURL ? (
-            <Image source={{ uri: route.photoURL }} style={styles.avatar} />
+          {displayPhoto ? (
+            <Image source={{ uri: displayPhoto }} style={styles.avatar} />
           ) : (
             <View style={styles.placeholder}>
               <MaterialIcons name="pets" size={26} color="#9CA3AF" />
@@ -595,16 +893,14 @@ export default function RouteHistory() {
           )}
 
           <View style={{ flex: 1 }}>
-            <Text style={styles.petName}>{route?.petName ?? "-"}</Text>
+            <Text style={styles.petName}>{displayPetName}</Text>
             <Text style={styles.range}>{rangeLine}</Text>
 
-            <Text style={styles.subMeta}>
-              {status === "recording"
-                ? `กำลังบันทึก • อัปเดทล่าสุด ${route?.lastLiveIso ? formatThaiTime(route.lastLiveIso) + " น." : "-"}`
-                : points.length > 0
-                ? `จุดเส้นทาง ${points.length} จุด`
-                : "ไม่มีข้อมูลเส้นทาง"}
-            </Text>
+            {status === "recording" && (
+              <Text style={styles.subMeta}>
+                กำลังบันทึก • อัปเดทล่าสุด {route?.lastLiveIso ? formatThaiTime(route.lastLiveIso) + " น." : "-"}
+              </Text>
+            )}
           </View>
         </View>
 
@@ -631,145 +927,3 @@ export default function RouteHistory() {
     </View>
   );
 }
-
-/* ================= STYLES ================= */
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: "#F3F4F6" },
-
-  headerOverlay: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    top: 0,
-    zIndex: 50,
-  },
-
-  mapWrap: {
-    flex: 1,
-    backgroundColor: "#E5E7EB",
-  },
-
-  infoSection: {
-    backgroundColor: "#fff",
-    borderRadius: 22,
-    padding: 16,
-    shadowColor: "#000",
-    shadowOpacity: 0.08,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 8,
-  },
-
-  topRow: { flexDirection: "row", gap: 12, alignItems: "center" },
-
-  avatar: {
-    width: 70,
-    height: 70,
-    borderRadius: 40,
-  },
-
-  placeholder: {
-    width: 70,
-    height: 70,
-    borderRadius: 40,
-    backgroundColor: "#EEF2F7",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-
-  petName: { fontSize: 20, fontWeight: "800", color: "#111827" },
-
-  range: {
-    marginTop: 4,
-    fontSize: 13,
-    color: "#6B7280",
-    fontWeight: "700",
-    lineHeight: 18,
-  },
-
-  subMeta: { marginTop: 4, fontSize: 13, color: "#6B7280", fontWeight: "700" },
-
-  metricsRow: {
-    marginTop: 12,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    gap: 12,
-  },
-
-  metricItem: {
-    flex: 1,
-    backgroundColor: "#F9FAFB",
-    borderRadius: 16,
-    paddingVertical: 16,
-    paddingHorizontal: 12,
-    alignItems: "center",
-    borderWidth: 1,
-    borderColor: "#EEF2F7",
-    shadowColor: "#000",
-    shadowOpacity: 0.03,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 2,
-  },
-
-  metricIconTop: { width: 22, height: 22, marginBottom: 8 },
-
-  metricLabel: {
-    fontSize: 13,
-    color: "#6B7280",
-    fontWeight: "700",
-    marginBottom: 4,
-    textAlign: "center",
-  },
-
-  metricValue: {
-    fontSize: 16,
-    color: "#111827",
-    fontWeight: "900",
-    textAlign: "center",
-  },
-
-  // Callout
-  calloutWrapper: { alignItems: "center" },
-  calloutHandle: {
-    width: 48,
-    height: 5,
-    borderRadius: 3,
-    backgroundColor: "#E5E7EB",
-    marginBottom: 8,
-  },
-  calloutCard: {
-    backgroundColor: "#fff",
-    borderRadius: 18,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    minWidth: 280,
-    maxWidth: 320,
-    shadowColor: "#000",
-    shadowOpacity: 0.16,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 6,
-  },
-  cardHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    gap: 10,
-    alignItems: "center",
-  },
-  cardTitle: { fontSize: 16, fontWeight: "800", color: "#111827" },
-  badge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999 },
-  badgeText: { fontSize: 12, fontWeight: "800" },
-  divider: { height: 1, backgroundColor: "#EEE", marginVertical: 10 },
-  rowLine: { flexDirection: "row", alignItems: "center", marginTop: 6 },
-  icon: { fontSize: 16, marginRight: 8 },
-  text: { fontSize: 14.5, color: "#333", fontWeight: "700" },
-  monoText: {
-    fontSize: 14,
-    color: "#444",
-    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
-    fontWeight: "600",
-  },
-
-  mapPin: { width: 28, height: 28 },
-});

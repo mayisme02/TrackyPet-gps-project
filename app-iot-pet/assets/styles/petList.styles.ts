@@ -43,7 +43,7 @@ export const styles = StyleSheet.create({
     width: 15,
     height: 15,
     borderRadius: 8,
-    backgroundColor: "#009B4B",
+    backgroundColor: "#47AA00",
     borderWidth: 2,
     borderColor: "#FFFFFF",
   },
@@ -66,7 +66,7 @@ export const styles = StyleSheet.create({
   deviceTag: {
     marginTop: 6,
     alignSelf: "flex-start",
-    backgroundColor: "#009B4B",
+    backgroundColor: "#47AA00",
     paddingHorizontal: 12,
     paddingVertical: 4,
     borderRadius: 999,

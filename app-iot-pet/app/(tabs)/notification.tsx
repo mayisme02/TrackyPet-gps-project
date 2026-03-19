@@ -1,31 +1,42 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  View,
   Text,
-  StyleSheet,
   TouchableOpacity,
   FlatList,
   ActivityIndicator,
   Alert,
   Image,
   DeviceEventEmitter,
+  View,
 } from "react-native";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { rtdb, auth, db } from "../../firebase/firebase";
-import { ref as dbRef, onValue, remove } from "firebase/database";
+import { auth, db } from "../../firebase/firebase";
 import ProfileHeader from "@/components/ProfileHeader";
-import { useFocusEffect, useRouter } from "expo-router";
-import { doc, getDoc } from "firebase/firestore";
+import { useRouter } from "expo-router";
+import {
+  collection,
+  onSnapshot,
+  orderBy,
+  query,
+  doc,
+  getDoc,
+} from "firebase/firestore";
+import { styles } from "@/assets/styles/notification.styles";
 
 /* ================= TYPES ================= */
 type AlertItem = {
   key: string;
-  type: "exit" | "enter" | string;
-  atTh?: string;
-  atUtc?: string;
+  type?: "exit" | "enter" | string;
+  kind?: string;
   message?: string;
-  device?: string;
+
+  atIso?: string;
+  atMs?: number;
+  atUtc?: string;
+  atTh?: string;
+
+  deviceCode?: string | null;
   radiusKm?: number;
 
   petId?: string | null;
@@ -35,15 +46,19 @@ type AlertItem = {
   routeId?: string | null;
 };
 
+type PetInfo = {
+  id: string;
+  name?: string | null;
+  photoURL?: string | null;
+};
+
 type ListItem =
   | { kind: "section"; id: string; title: string }
   | { kind: "alert"; data: AlertItem };
 
-/* ================= STORAGE KEYS ================= */
-const NOTIF_LAST_DEVICE_KEY = "notifications_device_last_v1";
-const NOTIF_CACHE_PREFIX = "notifications_cache_";
-
 /* ================= HELPERS ================= */
+const getAtIso = (a: AlertItem) => a.atIso || a.atUtc || "";
+
 const cleanMessage = (msg?: string) => {
   if (!msg) return "";
   return msg.replace(/\s*\(\s*\d+\s*ม\.?\s*\)\s*$/g, "").trim();
@@ -59,6 +74,7 @@ const toDateHeaderTH = (iso?: string) => {
   if (!iso) return "ไม่ทราบวันที่";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "ไม่ทราบวันที่";
+
   return d.toLocaleDateString("th-TH", {
     year: "numeric",
     month: "long",
@@ -68,6 +84,7 @@ const toDateHeaderTH = (iso?: string) => {
 
 const timeAgoTH = (iso?: string, nowMs?: number) => {
   if (!iso) return "";
+
   const t = Date.parse(iso);
   if (!Number.isFinite(t)) return "";
 
@@ -76,112 +93,62 @@ const timeAgoTH = (iso?: string, nowMs?: number) => {
   if (diffSec < 0) diffSec = 0;
 
   if (diffSec < 60) return "เมื่อสักครู่";
+
   const diffMin = Math.floor(diffSec / 60);
   if (diffMin < 60) return `${diffMin} นาทีที่แล้ว`;
+
   const diffHr = Math.floor(diffMin / 60);
   if (diffHr < 24) return `${diffHr} ชั่วโมงที่แล้ว`;
+
   const diffDay = Math.floor(diffHr / 24);
   if (diffDay < 30) return `${diffDay} วันที่แล้ว`;
+
   const diffMo = Math.floor(diffDay / 30);
   if (diffMo < 12) return `${diffMo} เดือนที่แล้ว`;
+
   const diffYr = Math.floor(diffMo / 12);
   return `${diffYr} ปีที่แล้ว`;
 };
+
+/* ================= STORAGE KEYS ================= */
+const getReadMapKey = (uid: string) => `notification_read_firestore_${uid}`;
 
 export default function NotificationScreen() {
   const router = useRouter();
 
   const [loading, setLoading] = useState(true);
   const [alerts, setAlerts] = useState<AlertItem[]>([]);
-  const [deviceId, setDeviceId] = useState<string | null>(null);
+  const [uid, setUid] = useState<string | null>(auth.currentUser?.uid ?? null);
 
-  // tick ให้ timeago อัปเดต realtime
   const [nowTick, setNowTick] = useState(() => Date.now());
-
-  // readMap ต่อ device
-  const [readMap, setReadMap] = useState<Record<string, boolean>>({});
-
-  // กันกดซ้ำตอนกำลังเช็ค/นำทาง
   const [openingKey, setOpeningKey] = useState<string | null>(null);
 
+  const [petsMap, setPetsMap] = useState<Record<string, PetInfo>>({});
+  const [readMap, setReadMap] = useState<Record<string, boolean>>({});
+
   const readKey = useMemo(() => {
-    if (!deviceId) return null;
-    return `notification_read_${deviceId}`;
-  }, [deviceId]);
+    if (!uid) return null;
+    return getReadMapKey(uid);
+  }, [uid]);
 
   useEffect(() => {
     const id = setInterval(() => setNowTick(Date.now()), 30000);
     return () => clearInterval(id);
   }, []);
 
-  /* ================= LOAD DEVICE (active -> last) ================= */
   useEffect(() => {
-    let mounted = true;
+    const unsub = auth.onAuthStateChanged((user) => {
+      setUid(user?.uid ?? null);
 
-    (async () => {
-      try {
-        const active = await AsyncStorage.getItem("activeDevice");
-        const last = await AsyncStorage.getItem(NOTIF_LAST_DEVICE_KEY);
-
-        const useId = active || last || null;
-        if (!mounted) return;
-
-        setDeviceId(useId);
-
-        if (useId) {
-          await AsyncStorage.setItem(NOTIF_LAST_DEVICE_KEY, useId);
-          // ✅ preload cache (เร็วขึ้น/กันวูบ)
-          try {
-            const cached = await AsyncStorage.getItem(`${NOTIF_CACHE_PREFIX}${useId}`);
-            if (cached && mounted) setAlerts(JSON.parse(cached));
-          } catch {}
-        }
-      } finally {
-        // ไม่ setLoading(false) ตรงนี้ เพราะยังรอ subscribeAlerts อยู่
+      if (!user) {
+        setAlerts([]);
+        setPetsMap({});
+        setReadMap({});
+        setLoading(false);
       }
-    })();
+    });
 
-    return () => {
-      mounted = false;
-    };
-  }, []);
-
-  /* ================= LISTEN ACTIVE DEVICE CHANGES ================= */
-  useEffect(() => {
-    const sub = DeviceEventEmitter.addListener(
-      "activeDeviceChanged",
-      async (payload?: { code?: string | null }) => {
-        const nextCode =
-          payload?.code ?? (await AsyncStorage.getItem("activeDevice"));
-
-        // ถ้ามี active ใหม่ -> ใช้ตัวใหม่ และจำเป็น last
-        if (nextCode) {
-          setDeviceId(nextCode);
-          await AsyncStorage.setItem(NOTIF_LAST_DEVICE_KEY, nextCode);
-
-          // preload cache
-          try {
-            const cached = await AsyncStorage.getItem(`${NOTIF_CACHE_PREFIX}${nextCode}`);
-            if (cached) setAlerts(JSON.parse(cached));
-          } catch {}
-
-          return;
-        }
-
-        // ถ้าโดนลบ activeDevice (disconnect) -> ใช้ last ต่อไป (ห้าม set null แล้วล้าง)
-        const last = await AsyncStorage.getItem(NOTIF_LAST_DEVICE_KEY);
-        setDeviceId(last || null);
-
-        if (last) {
-          try {
-            const cached = await AsyncStorage.getItem(`${NOTIF_CACHE_PREFIX}${last}`);
-            if (cached) setAlerts(JSON.parse(cached));
-          } catch {}
-        }
-      }
-    );
-
-    return () => sub.remove();
+    return unsub;
   }, []);
 
   /* ================= LOAD READ MAP ================= */
@@ -190,108 +157,115 @@ export default function NotificationScreen() {
       setReadMap({});
       return;
     }
+
     let mounted = true;
+
     (async () => {
-      const raw = await AsyncStorage.getItem(readKey);
-      if (!mounted) return;
-      setReadMap(raw ? JSON.parse(raw) : {});
+      try {
+        const raw = await AsyncStorage.getItem(readKey);
+        if (!mounted) return;
+        setReadMap(raw ? JSON.parse(raw) : {});
+      } catch {
+        if (!mounted) return;
+        setReadMap({});
+      }
     })();
+
     return () => {
       mounted = false;
     };
   }, [readKey]);
 
-  /* ================= MARK SCREEN SEEN (เคลียร์ badge ฝั่ง TabLayout) ================= */
-  useFocusEffect(
-    useCallback(() => {
-      (async () => {
-        const active =
-          deviceId ||
-          (await AsyncStorage.getItem("activeDevice")) ||
-          (await AsyncStorage.getItem(NOTIF_LAST_DEVICE_KEY));
-
-        if (!active) return;
-
-        const now = Date.now();
-        await AsyncStorage.setItem(`notification_last_read_${active}`, String(now));
-        DeviceEventEmitter.emit("notifications:seen", { deviceId: active, lastRead: now });
-      })();
-    }, [deviceId])
-  );
-
-  /* ================= SUBSCRIBE ALERTS (use deviceId/last, not only activeDevice) ================= */
-  const subscribeAlerts = useCallback(async () => {
-    const active =
-      deviceId ||
-      (await AsyncStorage.getItem("activeDevice")) ||
-      (await AsyncStorage.getItem(NOTIF_LAST_DEVICE_KEY));
-
-    // ไม่มีทั้ง active และ last -> ไม่มีอะไรให้โชว์
-    if (!active) {
-      setDeviceId(null);
-      setAlerts([]);
-      setLoading(false);
-      return () => {};
+  /* ================= SUBSCRIBE PETS ================= */
+  useEffect(() => {
+    if (!uid) {
+      setPetsMap({});
+      return;
     }
 
-    setDeviceId(active);
+    const q = query(collection(db, "users", uid, "pets"));
+
+    const unsub = onSnapshot(
+      q,
+      (snap) => {
+        const next: Record<string, PetInfo> = {};
+
+        snap.forEach((d) => {
+          const data = d.data() as any;
+          next[d.id] = {
+            id: d.id,
+            name: data.name ?? null,
+            photoURL: data.photoURL ?? null,
+          };
+        });
+
+        setPetsMap(next);
+      },
+      () => {
+        setPetsMap({});
+      }
+    );
+
+    return unsub;
+  }, [uid]);
+
+  /* ================= SUBSCRIBE ALERTS ================= */
+  useEffect(() => {
+    if (!uid) {
+      setAlerts([]);
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
 
-    // จำเป็น last เสมอ เพื่อให้ disconnect แล้วยังอยู่
-    try {
-      await AsyncStorage.setItem(NOTIF_LAST_DEVICE_KEY, active);
-    } catch {}
+    const q = query(
+      collection(db, "users", uid, "alerts"),
+      orderBy("atMs", "desc")
+    );
 
-    // preload cache ก่อน subscribe (กันหน้าว่าง)
-    try {
-      const cached = await AsyncStorage.getItem(`${NOTIF_CACHE_PREFIX}${active}`);
-      if (cached) setAlerts(JSON.parse(cached));
-    } catch {}
+    const unsub = onSnapshot(
+      q,
+      (snap) => {
+        const rows: AlertItem[] = snap.docs.map((d) => {
+          const data = d.data() as any;
 
-    const ref = dbRef(rtdb, `devices/${active}/alerts`);
-    const unsub = onValue(
-      ref,
-      async (snap) => {
-        const v = snap.val() || {};
-        const rows: AlertItem[] = Object.keys(v).map((k) => ({ key: k, ...(v[k] || {}) }));
+          return {
+            key: d.id,
+            type: data.type,
+            kind: data.kind,
+            message: data.message,
+            atIso: data.atIso,
+            atMs: data.atMs,
+            atUtc: data.atUtc,
+            atTh: data.atTh,
+            deviceCode: data.deviceCode ?? null,
+            radiusKm: data.radiusKm,
+            petId: data.petId ?? null,
+            petName: data.petName ?? null,
+            photoURL: data.photoURL ?? null,
+            routeId: data.routeId ?? null,
+          };
+        });
 
-        const filtered = rows
-          .filter((a) => {
-            const t = (a.type || "").toString().toLowerCase();
-            return t === "exit" || t === "enter";
-          })
-          .sort((a, b) => {
-            const ta = a.atUtc ? Date.parse(a.atUtc) : 0;
-            const tb = b.atUtc ? Date.parse(b.atUtc) : 0;
-            return tb - ta;
-          });
+        const filtered = rows.filter((a) => {
+          const t = (a.type || "").toString().toLowerCase();
+          return t === "exit" || t === "enter";
+        });
 
         setAlerts(filtered);
         setLoading(false);
-
-        // cache ไว้เผื่อ activeDevice ถูกลบ/ออฟไลน์
-        try {
-          await AsyncStorage.setItem(`${NOTIF_CACHE_PREFIX}${active}`, JSON.stringify(filtered));
-        } catch {}
       },
       () => setLoading(false)
     );
 
-    return () => unsub();
-  }, [deviceId]);
+    return unsub;
+  }, [uid]);
 
-  useFocusEffect(
-    useCallback(() => {
-      let off: any;
-      subscribeAlerts().then((u) => (off = u));
-      return () => off && off();
-    }, [subscribeAlerts])
-  );
-
-  /* ================= DELETE ONE (LONG PRESS) ================= */
+  /* ================= DELETE ONE ================= */
   const deleteOne = useCallback(
     (a: AlertItem) => {
-      if (!deviceId) return;
+      if (!readKey) return;
 
       Alert.alert("ลบการแจ้งเตือน?", "ต้องการลบรายการนี้หรือไม่", [
         { text: "ยกเลิก", style: "cancel" },
@@ -300,53 +274,48 @@ export default function NotificationScreen() {
           style: "destructive",
           onPress: async () => {
             try {
-              await remove(dbRef(rtdb, `devices/${deviceId}/alerts/${a.key}`));
-            } catch {}
-
-            if (readKey) {
               const next = { ...readMap };
               delete next[a.key];
               setReadMap(next);
               await AsyncStorage.setItem(readKey, JSON.stringify(next));
-              DeviceEventEmitter.emit("notifications:readmap_updated", { deviceId });
+              DeviceEventEmitter.emit("notifications:readmap_updated");
+            } catch {
+              Alert.alert("เกิดข้อผิดพลาด", "ไม่สามารถลบรายการได้");
             }
           },
         },
       ]);
     },
-    [deviceId, readKey, readMap]
+    [readKey, readMap]
   );
 
-  /* ================= CLICK: MARK READ + GO (WITH VALIDATION) ================= */
+  /* ================= OPEN ALERT ================= */
   const openAlert = useCallback(
     async (a: AlertItem) => {
-      if (!a.key) return;
-      if (openingKey) return; // กันกดซ้ำ
+      if (!a.key || openingKey) return;
+
       setOpeningKey(a.key);
 
       try {
-        // 1) mark read
-        if (readKey) {
+        if (readKey && !readMap[a.key]) {
           const next = { ...readMap, [a.key]: true };
           setReadMap(next);
           await AsyncStorage.setItem(readKey, JSON.stringify(next));
-          DeviceEventEmitter.emit("notifications:readmap_updated", { deviceId });
+          DeviceEventEmitter.emit("notifications:readmap_updated");
         }
 
-        // 2) ต้องมี routeId ถึงจะไป RouteHistory ได้
         if (!a.routeId) {
           Alert.alert("ไม่มีข้อมูลเส้นทาง", "รายการนี้ไม่มีข้อมูลเส้นทาง หรือถูกลบไปแล้ว");
           return;
         }
 
-        // 3) เช็คว่าเอกสาร routeHistories ยังมีอยู่ไหม
         if (!auth.currentUser) {
           Alert.alert("ยังไม่ได้เข้าสู่ระบบ", "กรุณาเข้าสู่ระบบก่อนเพื่อดูข้อมูลเส้นทาง");
           return;
         }
 
-        const uid = auth.currentUser.uid;
-        const rref = doc(db, "users", uid, "routeHistories", a.routeId);
+        const currentUid = auth.currentUser.uid;
+        const rref = doc(db, "users", currentUid, "routeHistories", a.routeId);
         const rsnap = await getDoc(rref);
 
         if (!rsnap.exists()) {
@@ -354,7 +323,6 @@ export default function NotificationScreen() {
           return;
         }
 
-        // 4) มีจริง -> ไปหน้า RouteHistory
         router.push({
           pathname: "/RouteHistory",
           params: { routeId: a.routeId },
@@ -365,41 +333,53 @@ export default function NotificationScreen() {
         setOpeningKey(null);
       }
     },
-    [openingKey, readKey, readMap, deviceId, router]
+    [openingKey, readKey, readMap, router]
   );
 
-  /* ================= BUILD LIST: GROUP BY DATE ================= */
+  /* ================= BUILD LIST ================= */
   const listData: ListItem[] = useMemo(() => {
     if (!alerts.length) return [];
+
     const out: ListItem[] = [];
     let lastHeader = "";
 
     for (const a of alerts) {
-      const header = toDateHeaderTH(a.atUtc);
+      const iso = getAtIso(a);
+      const header = toDateHeaderTH(iso);
+
       if (header !== lastHeader) {
         lastHeader = header;
         out.push({ kind: "section", id: `section-${header}`, title: header });
       }
+
       out.push({ kind: "alert", data: a });
     }
 
     return out;
   }, [alerts]);
 
-  /* ================= RENDER ================= */
   const renderItem = ({ item }: { item: ListItem }) => {
-    if (item.kind === "section") return <Text style={styles.sectionTitle}>{item.title}</Text>;
+    if (item.kind === "section") {
+      return <Text style={styles.sectionTitle}>{item.title}</Text>;
+    }
 
     const a = item.data;
     const t = (a.type || "").toString().toLowerCase();
     const isExit = t === "exit";
 
-    const petName = a.petName?.trim() ? a.petName.trim() : "สัตว์เลี้ยง";
-    const rawTitle =
-      cleanMessage(a.message) || (isExit ? `${petName} ออกนอกพื้นที่` : `${petName} กลับเข้าพื้นที่`);
-    const title = applyPetNameToMessage(rawTitle, a.petName);
+    const latestPet = a.petId ? petsMap[a.petId] : undefined;
+    const displayPetName =
+      latestPet?.name?.trim() || a.petName?.trim() || "สัตว์เลี้ยง";
+    const displayPhotoURL = latestPet?.photoURL || a.photoURL || null;
 
-    const ago = timeAgoTH(a.atUtc, nowTick);
+    const rawTitle =
+      cleanMessage(a.message) ||
+      (isExit
+        ? `${displayPetName} ออกนอกพื้นที่`
+        : `${displayPetName} กลับเข้าพื้นที่`);
+
+    const title = applyPetNameToMessage(rawTitle, displayPetName);
+    const ago = timeAgoTH(getAtIso(a), nowTick);
     const isUnread = !readMap[a.key];
     const isOpening = openingKey === a.key;
 
@@ -410,18 +390,32 @@ export default function NotificationScreen() {
         onLongPress={() => deleteOne(a)}
         disabled={isOpening}
       >
-        <View style={[styles.cardFull, isUnread && styles.unreadBg, isOpening && styles.disabledCard]}>
+        <View
+          style={[
+            styles.cardFull,
+            isUnread && styles.unreadBg,
+            isOpening && styles.disabledCard,
+          ]}
+        >
           <View style={styles.left}>
             <View style={styles.avatarWrap}>
-              {a.photoURL ? (
-                <Image source={{ uri: a.photoURL }} style={styles.avatar} />
+              {displayPhotoURL ? (
+                <Image source={{ uri: displayPhotoURL }} style={styles.avatar} />
               ) : (
                 <MaterialIcons name="pets" size={22} color="#7A4A00" />
               )}
             </View>
 
             <View style={{ flex: 1 }}>
-              <Text style={[styles.title, { color: isExit ? "#b00020" : "#0F7A2E" }]}>{title}</Text>
+              <Text
+                style={[
+                  styles.title,
+                  { color: isExit ? "#b00020" : "#0F7A2E" },
+                ]}
+              >
+                {title}
+              </Text>
+
               {!!ago && <Text style={styles.timeAgo}>{ago}</Text>}
               {isOpening && <Text style={styles.openingText}>กำลังเปิด...</Text>}
             </View>
@@ -447,81 +441,15 @@ export default function NotificationScreen() {
         <FlatList
           data={listData}
           renderItem={renderItem}
-          keyExtractor={(item, i) => (item.kind === "section" ? item.id : item.data.key || `a-${i}`)}
+          keyExtractor={(item, i) =>
+            item.kind === "section" ? item.id : item.data.key || `a-${i}`
+          }
           contentContainerStyle={{ paddingHorizontal: 0, paddingVertical: 10 }}
-          ListEmptyComponent={<Text style={styles.empty}>ยังไม่มีการแจ้งเตือน</Text>}
+          ListEmptyComponent={
+            <Text style={styles.empty}>ยังไม่มีการแจ้งเตือน</Text>
+          }
         />
       )}
     </>
   );
 }
-
-const styles = StyleSheet.create({
-  sectionTitle: {
-    fontSize: 14,
-    fontWeight: "700",
-    marginTop: 14,
-    marginBottom: 8,
-    color: "#111827",
-    paddingHorizontal: 16,
-  },
-  empty: {
-    textAlign: "center",
-    marginTop: 80,
-    fontSize: 15,
-    color: "#9CA3AF",
-    fontWeight: "700",
-  },
-  cardFull: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 16,
-    paddingVertical: 16,
-    backgroundColor: "#fff",
-    borderBottomWidth: 1,
-    borderBottomColor: "#F1F1F1",
-  },
-  unreadBg: {
-    backgroundColor: "#E8F8FF",
-  },
-  disabledCard: {
-    opacity: 0.7,
-  },
-  left: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    flex: 1,
-  },
-  avatarWrap: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    backgroundColor: "#F5E6C8",
-    justifyContent: "center",
-    alignItems: "center",
-    overflow: "hidden",
-  },
-  avatar: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-  },
-  title: {
-    fontSize: 16,
-    fontWeight: "900",
-  },
-  timeAgo: {
-    fontSize: 12,
-    color: "#6B7280",
-    marginTop: 6,
-    fontWeight: "700",
-  },
-  openingText: {
-    marginTop: 4,
-    fontSize: 12,
-    color: "#6B7280",
-    fontWeight: "700",
-  },
-});

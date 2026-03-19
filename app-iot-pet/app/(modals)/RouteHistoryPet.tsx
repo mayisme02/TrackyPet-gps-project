@@ -31,6 +31,7 @@ import { SwipeListView } from "react-native-swipe-list-view";
 import ProfileHeader from "@/components/ProfileHeader";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
+import { styles } from "@/assets/styles/RouteHistoryPet.styles";
 
 // ✅ Calendar
 import { Calendar, DateData, LocaleConfig } from "react-native-calendars";
@@ -50,7 +51,20 @@ LocaleConfig.locales.th = {
     "พฤศจิกายน",
     "ธันวาคม",
   ],
-  monthNamesShort: ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."],
+  monthNamesShort: [
+    "ม.ค.",
+    "ก.พ.",
+    "มี.ค.",
+    "เม.ย.",
+    "พ.ค.",
+    "มิ.ย.",
+    "ก.ค.",
+    "ส.ค.",
+    "ก.ย.",
+    "ต.ค.",
+    "พ.ย.",
+    "ธ.ค.",
+  ],
   dayNames: ["อาทิตย์", "จันทร์", "อังคาร", "พุธ", "พฤหัส", "ศุกร์", "เสาร์"],
   dayNamesShort: ["อา.", "จ.", "อ.", "พ.", "พฤ.", "ศ.", "ส."],
   today: "วันนี้",
@@ -63,21 +77,19 @@ type RouteHistory = {
   petName: string;
   photoURL?: string | null;
 
-  from: string; // ISO (เวลาที่ตั้งไว้)
-  to: string; // ISO (เวลาที่ตั้งไว้)
+  from: string;
+  to: string;
 
   status?: string;
   deviceCode?: string | null;
 
   createdAt?: any;
 
-  // ✅ เวลาจริง (รองรับหลายแบบ)
   startedAtIso?: string | null;
   endedAtIso?: string | null;
   startedAtMs?: number | null;
   endedAtMs?: number | null;
 
-  // เผื่อบางทีเก็บเป็น Firestore Timestamp
   startedAt?: any;
   endedAt?: any;
 };
@@ -89,6 +101,17 @@ type RealTimeMap = Record<
     endIso?: string | null;
   }
 >;
+
+type PetProfile = {
+  id: string;
+  name?: string;
+  photoURL?: string | null;
+  breed?: string;
+  age?: string;
+  weight?: string;
+  height?: string;
+  gender?: string;
+};
 
 const ROUTE_FILTER_STORAGE_KEY = "routeFilter_v1";
 const ACTIVE_GEOFENCE_STORAGE_KEY = "activeGeofence_v1";
@@ -103,15 +126,15 @@ export default function RouteHistoryPet() {
   }>();
 
   const petId = (params.petId ?? "").toString();
-  const headerName = (params.petName ?? "ประวัติเส้นทางย้อนหลัง").toString();
+  const fallbackHeaderName = (params.petName ?? "ประวัติเส้นทางย้อนหลัง").toString();
 
   const [routes, setRoutes] = useState<RouteHistory[]>([]);
   const [realTimes, setRealTimes] = useState<RealTimeMap>({});
+  const [petProfile, setPetProfile] = useState<PetProfile | null>(null);
 
   const fetchingRef = useRef<Set<string>>(new Set());
   const blockCardPressRef = useRef(false);
 
-  // ✅ selected date (YYYY-MM-DD). null = แสดงทั้งหมด
   const [selectedDateId, setSelectedDateId] = useState<string | null>(null);
 
   const toIso = (v: any): string => {
@@ -136,7 +159,6 @@ export default function RouteHistoryPet() {
       hour12: false,
     });
 
-  // ✅ เวลา “การ์ดนี้” ใช้เรียง (ล่าสุดขึ้นบน) : createdAt > endedAtMs > startedAtMs > to > from
   const getSortMs = (r: RouteHistory) => {
     const ca = r.createdAt;
     const caMs = ca && typeof ca?.toMillis === "function" ? (ca.toMillis() as number) : NaN;
@@ -158,14 +180,11 @@ export default function RouteHistoryPet() {
   const formatTimeRange = (fromIso: string, toIsoStr: string) => {
     const sameDay = new Date(fromIso).toDateString() === new Date(toIsoStr).toDateString();
     if (sameDay) return `${formatThaiTime(fromIso)} - ${formatThaiTime(toIsoStr)} น.`;
-    return `${formatThaiDate(fromIso)} ${formatThaiTime(fromIso)} น. - ${formatThaiDate(toIsoStr)} ${formatThaiTime(
+    return `${formatThaiDate(fromIso)} ${formatThaiTime(fromIso)} น. - ${formatThaiDate(
       toIsoStr
-    )} น.`;
+    )} ${formatThaiTime(toIsoStr)} น.`;
   };
 
-  /**
-   * ✅ normalize status ให้เป็น 2 ค่า: recording / done
-   */
   const getStatus = (route: RouteHistory): "recording" | "done" => {
     const s = (route.status ?? "").toString().trim().toLowerCase();
 
@@ -177,7 +196,14 @@ export default function RouteHistoryPet() {
       return "recording";
     }
 
-    if (s === "done" || s === "finished" || s === "completed" || s === "cancelled" || s === "canceled" || s === "stop") {
+    if (
+      s === "done" ||
+      s === "finished" ||
+      s === "completed" ||
+      s === "cancelled" ||
+      s === "canceled" ||
+      s === "stop"
+    ) {
       return "done";
     }
 
@@ -188,7 +214,6 @@ export default function RouteHistoryPet() {
     return isToday && isInRange ? "recording" : "done";
   };
 
-  // ✅ ISO -> YYYY-MM-DD (ตาม timezone ของเครื่อง)
   const toDateId = (iso: string) => {
     const d = new Date(iso);
     const y = d.getFullYear();
@@ -197,9 +222,6 @@ export default function RouteHistoryPet() {
     return `${y}-${m}-${day}`;
   };
 
-  /**
-   * ✅ helper: emit event + clear storage (ให้ Maps รีเซต)
-   */
   const notifyMapsRecordingEnded = useCallback(async (payload: { routeId: string; deviceCode?: string | null }) => {
     try {
       await AsyncStorage.removeItem(ROUTE_FILTER_STORAGE_KEY);
@@ -213,10 +235,6 @@ export default function RouteHistoryPet() {
     });
   }, []);
 
-  /**
-   * ✅ หยุดบันทึกทันทีจากหน้า list
-   * - อัปเดท endedAtIso/endedAtMs ให้หน้า RouteHistory เอาเวลา “จบจริง” ได้ทันที
-   */
   const stopRecordingNow = useCallback(
     async (route: RouteHistory) => {
       if (!auth.currentUser) return;
@@ -263,8 +281,35 @@ export default function RouteHistoryPet() {
   );
 
   /**
-   * ✅ AUTO COMPLETE เฉพาะ route ที่ recording ของ "สัตว์เลี้ยงตัวนี้"
+   * ✅ ฟังข้อมูลสัตว์เลี้ยงล่าสุดจาก Firestore
+   * เพื่อให้หน้า RouteHistoryPet อัปเดตตาม EditPet แบบ realtime
    */
+  useEffect(() => {
+    if (!auth.currentUser || !petId) return;
+    const uid = auth.currentUser.uid;
+
+    const petRef = doc(db, "users", uid, "pets", petId);
+
+    return onSnapshot(
+      petRef,
+      (snap) => {
+        if (!snap.exists()) {
+          setPetProfile(null);
+          return;
+        }
+
+        const data = snap.data() as Omit<PetProfile, "id">;
+        setPetProfile({
+          id: snap.id,
+          ...data,
+        });
+      },
+      (error) => {
+        console.warn("โหลดข้อมูลสัตว์เลี้ยงไม่สำเร็จ:", error);
+      }
+    );
+  }, [petId]);
+
   useEffect(() => {
     if (!auth.currentUser || !petId) return;
     const uid = auth.currentUser.uid;
@@ -311,11 +356,6 @@ export default function RouteHistoryPet() {
     });
   }, [notifyMapsRecordingEnded, petId]);
 
-  /**
-   * ✅ โหลด routeHistories เฉพาะ petId นี้
-   * ✅ ตัด orderBy ใน query ออก เพื่อไม่ต้องสร้าง composite index
-   * แล้วค่อย sort ในแอปแทน
-   */
   useEffect(() => {
     if (!auth.currentUser || !petId) return;
     const uid = auth.currentUser.uid;
@@ -333,10 +373,6 @@ export default function RouteHistoryPet() {
     });
   }, [petId]);
 
-  /**
-   * ✅ ดึง "เวลาจริงเริ่ม/จบ" จาก subcollection points
-   * - ใช้ timestampMs orderBy (ให้เข้ากับอีกหน้า)
-   */
   useEffect(() => {
     if (!auth.currentUser || !petId) return;
     const uid = auth.currentUser.uid;
@@ -347,7 +383,6 @@ export default function RouteHistoryPet() {
       for (const r of routes) {
         if (!r?.id) continue;
 
-        // ถ้ามีเวลาจริงในเอกสารแล้ว ก็ข้าม
         const hasRouteStart = !!(r.startedAtIso || toIso(r.startedAt));
         const hasRouteEnd = !!(r.endedAtIso || toIso(r.endedAt));
         if (hasRouteStart && hasRouteEnd) continue;
@@ -388,7 +423,6 @@ export default function RouteHistoryPet() {
     };
   }, [routes, realTimes, petId]);
 
-  // ✅ ใช้วันของ route: startedAt จริง > points start > from
   const getRouteDayIso = useCallback(
     (r: RouteHistory) => {
       const routeStart = r.startedAtIso || toIso(r.startedAt) || null;
@@ -398,7 +432,6 @@ export default function RouteHistoryPet() {
     [realTimes]
   );
 
-  // ✅ map: dateId -> routes
   const routesByDateId = useMemo(() => {
     const map = new Map<string, RouteHistory[]>();
     for (const r of routes) {
@@ -416,7 +449,6 @@ export default function RouteHistoryPet() {
     return map;
   }, [routes, getRouteDayIso]);
 
-  // ✅ markedDates: วันไหนมีบันทึกจะมีจุด + วันเลือกจะถูก highlight
   const markedDates = useMemo(() => {
     const obj: any = {};
     for (const dateId of routesByDateId.keys()) {
@@ -433,13 +465,11 @@ export default function RouteHistoryPet() {
     return obj;
   }, [routesByDateId, selectedDateId]);
 
-  // ✅ routes ที่จะโชว์ (เลือกวัน = filter)
   const visibleRoutes = useMemo(() => {
     if (!selectedDateId) return routes;
     return routesByDateId.get(selectedDateId) ?? [];
   }, [routes, routesByDateId, selectedDateId]);
 
-  // ✅ group by วัน (จาก visibleRoutes)
   const sections: SectionListData<RouteHistory>[] = useMemo(() => {
     const map = new Map<string, RouteHistory[]>();
 
@@ -509,11 +539,14 @@ export default function RouteHistoryPet() {
     const status = getStatus(item);
     const statusText = status === "recording" ? "กำลังบันทึก" : "เสร็จสิ้นแล้ว";
 
-    // ✅ เลือกเวลา “จริง” สำหรับการ์ด
     const startIso = item.startedAtIso || toIso(item.startedAt) || rt?.startIso || item.from || "";
     const endIso = item.endedAtIso || toIso(item.endedAt) || rt?.endIso || item.to || "";
 
     const timeText = startIso && endIso ? formatTimeRange(startIso, endIso) : formatTimeRange(item.from, item.to);
+
+    // ✅ ใช้ข้อมูลล่าสุดจาก pet document ก่อน
+    const displayPetName = petProfile?.name || item.petName || "-";
+    const displayPhoto = petProfile?.photoURL || item.photoURL || "";
 
     return (
       <Pressable
@@ -526,13 +559,20 @@ export default function RouteHistoryPet() {
 
           router.push({
             pathname: "/(modals)/RouteHistory",
-            params: { routeId: item.id, route: JSON.stringify(item) },
+            params: {
+              routeId: item.id,
+              route: JSON.stringify({
+                ...item,
+                petName: displayPetName,
+                photoURL: displayPhoto,
+              }),
+            },
           });
         }}
       >
         <View>
-          {item.photoURL ? (
-            <Image source={{ uri: item.photoURL }} style={styles.avatar} />
+          {displayPhoto ? (
+            <Image source={{ uri: displayPhoto }} style={styles.avatar} />
           ) : (
             <View style={styles.placeholder}>
               <MaterialIcons name="pets" size={28} color="#9CA3AF" />
@@ -543,7 +583,7 @@ export default function RouteHistoryPet() {
         <View style={styles.info}>
           <View style={styles.topRow}>
             <Text style={styles.name} numberOfLines={1}>
-              {item.petName ?? "-"}
+              {displayPetName}
             </Text>
 
             <TouchableOpacity
@@ -561,7 +601,12 @@ export default function RouteHistoryPet() {
               style={[styles.statusPill, status === "recording" ? styles.statusRecording : styles.statusDone]}
               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             >
-              <Text style={[styles.statusText, status === "recording" ? styles.statusTextRecording : styles.statusTextDone]}>
+              <Text
+                style={[
+                  styles.statusText,
+                  status === "recording" ? styles.statusTextRecording : styles.statusTextDone,
+                ]}
+              >
                 {statusText}
               </Text>
             </TouchableOpacity>
@@ -581,16 +626,27 @@ export default function RouteHistoryPet() {
 
   const renderHiddenItem = ({ item }: { item: RouteHistory }, rowMap: { [key: string]: any }) => (
     <View style={styles.hiddenContainer}>
-      <TouchableOpacity style={styles.deleteButton} onPress={() => confirmDelete(rowMap, item.id, item.id, item.petName)}>
+      <TouchableOpacity
+        style={styles.deleteButton}
+        onPress={() =>
+          confirmDelete(
+            rowMap,
+            item.id,
+            item.id,
+            petProfile?.name || item.petName || "สัตว์เลี้ยง"
+          )
+        }
+      >
         <FontAwesome6 name="trash" size={18} color="#fff" />
       </TouchableOpacity>
     </View>
   );
 
   const onDayPress = useCallback((d: DateData) => {
-    // toggle: แตะซ้ำ = ยกเลิก filter
     setSelectedDateId((prev) => (prev === d.dateString ? null : d.dateString));
   }, []);
+
+  const headerName = petProfile?.name || fallbackHeaderName;
 
   return (
     <>
@@ -601,7 +657,6 @@ export default function RouteHistoryPet() {
             <Ionicons name="chevron-back" size={28} color="#000" />
           </TouchableOpacity>
         }
-        // ✅ ล้างตัวกรองแบบ icon เมื่อเลือกวันอยู่
         right={
           selectedDateId ? (
             <TouchableOpacity onPress={() => setSelectedDateId(null)} style={{ paddingHorizontal: 0, paddingVertical: 4 }}>
@@ -618,7 +673,6 @@ export default function RouteHistoryPet() {
         </View>
       ) : (
         <>
-          {/* ✅ Calendar (แบบเดียวกับ RouteHistoryList) */}
           <View style={styles.calendarWrap}>
             <Calendar
               onDayPress={onDayPress}
@@ -635,7 +689,6 @@ export default function RouteHistoryPet() {
             />
           </View>
 
-          {/* ✅ List */}
           {routes.length === 0 ? (
             <View style={styles.emptyContainer}>
               <FontAwesome6 name="route" size={88} color="lightgray" />
@@ -669,119 +722,3 @@ export default function RouteHistoryPet() {
     </>
   );
 }
-
-const styles = StyleSheet.create({
-  // ✅ ปฏิทิน (เหมือนหน้า RouteHistoryList)
-  calendarWrap: {
-    paddingHorizontal: 16,
-    paddingTop: 4,
-    marginTop: 10,
-  },
-  calendar: {
-    borderRadius: 14,
-    overflow: "hidden",
-    paddingBottom: 20,
-  },
-
-  emptyContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    paddingBottom: 90,
-  },
-  emptyText: {
-    marginTop: 12,
-    fontSize: 16,
-    color: "#888",
-    fontWeight: "600",
-    textAlign: "center",
-  },
-
-  sectionHeader: {
-    paddingTop: 8,
-    paddingBottom: 10,
-  },
-  sectionHeaderText: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#0F172A",
-  },
-
-  card: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#FEFEFE",
-    padding: 12,
-    borderRadius: 14,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: "#F1F5F9",
-  },
-
-  avatar: { width: 60, height: 60, borderRadius: 30 },
-  placeholder: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: "#E5E7EB",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  info: { flex: 1, marginLeft: 12 },
-
-  topRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 10,
-    marginBottom: 4,
-  },
-
-  name: {
-    flex: 1,
-    fontSize: 16,
-    fontWeight: "800",
-    color: "#111827",
-  },
-
-  statusPill: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 999,
-  },
-  statusDone: { backgroundColor: "#E8F7EE" },
-  statusRecording: { backgroundColor: "#EAFEFF" },
-
-  statusText: { fontSize: 12.5, fontWeight: "900" },
-  statusTextDone: { color: "#166534" },
-  statusTextRecording: { color: "#126D9A" },
-
-  range: {
-    fontSize: 13.5,
-    color: "#6B7280",
-    fontWeight: "600",
-    lineHeight: 18,
-  },
-
-  chevronWrap: { paddingLeft: 8 },
-
-  hiddenContainer: {
-    flex: 1,
-    flexDirection: "row",
-    justifyContent: "flex-end",
-    alignItems: "center",
-    marginBottom: 12,
-    borderRadius: 14,
-    paddingRight: 16,
-  },
-
-  deleteButton: {
-    width: 75,
-    height: "100%",
-    backgroundColor: "#C21F04",
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: 14,
-  },
-});

@@ -24,7 +24,6 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useFocusEffect } from "@react-navigation/native";
 import { auth, db, rtdb } from "../../firebase/firebase";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
-import { ref as dbRef, push } from "firebase/database";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { DEVICE_TYPES } from "../../assets/constants/deviceData";
 import DateTimePicker from "@react-native-community/datetimepicker";
@@ -38,13 +37,14 @@ import {
   updateDoc,
   setDoc,
 } from "firebase/firestore";
+import { ref, set, get } from "firebase/database";
 import { pushAlertAndLog } from "@/utils/alertService";
+import { styles } from "@/assets/styles/maps.styles";
 
-/* ================= CONFIG ================= */
 const BACKEND_URL = "http://192.168.31.136:3000";
 const MIN_MOVE_DISTANCE = 3;
 
-/* ✅ storage keys */
+/* storage keys */
 const ROUTE_FILTER_STORAGE_KEY = "routeFilter_v1";
 const ACTIVE_GEOFENCE_STORAGE_KEY = "activeGeofence_v1";
 const ROUTE_RECORDING_ENDED_EVENT = "routeRecordingEnded";
@@ -150,11 +150,14 @@ export default function MapTracker() {
   const outsideSinceRef = useRef<number | null>(null);
   const insideSinceRef = useRef<number | null>(null);
 
+  const getDevicesStorageKey = (uid: string) => `devices_${uid}`;
+  const getActiveDeviceStorageKey = (uid: string) => `activeDevice_${uid}`;
+
   /* ================= RECORDING ================= */
   const [isRecording, setIsRecording] = useState(false);
   const [recordId, setRecordId] = useState<string | null>(null);
 
-  // ✅ Callout recording UI state
+  // Callout recording UI state
   const [calloutRecordingInfo, setCalloutRecordingInfo] = useState<{
     savedAtIso: string;
     fromIso: string;
@@ -252,45 +255,64 @@ export default function MapTracker() {
   }
 
   const sendGeofenceAlert = useCallback(
-    async (type: "exit" | "enter", distance: number) => {
-      if (!deviceCode) return;
+  async (type: "exit" | "enter", distance: number) => {
+    if (!deviceCode) return;
 
-      const now = new Date();
-      const atUtc = now.toISOString();
-      const atMs = now.getTime();
-      const atTh = now.toLocaleString("th-TH", { dateStyle: "long", timeStyle: "medium" });
+    const now = new Date();
+    const atUtc = now.toISOString();
+    const atMs = now.getTime();
+    const atTh = now.toLocaleString("th-TH", {
+      dateStyle: "long",
+      timeStyle: "medium",
+    });
 
-      const message =
-        type === "exit"
-          ? `สัตว์เลี้ยงออกนอกพื้นที่ (${Math.round(distance)} ม.)`
-          : `สัตว์เลี้ยงกลับเข้าพื้นที่`;
+    const ownerUid = auth.currentUser?.uid ?? null;
 
-      // ✅ 1) เขียน RTDB ทั้ง alerts + logs (และผูกสัตว์ไว้กับ alert)
-      const rid = recordingCtxRef.current?.recordId ?? recordId ?? null;
+    const message =
+      type === "exit"
+        ? `สัตว์เลี้ยงออกนอกพื้นที่ (${Math.round(distance)} ม.)`
+        : `สัตว์เลี้ยงกลับเข้าพื้นที่`;
 
-      await pushAlertAndLog({
-        deviceId: deviceCode,
+    // route id ของการบันทึกปัจจุบัน
+    const rid = recordingCtxRef.current?.recordId ?? recordId ?? null;
+
+    // เขียน RTDB alerts + logs
+    await pushAlertAndLog({
+      deviceId: deviceCode,
+      type,
+      message,
+      radiusKm: geofenceRadius / 1000,
+      atUtc,
+      atTh,
+      petId: petId ?? null,
+      petName: petName ?? null,
+      photoURL: petPhotoURL ?? null,
+      routeId: rid,
+      ownerUid,
+    });
+
+    try {
+      if (!auth.currentUser) return;
+      const uid = auth.currentUser.uid;
+
+      await addDoc(collection(db, "users", uid, "alerts"), {
         type,
-        message, // จะส่งหรือไม่ส่งก็ได้
-        radiusKm: geofenceRadius / 1000,
-        atUtc,
-        atTh,
-
+        kind: "GEOFENCE",
+        message,
+        deviceCode,
         petId: petId ?? null,
         petName: petName ?? null,
-        photoURL: petPhotoURL ?? null,
-
-        routeId: rid, // กดแล้วไป RouteHistory ได้
+        routeId: rid,
+        atIso: atUtc,
+        atMs,
+        lat: petLocation?.latitude ?? null,
+        lng: petLocation?.longitude ?? null,
+        createdAt: serverTimestamp(),
+        read: false,
       });
 
-      // ✅ 2) ส่วน Firestore ของคุณ (เก็บต่อได้เหมือนเดิม)
-      try {
-        if (!auth.currentUser) return;
-        const uid = auth.currentUser.uid;
-
-        const rid = recordingCtxRef.current?.recordId ?? recordId ?? null;
-
-        await addDoc(collection(db, "users", uid, "alerts"), {
+      if (rid) {
+        await addDoc(collection(db, "users", uid, "routeHistories", rid, "alerts"), {
           type,
           kind: "GEOFENCE",
           message,
@@ -303,27 +325,12 @@ export default function MapTracker() {
           lat: petLocation?.latitude ?? null,
           lng: petLocation?.longitude ?? null,
           createdAt: serverTimestamp(),
-          read: false,
         });
-
-        if (rid) {
-          await addDoc(collection(db, "users", uid, "routeHistories", rid, "alerts"), {
-            type,
-            kind: "GEOFENCE",
-            message,
-            deviceCode,
-            petId: petId ?? null,
-            atIso: atUtc,
-            atMs,
-            lat: petLocation?.latitude ?? null,
-            lng: petLocation?.longitude ?? null,
-            createdAt: serverTimestamp(),
-          });
-        }
-      } catch { }
-    },
-    [deviceCode, geofenceRadius, petId, petName, petLocation, recordId]
-  );
+      }
+    } catch {}
+  },
+  [deviceCode, geofenceRadius, petId, petName, petPhotoURL, petLocation, recordId]
+);
 
   /* ================= FORMAT ================= */
   const formatThaiDate = (iso: string) =>
@@ -423,7 +430,7 @@ export default function MapTracker() {
       setLocation(current);
       setPetLocation(current);
 
-      // ===== FILTER JITTER (✅ show path when moved >= 3m) =====
+      // ===== FILTER JITTER (show path when moved >= 3m) =====
       const tsMs = Date.parse(timestamp) || Date.now();
       const acc = Number(current.accuracy ?? 999);
 
@@ -431,7 +438,7 @@ export default function MapTracker() {
       if (acc > MAX_ACCEPT_ACCURACY) return true;
 
       const prev = lastAcceptedRef.current;
-      const minMove = MIN_MOVE_DISTANCE; // ✅ fix threshold = 3m ตามที่ต้องการ
+      const minMove = MIN_MOVE_DISTANCE; // fix threshold = 3m ตามที่ต้องการ
 
       if (prev) {
         const dt = Math.max(1, (tsMs - prev.tsMs) / 1000);
@@ -441,14 +448,14 @@ export default function MapTracker() {
         // กัน teleport / ค่าโดดผิดปกติ
         if (speed > MAX_PLAUSIBLE_SPEED) return true;
 
-        // ✅ เดินเกิน 3 เมตรค่อยรับเข้าเส้นทาง
+        // เดินเกิน 3 เมตรค่อยรับเข้าเส้นทาง
         if (dist < minMove) return true;
       }
 
       lastAcceptedRef.current = { lat: current.latitude, lng: current.longitude, tsMs };
 
       const p: TrackPoint = { latitude: current.latitude, longitude: current.longitude, timestamp };
-      appendPoint(p, minMove); // ✅ ใช้ 3m ตรง ๆ
+      appendPoint(p, minMove); 
 
       if (activeGeofence && activeGeofence.length >= 3) {
         const inside = isPointInPolygon(
@@ -466,15 +473,15 @@ export default function MapTracker() {
           // กลับเข้าเขต -> เคลียร์ outside timer
           outsideSinceRef.current = null;
 
-          // ✅ เคยแจ้ง exit ไปแล้ว (exitArmedRef=false) แปลว่ากำลังกลับเข้าพื้นที่
+          // เคยแจ้ง exit ไปแล้ว (exitArmedRef=false) แปลว่ากำลังกลับเข้าพื้นที่
           // รอเข้าเขต "ต่อเนื่อง" 8 วิ แล้วค่อยยิง enter 1 ครั้ง
           if (!exitArmedRef.current) {
             if (!insideSinceRef.current) insideSinceRef.current = nowMs;
 
             if (nowMs - insideSinceRef.current >= GEOFENCE_REARM_CONFIRM_MS) {
-              void sendGeofenceAlert("enter", 0); // ✅ เพิ่มบรรทัดนี้
+              void sendGeofenceAlert("enter", 0); 
 
-              exitArmedRef.current = true; // re-arm
+              exitArmedRef.current = true; 
               insideSinceRef.current = null;
             }
           } else {
@@ -534,7 +541,7 @@ export default function MapTracker() {
     }, 5000);
 
     return () => clearInterval(timer);
-  }, [isTracking, isRecording]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isTracking, isRecording]); 
 
   /* ================= RECORDING CONTROL ================= */
   const stopRecording = async (finalStatus: "completed" | "cancelled") => {
@@ -667,32 +674,70 @@ export default function MapTracker() {
     setIsInsideGeofence(null);
   };
 
-  /* ================= LOAD PET MATCH ================= */
-  useEffect(() => {
-    if (!auth.currentUser || !deviceCode) {
-      setPetName(null);
-      setPetPhotoURL(null);
-      setPetId(null);
-      return;
-    }
+  /* ================= LOAD PET MATCH (LATEST PET DATA) ================= */
+useEffect(() => {
+  if (!auth.currentUser || !deviceCode) {
+    setPetName(null);
+    setPetPhotoURL(null);
+    setPetId(null);
+    return;
+  }
 
-    const ref = doc(db, "users", auth.currentUser.uid, "deviceMatches", deviceCode);
-    return onSnapshot(ref, (snap) => {
-      if (!snap.exists()) {
+  const uid = auth.currentUser.uid;
+  let unsubPet: null | (() => void) = null;
+
+  const unsubMatch = onSnapshot(
+    doc(db, "users", uid, "deviceMatches", deviceCode),
+    (matchSnap) => {
+      if (unsubPet) {
+        unsubPet();
+        unsubPet = null;
+      }
+
+      if (!matchSnap.exists()) {
         setPetName(null);
         setPetPhotoURL(null);
         setPetId(null);
         return;
       }
-      const data: any = snap.data();
-      setPetName(data.petName ?? null);
-      setPetPhotoURL(data.photoURL ?? null);
-      setPetId(data.petId ?? null);
 
-      setPetMarkerKey((k) => k + 1);
-      setMarkerReady(false);
-    });
-  }, [deviceCode]);
+      const matchData: any = matchSnap.data();
+      const matchedPetId = matchData.petId ?? null;
+
+      setPetId(matchedPetId);
+
+      if (!matchedPetId) {
+        setPetName(matchData.petName ?? null);
+        setPetPhotoURL(matchData.photoURL ?? null);
+        setPetMarkerKey((k) => k + 1);
+        setMarkerReady(false);
+        return;
+      }
+
+      unsubPet = onSnapshot(
+        doc(db, "users", uid, "pets", matchedPetId),
+        (petSnap) => {
+          if (!petSnap.exists()) {
+            setPetName(matchData.petName ?? null);
+            setPetPhotoURL(matchData.photoURL ?? null);
+          } else {
+            const petData: any = petSnap.data();
+            setPetName(petData.name ?? matchData.petName ?? null);
+            setPetPhotoURL(petData.photoURL ?? null);
+          }
+
+          setPetMarkerKey((k) => k + 1);
+          setMarkerReady(false);
+        }
+      );
+    }
+  );
+
+  return () => {
+    if (unsubPet) unsubPet();
+    unsubMatch();
+  };
+}, [deviceCode]);
 
   /* ================= LOAD GEOFENCE (stored only) ================= */
   useEffect(() => {
@@ -716,7 +761,7 @@ export default function MapTracker() {
     });
   }, [deviceCode]);
 
-  /* ✅ load previously saved filter (time) */
+  /* load previously saved filter (time) */
   useEffect(() => {
     const loadFilter = async () => {
       try {
@@ -733,7 +778,7 @@ export default function MapTracker() {
     void loadFilter();
   }, []);
 
-  /* ✅ load active geofence (ค้างไว้) */
+  /* load active geofence (ค้างไว้) */
   useEffect(() => {
     const loadActiveGeo = async () => {
       try {
@@ -802,7 +847,7 @@ export default function MapTracker() {
     setStoredGeofence(null);
     setActiveGeofence(null);
     setActiveGeofenceUntil(null);
-  }, [deviceCode]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [deviceCode]);
 
   /* ================= CLEANUP TIMERS ON UNMOUNT ================= */
   useEffect(() => {
@@ -830,7 +875,7 @@ export default function MapTracker() {
       (payload?: { routeId?: string; deviceCode?: string | null }) => {
         if (payload?.deviceCode && deviceCode && payload.deviceCode !== deviceCode) return;
 
-        // ✅ reset สถานะกำลังติดตาม/กำลังบันทึกทั้งหมด
+        // reset สถานะกำลังติดตาม/กำลังบันทึกทั้งหมด
         void resetAfterRecordingEnd();
 
         petMarkerRef.current?.hideCallout?.();
@@ -857,37 +902,49 @@ export default function MapTracker() {
 
   /* ================= LOAD ACTIVE DEVICE ================= */
   useFocusEffect(
-    useCallback(() => {
-      const load = async () => {
-        const active = await AsyncStorage.getItem("activeDevice");
-        if (!active) {
-          setDeviceCode(null);
-          setDeviceName("GPS Tracker");
+  useCallback(() => {
+    const load = async () => {
+      const uid = auth.currentUser?.uid;
+      if (!uid) return; 
 
-          setIsTracking(false);
-          setLocation(null);
-          setPetLocation(null);
-          setRawPath([]);
-          setDisplayPath([]);
-          setAccumulatedDistance(0);
-          return;
-        }
+      const activeDeviceKey = getActiveDeviceStorageKey(uid);
+      const devicesKey = getDevicesStorageKey(uid);
 
-        setDeviceCode(active);
+      const active = await AsyncStorage.getItem(activeDeviceKey);
+      const stored = await AsyncStorage.getItem(devicesKey);
+      const list: Device[] = stored ? JSON.parse(stored) : [];
 
-        const stored = await AsyncStorage.getItem("devices");
-        const list: Device[] = stored ? JSON.parse(stored) : [];
-        const device = list.find((d) => d.code === active);
+      if (!Array.isArray(list) || list.length === 0) {
+        setDeviceCode(null);
+        setDeviceName("GPS Tracker");
+        return;
+      }
 
-        if (device?.type && DEVICE_TYPES[device.type]) setDeviceName(DEVICE_TYPES[device.type].name);
-        else setDeviceName("GPS Tracker");
+      let device = list.find((d) => d.code === active);
 
-        setIsTracking(false);
-      };
+      if (!device) {
+        device = list[0];
+        await AsyncStorage.setItem(activeDeviceKey, device.code);
+      }
 
+      setDeviceCode(device.code);
+
+      if (device?.type && DEVICE_TYPES[device.type]) {
+        setDeviceName(DEVICE_TYPES[device.type].name);
+      } else {
+        setDeviceName("GPS Tracker");
+      }
+    };
+
+    void load();
+
+    const sub = DeviceEventEmitter.addListener("activeDeviceChanged", () => {
       void load();
-    }, [])
-  );
+    });
+
+    return () => sub.remove();
+  }, [])
+);
 
   useEffect(() => {
     if (geofencePoints.length >= 2) setGeofencePath([...geofencePoints]);
@@ -921,10 +978,23 @@ export default function MapTracker() {
 
   /* ================= ADD DEVICE ================= */
   const confirmAddDevice = async () => {
-    const code = tempCode.trim().toUpperCase();
-    if (!code) return;
+  try {
+    const uid = auth.currentUser?.uid;
+    if (!uid) {
+      Alert.alert("ยังไม่ได้เข้าสู่ระบบ", "กรุณาเข้าสู่ระบบก่อน");
+      return;
+    }
 
-    const stored = await AsyncStorage.getItem("devices");
+    const code = tempCode.trim().toUpperCase();
+    if (!code) {
+      Alert.alert("กรุณากรอกรหัสอุปกรณ์");
+      return;
+    }
+
+    const devicesKey = getDevicesStorageKey(uid);
+    const activeDeviceKey = getActiveDeviceStorageKey(uid);
+
+    const stored = await AsyncStorage.getItem(devicesKey);
     const list: Device[] = stored ? JSON.parse(stored) : [];
 
     if (list.some((d) => d.code === code)) {
@@ -932,20 +1002,29 @@ export default function MapTracker() {
       return;
     }
 
+    // 1) เช็กว่า API ใช้งานได้
     const ok = await fetchLocation(code);
     if (!ok) return;
 
-    const newDevice = {
+    // 2) เพิ่มอุปกรณ์ลง local ก่อน
+    const newDevice: Device = {
+      id: code,
       code,
       type: "GPS_TRACKER_A7670",
+      name: "LilyGo A7670E",
       createdAt: new Date().toISOString(),
     };
 
     const updated = [...list, newDevice];
-    await AsyncStorage.setItem("devices", JSON.stringify(updated));
-    await AsyncStorage.setItem("activeDevice", code);
 
+    await AsyncStorage.setItem(devicesKey, JSON.stringify(updated));
+    await AsyncStorage.setItem(activeDeviceKey, code);
+
+    // 3) อัปเดต state ของหน้าปัจจุบัน
     setDeviceCode(code);
+
+    const deviceInfo = DEVICE_TYPES[newDevice.type || "GPS_TRACKER_A7670"];
+    setDeviceName(deviceInfo?.name ?? "GPS Tracker");
 
     lastAcceptedRef.current = null;
     prevInsideRef.current = null;
@@ -955,8 +1034,32 @@ export default function MapTracker() {
     setIsTracking(true);
     setModalVisible(false);
     setTempCode("");
-  };
 
+    // 4) แจ้งหน้าอื่นให้ reload
+    DeviceEventEmitter.emit("devicesChanged");
+    DeviceEventEmitter.emit("activeDeviceChanged", { code });
+
+    // 5) ถ้าจะเก็บ ownerUid ค่อยทำทีหลังแบบไม่ทำให้การเพิ่มล้ม
+    try {
+      const ownerRef = ref(rtdb, `devices/${code}/ownerUid`);
+      const ownerSnap = await get(ownerRef);
+
+      if (ownerSnap.exists()) {
+        const ownerUid = ownerSnap.val();
+        if (ownerUid !== uid) {
+          console.log("ownerUid belongs to another user");
+        }
+      } else {
+        await set(ownerRef, uid);
+      }
+    } catch (e) {
+      console.log("ownerUid warning:", e);
+    }
+  } catch (e) {
+    console.log("confirmAddDevice error:", e);
+    Alert.alert("เกิดข้อผิดพลาด", "ไม่สามารถเพิ่มอุปกรณ์ได้");
+  }
+};
   /* ================= GEOFENCE ACTIONS ================= */
   const cancelGeofence = () => {
     if (geofencePoints.length > 0) {
@@ -1045,11 +1148,11 @@ export default function MapTracker() {
   const getTodayRange = () => {
     const now = new Date();
 
-    // ✅ start = เวลาปัจจุบัน (ปัดวินาที/มิลลิวินาทีทิ้ง)
+    // start = เวลาปัจจุบัน (ปัดวินาที/มิลลิวินาทีทิ้ง)
     const start = new Date(now);
     start.setSeconds(0, 0);
 
-    // ✅ end = 23:59 ของวันนี้
+    // end = 23:59 ของวันนี้
     const end = new Date(now);
     end.setHours(23, 59, 0, 0);
 
@@ -1213,7 +1316,7 @@ export default function MapTracker() {
   return (
     <View style={styles.container}>
       <MapView ref={mapRef} style={StyleSheet.absoluteFill} initialRegion={initialRegion} onPress={onMapPress}>
-        {/* ✅ แสดงเฉพาะ active geofence (ไม่ใช่ stored) */}
+        {/* แสดงเฉพาะ active geofence (ไม่ใช่ stored) */}
         {activeGeofence && activeGeofence.length >= 3 && (
           <Polygon
             coordinates={activeGeofence}
@@ -1268,7 +1371,7 @@ export default function MapTracker() {
               </View>
             ) : (
               <View style={styles.pawMarker} onLayout={() => setMarkerReady(true)}>
-                <MaterialIcons name="pets" size={26} color="#7A4A00" />
+                <MaterialIcons name="settings-remote" size={26} color="#7A4A00" />
               </View>
             )}
 
@@ -1278,7 +1381,7 @@ export default function MapTracker() {
 
                 <View style={styles.calloutCard}>
                   <View style={styles.cardHeader}>
-                    <Text style={styles.cardTitle}>{petName ?? "สัตว์เลี้ยง"}</Text>
+                    <Text style={styles.cardTitle}>{petName ?? "อุปกรณ์"}</Text>
                     <View style={styles.badge}>
                       <Text style={styles.badgeText}>{deviceName}</Text>
                     </View>
@@ -1602,497 +1705,3 @@ export default function MapTracker() {
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1 },
-
-  petMarker: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: "#F4C430",
-    justifyContent: "center",
-    alignItems: "center",
-    borderWidth: 3,
-    borderColor: "#fff",
-  },
-  petImage: { width: 46, height: 46, borderRadius: 23 },
-  pawMarker: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: "#F5E6C8",
-    justifyContent: "center",
-    alignItems: "center",
-    borderWidth: 3,
-    borderColor: "#fff",
-  },
-
-  fab: {
-    position: "absolute",
-    bottom: 90,
-    right: 20,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  addFab: {
-    position: "absolute",
-    bottom: 160,
-    right: 20,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: "#905b0d",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  geofenceFab: {
-    position: "absolute",
-    bottom: 230,
-    right: 20,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: "#c62828",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-
-  geofencePanel: {
-    position: "absolute",
-    bottom: 90,
-    left: 20,
-    right: 20,
-    backgroundColor: "#fff",
-    padding: 16,
-    borderRadius: 16,
-    elevation: 12,
-  },
-  geofenceTitle: {
-    fontSize: 16,
-    fontWeight: "700",
-    marginBottom: 8,
-  },
-
-  geofenceActionRow: {
-    flexDirection: "row",
-    gap: 10,
-    marginTop: 14,
-  },
-
-  geofenceBtn: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 10,
-    alignItems: "center",
-  },
-
-  geofenceCancelBtn: {
-    backgroundColor: "#E5E7EB",
-  },
-
-  geofenceConfirmBtn: {
-    backgroundColor: "#905b0dff",
-  },
-
-  geofenceCancelText: {
-    color: "#374151",
-    fontWeight: "600",
-  },
-
-  geofenceConfirmText: {
-    color: "#fff",
-    fontWeight: "600",
-  },
-
-  confirmBtn: {
-    marginTop: 12,
-    backgroundColor: "#1a73e8",
-    padding: 12,
-    borderRadius: 8,
-    alignItems: "center",
-  },
-
-  calloutWrapper: {
-    alignItems: "center",
-  },
-
-  calloutHandle: {
-    width: 48,
-    height: 5,
-    borderRadius: 3,
-    backgroundColor: "#e0e0e0",
-    marginBottom: 8,
-  },
-  calloutCard: {
-    backgroundColor: "#fff",
-    borderRadius: 18,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    minWidth: 280,
-    elevation: 6,
-  },
-  cardHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-  },
-  cardTitle: {
-    fontSize: 16,
-    fontWeight: "700",
-  },
-  badge: {
-    backgroundColor: "#e8f0fe",
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 999,
-  },
-  badgeText: {
-    color: "#1a73e8",
-    fontSize: 12,
-    fontWeight: "600",
-  },
-  divider: {
-    height: 1,
-    backgroundColor: "#eee",
-    marginVertical: 10,
-  },
-  row: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginTop: 6,
-  },
-  icon: {
-    fontSize: 16,
-    marginRight: 8,
-  },
-  text: {
-    fontSize: 14.5,
-    color: "#333",
-  },
-  monoText: {
-    fontSize: 14,
-    color: "#444",
-    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
-  },
-  boldText: {
-    fontSize: 15,
-    fontWeight: "700",
-    color: "#111",
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.5)",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  modalBox: {
-    width: "80%",
-    backgroundColor: "#fff",
-    padding: 20,
-    borderRadius: 12,
-  },
-  modalTitle: {
-    fontSize: 18,
-    marginBottom: 12,
-    textAlign: "center",
-    fontWeight: "600",
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: "#ccc",
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 12,
-  },
-  modalRow: { flexDirection: "row", gap: 10 },
-  submitBtn: {
-    flex: 1,
-    backgroundColor: "#905b0d",
-    padding: 14,
-    borderRadius: 8,
-    alignItems: "center",
-  },
-  submitText: { color: "#fff", fontSize: 16 },
-
-  geoBottomSheet: {
-    position: "absolute",
-    left: 16,
-    right: 16,
-    backgroundColor: "#fff",
-    borderRadius: 18,
-    padding: 16,
-    paddingVertical: 20,
-    elevation: 12,
-    shadowColor: "#000",
-    shadowOpacity: 0.15,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 4 },
-  },
-
-  geoTitle: {
-    fontSize: 16,
-    fontWeight: "700",
-    marginBottom: 2,
-    textAlign: "center",
-  },
-
-  geoActionRow: {
-    flexDirection: "row",
-    gap: 10,
-  },
-
-  geoBtn: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 12,
-    alignItems: "center",
-  },
-
-  geoCancel: {
-    backgroundColor: "#E5E7EB",
-  },
-
-  geoSave: {
-    backgroundColor: "#905b0dff",
-  },
-
-  geoUndo: {
-    backgroundColor: "#F3F4F6",
-  },
-
-  geoCancelText: {
-    color: "#374151",
-    fontWeight: "600",
-  },
-
-  geoUndoText: {
-    color: "#111827",
-    fontWeight: "600",
-  },
-
-  geoSaveText: {
-    color: "#fff",
-    fontWeight: "700",
-  },
-
-  topFabContainer: {
-    position: "absolute",
-    right: 16,
-    flexDirection: "column",
-    gap: 12,
-    zIndex: 20,
-  },
-
-  topFab: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    justifyContent: "center",
-    alignItems: "center",
-    elevation: 10,
-    shadowColor: "#000",
-    shadowOpacity: 0.25,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 3 },
-  },
-
-  geoSubtitle: {
-    fontSize: 14,
-    color: "#6B7280",
-    textAlign: "center",
-    marginBottom: 10,
-  },
-  geoSaveDisabled: {
-    backgroundColor: "#AE9367",
-  },
-  geoHint: {
-    fontSize: 12,
-    color: "#DC2626",
-    textAlign: "center",
-    marginTop: 6,
-  },
-  topRightControls: {
-    position: "absolute",
-    right: 16,
-    flexDirection: "column",
-    gap: 12,
-    zIndex: 30,
-  },
-
-  sheetOverlay: {
-    flex: 1,
-    justifyContent: "flex-end",
-    backgroundColor: "rgba(0,0,0,0.35)",
-  },
-
-  sheet: {
-    backgroundColor: "#fff",
-    borderTopLeftRadius: 22,
-    borderTopRightRadius: 22,
-    paddingHorizontal: 18,
-    paddingTop: 10,
-  },
-
-  sheetHandle: {
-    alignSelf: "center",
-    width: 46,
-    height: 5,
-    borderRadius: 999,
-    backgroundColor: "#E5E7EB",
-    marginBottom: 10,
-  },
-
-  sheetTitle: {
-    fontSize: 20,
-    fontWeight: "800",
-    color: "#111827",
-    marginBottom: 10,
-  },
-
-  sheetRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: 14,
-    gap: 12,
-    borderTopWidth: 1,
-    borderTopColor: "#F3F4F6",
-  },
-
-  sheetIcon: {
-    width: 34,
-    height: 34,
-    borderRadius: 10,
-    backgroundColor: "#F9FAFB",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  sheetText: {
-    fontSize: 16,
-    color: "#111827",
-    fontWeight: "700",
-  },
-
-  sheetSubText: {
-    marginTop: 4,
-    fontSize: 12.5,
-    color: "#6B7280",
-    fontWeight: "700",
-  },
-
-  saveFilterBtn: {
-    marginTop: 14,
-    backgroundColor: "#905b0dff",
-    paddingVertical: 14,
-    borderRadius: 14,
-    alignItems: "center",
-  },
-  saveFilterBtnDisabled: {
-    backgroundColor: "#AE9367",
-  },
-  saveFilterText: {
-    fontSize: 16,
-    fontWeight: "900",
-    color: "#ffffff",
-  },
-  saveFilterHint: {
-    marginTop: 8,
-    fontSize: 12.5,
-    color: "#6B7280",
-    fontWeight: "700",
-  },
-
-  presetRow: {
-    flexDirection: "row",
-    gap: 10,
-    marginBottom: 14,
-  },
-
-  presetChip: {
-    flex: 1,
-    paddingVertical: 10,
-    borderRadius: 12,
-    backgroundColor: "#F3F4F6",
-    alignItems: "center",
-  },
-
-  presetChipActive: {
-    backgroundColor: "#ffffff",
-    borderWidth: 1,
-    borderColor: "#905b0d",
-  },
-
-  presetChipText: {
-    fontSize: 14.5,
-    fontWeight: "700",
-    color: "#374151",
-  },
-
-  presetChipTextActive: {
-    color: "#905b0d",
-  },
-
-  timeRow: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    marginBottom: 10,
-  },
-
-  timeLabel: {
-    fontSize: 12,
-    color: "#6B7280",
-    fontWeight: "800",
-    marginBottom: 6,
-  },
-
-  timeBox: {
-    backgroundColor: "#F9FAFB",
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
-    paddingVertical: 14,
-    paddingHorizontal: 14,
-    alignItems: "center",
-  },
-
-  timeValue: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#111827",
-  },
-
-  routeHint: {
-    fontSize: 13,
-    color: "#6B7280",
-    marginBottom: 14,
-    fontWeight: "700",
-  },
-
-  continueBtn: {
-    backgroundColor: "#905b0dff",
-    paddingVertical: 14,
-    borderRadius: 14,
-    alignItems: "center",
-  },
-
-  continueText: {
-    fontSize: 18,
-    fontWeight: "900",
-    color: "#ffffff",
-  },
-  recordingRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginTop: 10,
-    flexWrap: "wrap",
-    gap: 6,
-  },
-  recordingText: {
-    fontSize: 14.5,
-    fontWeight: "600",
-    color: "#008917",
-  },
-});

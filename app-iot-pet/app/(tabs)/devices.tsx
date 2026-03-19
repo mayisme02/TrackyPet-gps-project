@@ -29,6 +29,12 @@ type Device = {
   type?: string;
 };
 
+type Pet = {
+  id: string;
+  name: string;
+  photoURL?: string;
+};
+
 const ACTIVE_DEVICE_CHANGED_EVENT = "activeDeviceChanged";
 const DEVICES_CHANGED_EVENT = "devicesChanged";
 
@@ -40,6 +46,7 @@ export default function Devices() {
 
   const [devices, setDevices] = useState<Device[]>([]);
   const [deviceMatches, setDeviceMatches] = useState<Record<string, any>>({});
+  const [petsMap, setPetsMap] = useState<Record<string, Pet>>({});
 
   const [modalVisible, setModalVisible] = useState(false);
   const [tempCode, setTempCode] = useState("");
@@ -104,29 +111,40 @@ export default function Devices() {
     });
   };
 
+  /* ================= LOAD PETS MAP (LATEST PET DATA) ================= */
+  const subscribePets = () => {
+    if (!auth.currentUser) return;
+    const uid = auth.currentUser.uid;
+
+    return onSnapshot(collection(db, "users", uid, "pets"), (snap) => {
+      const map: Record<string, Pet> = {};
+      snap.docs.forEach((d) => {
+        map[d.id] = {
+          id: d.id,
+          ...(d.data() as any),
+        };
+      });
+      setPetsMap(map);
+    });
+  };
+
   useFocusEffect(
     React.useCallback(() => {
-      loadDevices();
-      const unsub = subscribeMatches();
-      return () => unsub && unsub();
+      void loadDevices();
+      const unsubMatches = subscribeMatches();
+      const unsubPets = subscribePets();
+
+      const sub = DeviceEventEmitter.addListener(DEVICES_CHANGED_EVENT, () => {
+        void loadDevices();
+      });
+
+      return () => {
+        unsubMatches && unsubMatches();
+        unsubPets && unsubPets();
+        sub.remove();
+      };
     }, [])
   );
-
-  useFocusEffect(
-  React.useCallback(() => {
-    void loadDevices();
-    const unsub = subscribeMatches();
-
-    const sub = DeviceEventEmitter.addListener(DEVICES_CHANGED_EVENT, () => {
-      void loadDevices();
-    });
-
-    return () => {
-      unsub && unsub();
-      sub.remove();
-    };
-  }, [])
-);
 
   /* ================= DELETE DEVICE ================= */
   const deleteDevice = (device: Device) => {
@@ -186,73 +204,76 @@ export default function Devices() {
   };
 
   const confirmAddDevice = async () => {
-  try {
-    const uid = auth.currentUser?.uid;
-    if (!uid) {
-      Alert.alert("ยังไม่ได้เข้าสู่ระบบ", "กรุณาเข้าสู่ระบบก่อน");
-      return;
-    }
-
-    const code = tempCode.trim().toUpperCase();
-    if (!code) {
-      Alert.alert("กรุณากรอกรหัสอุปกรณ์");
-      return;
-    }
-
-    const devicesKey = getDevicesStorageKey(uid);
-    const activeDeviceKey = getActiveDeviceStorageKey(uid);
-
-    const stored = await AsyncStorage.getItem(devicesKey);
-    const list: Device[] = stored ? JSON.parse(stored) : [];
-
-    if (list.some((d) => d.code === code)) {
-      Alert.alert("อุปกรณ์ถูกเพิ่มแล้ว");
-      return;
-    }
-
-    const ok = await fetchLocation(code);
-    if (!ok) return;
-
-    const newDevice: Device = {
-      id: code,
-      code,
-      type: "GPS_TRACKER_A7670",
-      name: "LilyGo A7670E",
-      createdAt: new Date().toISOString(),
-    };
-
-    const updated = [...list, newDevice];
-
-    await AsyncStorage.setItem(devicesKey, JSON.stringify(updated));
-    await AsyncStorage.setItem(activeDeviceKey, code);
-
-    setDevices(updated);
-    setModalVisible(false);
-    setTempCode("");
-
-    DeviceEventEmitter.emit(DEVICES_CHANGED_EVENT, { code });
-    DeviceEventEmitter.emit(ACTIVE_DEVICE_CHANGED_EVENT, { code });
-
-    // optional ownerUid
     try {
-      const ownerRef = ref(rtdb, `devices/${code}/ownerUid`);
-      const ownerSnap = await get(ownerRef);
+      const uid = auth.currentUser?.uid;
+      if (!uid) {
+        Alert.alert("ยังไม่ได้เข้าสู่ระบบ", "กรุณาเข้าสู่ระบบก่อน");
+        return;
+      }
 
-      if (!ownerSnap.exists()) {
-        await set(ownerRef, uid);
+      const code = tempCode.trim().toUpperCase();
+      if (!code) {
+        Alert.alert("กรุณากรอกรหัสอุปกรณ์");
+        return;
+      }
+
+      const devicesKey = getDevicesStorageKey(uid);
+      const activeDeviceKey = getActiveDeviceStorageKey(uid);
+
+      const stored = await AsyncStorage.getItem(devicesKey);
+      const list: Device[] = stored ? JSON.parse(stored) : [];
+
+      if (list.some((d) => d.code === code)) {
+        Alert.alert("อุปกรณ์ถูกเพิ่มแล้ว");
+        return;
+      }
+
+      const ok = await fetchLocation(code);
+      if (!ok) return;
+
+      const newDevice: Device = {
+        id: code,
+        code,
+        type: "GPS_TRACKER_A7670",
+        name: "LilyGo A7670E",
+        createdAt: new Date().toISOString(),
+      };
+
+      const updated = [...list, newDevice];
+
+      await AsyncStorage.setItem(devicesKey, JSON.stringify(updated));
+      await AsyncStorage.setItem(activeDeviceKey, code);
+
+      setDevices(updated);
+      setModalVisible(false);
+      setTempCode("");
+
+      DeviceEventEmitter.emit(DEVICES_CHANGED_EVENT, { code });
+      DeviceEventEmitter.emit(ACTIVE_DEVICE_CHANGED_EVENT, { code });
+
+      try {
+        const ownerRef = ref(rtdb, `devices/${code}/ownerUid`);
+        const ownerSnap = await get(ownerRef);
+
+        if (!ownerSnap.exists()) {
+          await set(ownerRef, uid);
+        }
+      } catch (e) {
+        console.log("ownerUid warning:", e);
       }
     } catch (e) {
-      console.log("ownerUid warning:", e);
+      console.log("confirmAddDevice error:", e);
+      Alert.alert("เกิดข้อผิดพลาด", "ไม่สามารถเพิ่มอุปกรณ์ได้");
     }
-  } catch (e) {
-    console.log("confirmAddDevice error:", e);
-    Alert.alert("เกิดข้อผิดพลาด", "ไม่สามารถเพิ่มอุปกรณ์ได้");
-  }
-};
+  };
 
   /* ================= RENDER ITEM ================= */
   const renderItem = ({ item }: { item: Device }) => {
     const match = deviceMatches[item.code];
+    const latestPet = match?.petId ? petsMap[match.petId] : null;
+
+    const displayPetName = latestPet?.name ?? match?.petName ?? null;
+    const displayPhotoURL = latestPet?.photoURL ?? match?.photoURL ?? null;
 
     const deviceType =
       (item.type && DEVICE_TYPES[item.type]) ||
@@ -275,18 +296,24 @@ export default function Devices() {
             <Text style={styles.deviceName}>{item.name}</Text>
 
             {match ? (
-              <TouchableOpacity
-                onPress={(e: any) => {
-                  e?.stopPropagation?.();
-                  deleteDevice(item);
-                }}
-                activeOpacity={0.85}
-              >
-                <View style={styles.disconnectRow}>
-                  <MaterialIcons name="link-off" size={14} color="#DC2626" />
-                  <Text style={styles.disconnectText}>ยกเลิกการเชื่อมต่อ</Text>
-                </View>
-              </TouchableOpacity>
+              <>
+                {!!displayPetName && (
+                  <Text style={styles.connectText}>{displayPetName}</Text>
+                )}
+
+                <TouchableOpacity
+                  onPress={(e: any) => {
+                    e?.stopPropagation?.();
+                    deleteDevice(item);
+                  }}
+                  activeOpacity={0.85}
+                >
+                  <View style={styles.disconnectRow}>
+                    <MaterialIcons name="link-off" size={14} color="#DC2626" />
+                    <Text style={styles.disconnectText}>ยกเลิกการเชื่อมต่อ</Text>
+                  </View>
+                </TouchableOpacity>
+              </>
             ) : (
               <View style={styles.connectRow}>
                 <View style={styles.connectDot} />
@@ -295,8 +322,8 @@ export default function Devices() {
             )}
           </View>
 
-          {match?.photoURL ? (
-            <Image source={{ uri: match.photoURL }} style={styles.petAvatar} />
+          {displayPhotoURL ? (
+            <Image source={{ uri: displayPhotoURL }} style={styles.petAvatar} />
           ) : (
             <View style={styles.emptyAvatar}>
               <MaterialIcons name="pets" size={22} color="#9CA3AF" />

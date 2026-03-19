@@ -673,32 +673,70 @@ export default function MapTracker() {
     setIsInsideGeofence(null);
   };
 
-  /* ================= LOAD PET MATCH ================= */
-  useEffect(() => {
-    if (!auth.currentUser || !deviceCode) {
-      setPetName(null);
-      setPetPhotoURL(null);
-      setPetId(null);
-      return;
-    }
+  /* ================= LOAD PET MATCH (LATEST PET DATA) ================= */
+useEffect(() => {
+  if (!auth.currentUser || !deviceCode) {
+    setPetName(null);
+    setPetPhotoURL(null);
+    setPetId(null);
+    return;
+  }
 
-    const ref = doc(db, "users", auth.currentUser.uid, "deviceMatches", deviceCode);
-    return onSnapshot(ref, (snap) => {
-      if (!snap.exists()) {
+  const uid = auth.currentUser.uid;
+  let unsubPet: null | (() => void) = null;
+
+  const unsubMatch = onSnapshot(
+    doc(db, "users", uid, "deviceMatches", deviceCode),
+    (matchSnap) => {
+      if (unsubPet) {
+        unsubPet();
+        unsubPet = null;
+      }
+
+      if (!matchSnap.exists()) {
         setPetName(null);
         setPetPhotoURL(null);
         setPetId(null);
         return;
       }
-      const data: any = snap.data();
-      setPetName(data.petName ?? null);
-      setPetPhotoURL(data.photoURL ?? null);
-      setPetId(data.petId ?? null);
 
-      setPetMarkerKey((k) => k + 1);
-      setMarkerReady(false);
-    });
-  }, [deviceCode]);
+      const matchData: any = matchSnap.data();
+      const matchedPetId = matchData.petId ?? null;
+
+      setPetId(matchedPetId);
+
+      if (!matchedPetId) {
+        setPetName(matchData.petName ?? null);
+        setPetPhotoURL(matchData.photoURL ?? null);
+        setPetMarkerKey((k) => k + 1);
+        setMarkerReady(false);
+        return;
+      }
+
+      unsubPet = onSnapshot(
+        doc(db, "users", uid, "pets", matchedPetId),
+        (petSnap) => {
+          if (!petSnap.exists()) {
+            setPetName(matchData.petName ?? null);
+            setPetPhotoURL(matchData.photoURL ?? null);
+          } else {
+            const petData: any = petSnap.data();
+            setPetName(petData.name ?? matchData.petName ?? null);
+            setPetPhotoURL(petData.photoURL ?? null);
+          }
+
+          setPetMarkerKey((k) => k + 1);
+          setMarkerReady(false);
+        }
+      );
+    }
+  );
+
+  return () => {
+    if (unsubPet) unsubPet();
+    unsubMatch();
+  };
+}, [deviceCode]);
 
   /* ================= LOAD GEOFENCE (stored only) ================= */
   useEffect(() => {

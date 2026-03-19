@@ -75,16 +75,60 @@ export default function PetMatch() {
     );
   }, []);
 
-  /* ================= LOAD CURRENT MATCH ================= */
-  useEffect(() => {
-    if (!auth.currentUser) return;
-    const uid = auth.currentUser.uid;
+  /* ================= LOAD CURRENT MATCH (LATEST PET DATA) ================= */
+useEffect(() => {
+  if (!auth.currentUser) return;
 
-    return onSnapshot(
-      doc(db, "users", uid, "deviceMatches", parsedDevice.code),
-      (snap) => setCurrentMatch(snap.exists() ? snap.data() : null)
-    );
-  }, [parsedDevice.code]);
+  const uid = auth.currentUser.uid;
+  let unsubPet: null | (() => void) = null;
+
+  const unsubMatch = onSnapshot(
+    doc(db, "users", uid, "deviceMatches", parsedDevice.code),
+    (matchSnap) => {
+      if (unsubPet) {
+        unsubPet();
+        unsubPet = null;
+      }
+
+      if (!matchSnap.exists()) {
+        setCurrentMatch(null);
+        return;
+      }
+
+      const matchData: any = matchSnap.data();
+      const matchedPetId = matchData.petId ?? null;
+
+      if (!matchedPetId) {
+        setCurrentMatch(matchData);
+        return;
+      }
+
+      unsubPet = onSnapshot(
+        doc(db, "users", uid, "pets", matchedPetId),
+        (petSnap) => {
+          if (!petSnap.exists()) {
+            setCurrentMatch(matchData);
+            return;
+          }
+
+          const petData: any = petSnap.data();
+
+          setCurrentMatch({
+            ...matchData,
+            petId: matchedPetId,
+            petName: petData.name ?? matchData.petName ?? null,
+            photoURL: petData.photoURL ?? null,
+          });
+        }
+      );
+    }
+  );
+
+  return () => {
+    if (unsubPet) unsubPet();
+    unsubMatch();
+  };
+}, [parsedDevice.code]);
 
   /* ================= RECORDING LISTENER (ONLY THIS PET) ================= */
   useEffect(() => {

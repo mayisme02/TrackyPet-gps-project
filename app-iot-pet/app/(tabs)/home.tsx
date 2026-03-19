@@ -140,29 +140,66 @@ export default function HomeScreen() {
     });
   };
 
-  /* ================= LOAD MATCHED PET ================= */
-  useEffect(() => {
-    if (!auth.currentUser || !device?.code) {
-      setMatchedPet(null);
-      return;
-    }
+  /* ================= LOAD MATCHED PET (LATEST PET DATA) ================= */
+useEffect(() => {
+  if (!auth.currentUser || !device?.code) {
+    setMatchedPet(null);
+    return;
+  }
 
-    const uid = auth.currentUser.uid;
+  const uid = auth.currentUser.uid;
+  let unsubPet: null | (() => void) = null;
 
-    return onSnapshot(doc(db, "users", uid, "deviceMatches", device.code), (snap) => {
-      if (!snap.exists()) {
+  const unsubMatch = onSnapshot(
+    doc(db, "users", uid, "deviceMatches", device.code),
+    (matchSnap) => {
+      if (unsubPet) {
+        unsubPet();
+        unsubPet = null;
+      }
+
+      if (!matchSnap.exists()) {
         setMatchedPet(null);
         return;
       }
 
-      const data = snap.data();
-      setMatchedPet({
-        petId: data.petId,
-        petName: data.petName,
-        photoURL: data.photoURL ?? null,
-      });
-    });
-  }, [device]);
+      const matchData = matchSnap.data() as any;
+      const matchedPetId = matchData.petId;
+
+      if (!matchedPetId) {
+        setMatchedPet(null);
+        return;
+      }
+
+      unsubPet = onSnapshot(
+        doc(db, "users", uid, "pets", matchedPetId),
+        (petSnap) => {
+          if (!petSnap.exists()) {
+            setMatchedPet({
+              petId: matchedPetId,
+              petName: matchData.petName ?? "สัตว์เลี้ยง",
+              photoURL: matchData.photoURL ?? null,
+            });
+            return;
+          }
+
+          const petData = petSnap.data() as any;
+
+          setMatchedPet({
+            petId: matchedPetId,
+            petName: petData.name ?? matchData.petName ?? "สัตว์เลี้ยง",
+            photoURL: petData.photoURL ?? null,
+          });
+        }
+      );
+    }
+  );
+
+  return () => {
+    if (unsubPet) unsubPet();
+    unsubMatch();
+  };
+}, [device?.code]);
 
   /* ================= LOAD PET MATCH MAP ================= */
   useEffect(() => {

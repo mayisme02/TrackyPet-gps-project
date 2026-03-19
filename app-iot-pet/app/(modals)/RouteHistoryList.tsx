@@ -32,7 +32,7 @@ import { SwipeListView } from "react-native-swipe-list-view";
 import ProfileHeader from "@/components/ProfileHeader";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
-import { styles } from "@/assets/styles/RouteHistoryList";
+import { styles } from "@/assets/styles/RouteHistoryList.styles";
 
 // ✅ Calendar
 import { Calendar, DateData, LocaleConfig } from "react-native-calendars";

@@ -52,7 +52,6 @@ export default function Devices() {
   const [tempCode, setTempCode] = useState("");
   const [loading, setLoading] = useState(false);
 
-  /* ================= LOAD DEVICES ================= */
   const loadDevices = async () => {
     try {
       const uid = auth.currentUser?.uid;
@@ -94,7 +93,6 @@ export default function Devices() {
     }
   };
 
-  /* ================= LOAD MATCHES ================= */
   const subscribeMatches = () => {
     if (!auth.currentUser) return;
     const uid = auth.currentUser.uid;
@@ -108,7 +106,6 @@ export default function Devices() {
     });
   };
 
-  /* ================= LOAD PETS (LATEST DATA) ================= */
   const subscribePets = () => {
     if (!auth.currentUser) return;
     const uid = auth.currentUser.uid;
@@ -143,7 +140,6 @@ export default function Devices() {
     }, [])
   );
 
-  /* ================= DELETE ================= */
   const deleteDevice = (device: Device) => {
     Alert.alert("ยกเลิกการเชื่อมต่ออุปกรณ์", "", [
       { text: "ยกเลิก", style: "cancel" },
@@ -179,7 +175,6 @@ export default function Devices() {
     ]);
   };
 
-  /* ================= ADD DEVICE ================= */
   const fetchLocation = async (code: string) => {
     try {
       setLoading(true);
@@ -258,11 +253,9 @@ export default function Devices() {
     }
   };
 
-  /* ================= RENDER ================= */
   const renderItem = ({ item }: { item: Device }) => {
     const match = deviceMatches[item.code];
     const latestPet = match?.petId ? petsMap[match.petId] : null;
-
     const displayPhotoURL = latestPet?.photoURL ?? match?.photoURL ?? null;
 
     const deviceType =
@@ -361,16 +354,35 @@ export default function Devices() {
       <Modal visible={modalVisible} transparent animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={styles.modalBox}>
+            <Text style={styles.modalTitle}>เพิ่มอุปกรณ์ติดตาม</Text>
+
             <TextInput
               style={styles.input}
-              placeholder="รหัสอุปกรณ์"
+              placeholder="เช่น PET-001"
               value={tempCode}
               onChangeText={setTempCode}
+              autoCapitalize="characters"
             />
 
-            <TouchableOpacity onPress={confirmAddDevice}>
-              <Text>ยืนยัน</Text>
-            </TouchableOpacity>
+            <View style={styles.modalRow}>
+              <TouchableOpacity
+                style={[styles.submitBtn, { backgroundColor: "#aaa" }]}
+                onPress={() => setModalVisible(false)}
+                disabled={loading}
+              >
+                <Text style={styles.submitText}>ยกเลิก</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.submitBtn}
+                disabled={loading}
+                onPress={confirmAddDevice}
+              >
+                <Text style={styles.submitText}>
+                  {loading ? "กำลังตรวจสอบ..." : "ยืนยัน"}
+                </Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>

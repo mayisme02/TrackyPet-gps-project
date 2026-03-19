@@ -52,7 +52,7 @@ export default function Devices() {
   const [tempCode, setTempCode] = useState("");
   const [loading, setLoading] = useState(false);
 
-  /* ================= LOAD DEVICES (LOCAL, PER USER) ================= */
+  /* ================= LOAD DEVICES ================= */
   const loadDevices = async () => {
     try {
       const uid = auth.currentUser?.uid;
@@ -67,10 +67,7 @@ export default function Devices() {
 
       const normalized: Device[] = parsed
         .map((d) => {
-          const code = String(d?.code ?? "")
-            .trim()
-            .toUpperCase();
-
+          const code = String(d?.code ?? "").trim().toUpperCase();
           if (!code) return null;
 
           return {
@@ -97,7 +94,7 @@ export default function Devices() {
     }
   };
 
-  /* ================= LOAD MATCHES (FIRESTORE) ================= */
+  /* ================= LOAD MATCHES ================= */
   const subscribeMatches = () => {
     if (!auth.currentUser) return;
     const uid = auth.currentUser.uid;
@@ -111,7 +108,7 @@ export default function Devices() {
     });
   };
 
-  /* ================= LOAD PETS MAP (LATEST PET DATA) ================= */
+  /* ================= LOAD PETS (LATEST DATA) ================= */
   const subscribePets = () => {
     if (!auth.currentUser) return;
     const uid = auth.currentUser.uid;
@@ -146,7 +143,7 @@ export default function Devices() {
     }, [])
   );
 
-  /* ================= DELETE DEVICE ================= */
+  /* ================= DELETE ================= */
   const deleteDevice = (device: Device) => {
     Alert.alert("ยกเลิกการเชื่อมต่ออุปกรณ์", "", [
       { text: "ยกเลิก", style: "cancel" },
@@ -207,7 +204,7 @@ export default function Devices() {
     try {
       const uid = auth.currentUser?.uid;
       if (!uid) {
-        Alert.alert("ยังไม่ได้เข้าสู่ระบบ", "กรุณาเข้าสู่ระบบก่อน");
+        Alert.alert("ยังไม่ได้เข้าสู่ระบบ");
         return;
       }
 
@@ -248,31 +245,24 @@ export default function Devices() {
       setModalVisible(false);
       setTempCode("");
 
-      DeviceEventEmitter.emit(DEVICES_CHANGED_EVENT, { code });
+      DeviceEventEmitter.emit(DEVICES_CHANGED_EVENT);
       DeviceEventEmitter.emit(ACTIVE_DEVICE_CHANGED_EVENT, { code });
 
       try {
         const ownerRef = ref(rtdb, `devices/${code}/ownerUid`);
         const ownerSnap = await get(ownerRef);
-
-        if (!ownerSnap.exists()) {
-          await set(ownerRef, uid);
-        }
-      } catch (e) {
-        console.log("ownerUid warning:", e);
-      }
-    } catch (e) {
-      console.log("confirmAddDevice error:", e);
-      Alert.alert("เกิดข้อผิดพลาด", "ไม่สามารถเพิ่มอุปกรณ์ได้");
+        if (!ownerSnap.exists()) await set(ownerRef, uid);
+      } catch {}
+    } catch {
+      Alert.alert("เกิดข้อผิดพลาด");
     }
   };
 
-  /* ================= RENDER ITEM ================= */
+  /* ================= RENDER ================= */
   const renderItem = ({ item }: { item: Device }) => {
     const match = deviceMatches[item.code];
     const latestPet = match?.petId ? petsMap[match.petId] : null;
 
-    const displayPetName = latestPet?.name ?? match?.petName ?? null;
     const displayPhotoURL = latestPet?.photoURL ?? match?.photoURL ?? null;
 
     const deviceType =
@@ -290,30 +280,26 @@ export default function Devices() {
         }
       >
         <View style={styles.card}>
-          <Image source={{ uri: deviceType.image.uri }} style={styles.deviceImage} />
+          <Image
+            source={{ uri: deviceType.image.uri }}
+            style={styles.deviceImage}
+          />
 
           <View style={{ flex: 1 }}>
             <Text style={styles.deviceName}>{item.name}</Text>
 
             {match ? (
-              <>
-                {!!displayPetName && (
-                  <Text style={styles.connectText}>{displayPetName}</Text>
-                )}
-
-                <TouchableOpacity
-                  onPress={(e: any) => {
-                    e?.stopPropagation?.();
-                    deleteDevice(item);
-                  }}
-                  activeOpacity={0.85}
-                >
-                  <View style={styles.disconnectRow}>
-                    <MaterialIcons name="link-off" size={14} color="#DC2626" />
-                    <Text style={styles.disconnectText}>ยกเลิกการเชื่อมต่อ</Text>
-                  </View>
-                </TouchableOpacity>
-              </>
+              <TouchableOpacity
+                onPress={(e: any) => {
+                  e?.stopPropagation?.();
+                  deleteDevice(item);
+                }}
+              >
+                <View style={styles.disconnectRow}>
+                  <MaterialIcons name="link-off" size={14} color="#DC2626" />
+                  <Text style={styles.disconnectText}>ยกเลิกการเชื่อมต่อ</Text>
+                </View>
+              </TouchableOpacity>
             ) : (
               <View style={styles.connectRow}>
                 <View style={styles.connectDot} />
@@ -343,12 +329,13 @@ export default function Devices() {
         style={{ backgroundColor: "#F3F4F6" }}
         contentContainerStyle={{
           paddingHorizontal: 16,
-          paddingBottom: 24,
-          paddingTop: 12,
+          paddingTop: 16,
+          paddingBottom: 32,
           flexGrow: 1,
         }}
+        ItemSeparatorComponent={() => <View style={{ height: 14 }} />}
         ListHeaderComponent={
-          <View style={{ marginHorizontal: -16, marginTop: -12, marginBottom: 12 }}>
+          <View style={{ marginHorizontal: -16, marginTop: -16, marginBottom: 16 }}>
             <ProfileHeader
               title="อุปกรณ์"
               right={
@@ -374,35 +361,16 @@ export default function Devices() {
       <Modal visible={modalVisible} transparent animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={styles.modalBox}>
-            <Text style={styles.modalTitle}>เพิ่มอุปกรณ์ติดตาม</Text>
-
             <TextInput
               style={styles.input}
-              placeholder="เช่น PET-001"
+              placeholder="รหัสอุปกรณ์"
               value={tempCode}
               onChangeText={setTempCode}
-              autoCapitalize="characters"
             />
 
-            <View style={styles.modalRow}>
-              <TouchableOpacity
-                style={[styles.submitBtn, { backgroundColor: "#9CA3AF" }]}
-                onPress={() => setModalVisible(false)}
-                disabled={loading}
-              >
-                <Text style={styles.submitText}>ยกเลิก</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.submitBtn}
-                disabled={loading}
-                onPress={confirmAddDevice}
-              >
-                <Text style={styles.submitText}>
-                  {loading ? "กำลังตรวจสอบ..." : "ยืนยัน"}
-                </Text>
-              </TouchableOpacity>
-            </View>
+            <TouchableOpacity onPress={confirmAddDevice}>
+              <Text>ยืนยัน</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>

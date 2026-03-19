@@ -129,7 +129,6 @@ export default function HomeScreen() {
 
     let found = devices.find((d: any) => d.code === code);
 
-    // ✅ fallback: ถ้า activeDevice ไม่มี/หาไม่เจอ ให้ใช้ตัวแรกแทน
     if (!found) {
       found = devices[0];
       await AsyncStorage.setItem(activeDeviceKey, found.code);

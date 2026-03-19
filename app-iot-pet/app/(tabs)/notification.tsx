@@ -14,7 +14,7 @@ import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { auth, db } from "../../firebase/firebase";
 import ProfileHeader from "@/components/ProfileHeader";
-import { useFocusEffect, useRouter } from "expo-router";
+import { useRouter } from "expo-router";
 import {
   collection,
   onSnapshot,
@@ -44,7 +44,6 @@ type AlertItem = {
   photoURL?: string | null;
 
   routeId?: string | null;
-  read?: boolean;
 };
 
 type PetInfo = {
@@ -113,7 +112,6 @@ const timeAgoTH = (iso?: string, nowMs?: number) => {
 
 /* ================= STORAGE KEYS ================= */
 const getReadMapKey = (uid: string) => `notification_read_firestore_${uid}`;
-const getLastSeenKey = (uid: string) => `notification_last_seen_firestore_${uid}`;
 
 export default function NotificationScreen() {
   const router = useRouter();
@@ -123,11 +121,10 @@ export default function NotificationScreen() {
   const [uid, setUid] = useState<string | null>(auth.currentUser?.uid ?? null);
 
   const [nowTick, setNowTick] = useState(() => Date.now());
-  const [readMap, setReadMap] = useState<Record<string, boolean>>({});
   const [openingKey, setOpeningKey] = useState<string | null>(null);
 
-  // ✅ เก็บข้อมูลสัตว์เลี้ยงล่าสุดไว้ใช้แทนค่าที่ค้างใน alert
   const [petsMap, setPetsMap] = useState<Record<string, PetInfo>>({});
+  const [readMap, setReadMap] = useState<Record<string, boolean>>({});
 
   const readKey = useMemo(() => {
     if (!uid) return null;
@@ -139,15 +136,14 @@ export default function NotificationScreen() {
     return () => clearInterval(id);
   }, []);
 
-  /* ================= SYNC AUTH ================= */
   useEffect(() => {
     const unsub = auth.onAuthStateChanged((user) => {
       setUid(user?.uid ?? null);
 
       if (!user) {
         setAlerts([]);
-        setReadMap({});
         setPetsMap({});
+        setReadMap({});
         setLoading(false);
       }
     });
@@ -180,7 +176,7 @@ export default function NotificationScreen() {
     };
   }, [readKey]);
 
-  /* ================= SUBSCRIBE PETS (LATEST NAME/PHOTO) ================= */
+  /* ================= SUBSCRIBE PETS ================= */
   useEffect(() => {
     if (!uid) {
       setPetsMap({});
@@ -213,7 +209,7 @@ export default function NotificationScreen() {
     return unsub;
   }, [uid]);
 
-  /* ================= SUBSCRIBE FIRESTORE ALERTS ================= */
+  /* ================= SUBSCRIBE ALERTS ================= */
   useEffect(() => {
     if (!uid) {
       setAlerts([]);
@@ -239,21 +235,16 @@ export default function NotificationScreen() {
             type: data.type,
             kind: data.kind,
             message: data.message,
-
             atIso: data.atIso,
             atMs: data.atMs,
             atUtc: data.atUtc,
             atTh: data.atTh,
-
             deviceCode: data.deviceCode ?? null,
             radiusKm: data.radiusKm,
-
             petId: data.petId ?? null,
             petName: data.petName ?? null,
             photoURL: data.photoURL ?? null,
-
             routeId: data.routeId ?? null,
-            read: data.read ?? false,
           };
         });
 
@@ -271,28 +262,10 @@ export default function NotificationScreen() {
     return unsub;
   }, [uid]);
 
-  /* ================= MARK SCREEN SEEN ================= */
-  useFocusEffect(
-    useCallback(() => {
-      (async () => {
-        const currentUid = auth.currentUser?.uid;
-        if (!currentUid) return;
-
-        const now = Date.now();
-        await AsyncStorage.setItem(getLastSeenKey(currentUid), String(now));
-
-        DeviceEventEmitter.emit("notifications:seen", {
-          uid: currentUid,
-          lastRead: now,
-        });
-      })();
-    }, [])
-  );
-
-  /* ================= DELETE ONE (LOCAL READMAP ONLY) ================= */
+  /* ================= DELETE ONE ================= */
   const deleteOne = useCallback(
     (a: AlertItem) => {
-      if (!uid || !readKey) return;
+      if (!readKey) return;
 
       Alert.alert("ลบการแจ้งเตือน?", "ต้องการลบรายการนี้หรือไม่", [
         { text: "ยกเลิก", style: "cancel" },
@@ -305,8 +278,7 @@ export default function NotificationScreen() {
               delete next[a.key];
               setReadMap(next);
               await AsyncStorage.setItem(readKey, JSON.stringify(next));
-
-              // ถ้าต้องการลบใน Firestore จริง ค่อยเพิ่ม deleteDoc ทีหลัง
+              DeviceEventEmitter.emit("notifications:readmap_updated");
             } catch {
               Alert.alert("เกิดข้อผิดพลาด", "ไม่สามารถลบรายการได้");
             }
@@ -314,24 +286,22 @@ export default function NotificationScreen() {
         },
       ]);
     },
-    [uid, readKey, readMap]
+    [readKey, readMap]
   );
 
   /* ================= OPEN ALERT ================= */
   const openAlert = useCallback(
     async (a: AlertItem) => {
-      if (!a.key) return;
-      if (openingKey) return;
+      if (!a.key || openingKey) return;
 
       setOpeningKey(a.key);
 
       try {
-        if (readKey) {
+        if (readKey && !readMap[a.key]) {
           const next = { ...readMap, [a.key]: true };
           setReadMap(next);
           await AsyncStorage.setItem(readKey, JSON.stringify(next));
-
-          DeviceEventEmitter.emit("notifications:readmap_updated", { uid });
+          DeviceEventEmitter.emit("notifications:readmap_updated");
         }
 
         if (!a.routeId) {
@@ -363,7 +333,7 @@ export default function NotificationScreen() {
         setOpeningKey(null);
       }
     },
-    [openingKey, readKey, readMap, router, uid]
+    [openingKey, readKey, readMap, router]
   );
 
   /* ================= BUILD LIST ================= */
@@ -388,7 +358,6 @@ export default function NotificationScreen() {
     return out;
   }, [alerts]);
 
-  /* ================= RENDER ================= */
   const renderItem = ({ item }: { item: ListItem }) => {
     if (item.kind === "section") {
       return <Text style={styles.sectionTitle}>{item.title}</Text>;
@@ -398,7 +367,6 @@ export default function NotificationScreen() {
     const t = (a.type || "").toString().toLowerCase();
     const isExit = t === "exit";
 
-    // ✅ ใช้ข้อมูลล่าสุดจาก pets collection ก่อน
     const latestPet = a.petId ? petsMap[a.petId] : undefined;
     const displayPetName =
       latestPet?.name?.trim() || a.petName?.trim() || "สัตว์เลี้ยง";

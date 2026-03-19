@@ -4,8 +4,8 @@ import {
   View,
   TouchableOpacity,
   Image,
-  Alert,
   Pressable,
+  FlatList,
 } from "react-native";
 import { useRouter } from "expo-router";
 import FontAwesome6 from "@expo/vector-icons/FontAwesome6";
@@ -16,10 +16,7 @@ import {
   collection,
   query,
   orderBy,
-  deleteDoc,
-  doc,
 } from "firebase/firestore";
-import { SwipeListView } from "react-native-swipe-list-view";
 import ProfileHeader from "@/components/ProfileHeader";
 import { styles } from "@/assets/styles/petList.styles";
 
@@ -83,35 +80,6 @@ export default function Pets() {
     );
   }, []);
 
-  /* ================= DELETE ================= */
-  const confirmDelete = (
-    rowMap: { [key: string]: any },
-    rowKey: string,
-    petId: string,
-    petName: string
-  ) => {
-    Alert.alert("ยืนยันการลบ", `คุณแน่ใจหรือไม่ว่าต้องการลบ ${petName}?`, [
-      { text: "ยกเลิก", style: "cancel" },
-      {
-        text: "ลบ",
-        style: "destructive",
-        onPress: () => handleDelete(rowMap, rowKey, petId),
-      },
-    ]);
-  };
-
-  const handleDelete = async (
-    rowMap: { [key: string]: any },
-    rowKey: string,
-    petId: string
-  ) => {
-    if (!auth.currentUser) return;
-    const uid = auth.currentUser.uid;
-
-    await deleteDoc(doc(db, "users", uid, "pets", petId));
-    rowMap[rowKey]?.closeRow();
-  };
-
   /* ================= RENDER ITEM ================= */
   const renderPetItem = ({ item }: { item: Pet }) => {
     const device = deviceMap[item.id];
@@ -145,9 +113,7 @@ export default function Pets() {
 
           {device && (
             <View style={styles.deviceTag}>
-              <Text style={styles.deviceTagText}>
-                {device.deviceName}
-              </Text>
+              <Text style={styles.deviceTagText}>{device.deviceName}</Text>
             </View>
           )}
         </View>
@@ -155,25 +121,8 @@ export default function Pets() {
     );
   };
 
-  const renderHiddenItem = (
-    { item }: { item: Pet },
-    rowMap: { [key: string]: any }
-  ) => (
-    <View style={styles.hiddenContainer}>
-      <TouchableOpacity
-        style={styles.deleteButton}
-        onPress={() =>
-          confirmDelete(rowMap, item.id, item.id, item.name)
-        }
-      >
-        <FontAwesome6 name="trash" size={18} color="#fff" />
-      </TouchableOpacity>
-    </View>
-  );
-
   return (
     <>
-      {/* ===== HEADER (Component) ===== */}
       <ProfileHeader
         title="สัตว์เลี้ยงของคุณ"
         left={
@@ -182,15 +131,12 @@ export default function Pets() {
           </TouchableOpacity>
         }
         right={
-          <TouchableOpacity
-            onPress={() => router.push("/(modals)/AddPet")}
-          >
+          <TouchableOpacity onPress={() => router.push("/(modals)/AddPet")}>
             <MaterialIcons name="add" size={28} color="#000" />
           </TouchableOpacity>
         }
       />
 
-      {/* ===== CONTENT ===== */}
       {pets.length === 0 ? (
         <View style={styles.emptyContainer}>
           <FontAwesome6 name="dog" size={100} color="lightgray" />
@@ -199,13 +145,10 @@ export default function Pets() {
           </Text>
         </View>
       ) : (
-        <SwipeListView
+        <FlatList
           data={pets}
           renderItem={renderPetItem}
-          renderHiddenItem={renderHiddenItem}
           keyExtractor={(item) => item.id}
-          rightOpenValue={-75}
-          disableRightSwipe
           contentContainerStyle={{
             paddingHorizontal: 16,
             paddingVertical: 16,

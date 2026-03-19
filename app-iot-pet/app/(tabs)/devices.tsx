@@ -20,6 +20,7 @@ import { MaterialIcons } from "@expo/vector-icons";
 import { DEVICE_TYPES } from "../../assets/constants/deviceData";
 import ProfileHeader from "@/components/ProfileHeader";
 import { styles } from "@/assets/styles/devices.styles";
+import { BACKEND_URL } from "../../assets/constants/api";
 
 type Device = {
   id: string;
@@ -179,7 +180,7 @@ export default function Devices() {
     try {
       setLoading(true);
 
-      const res = await fetch("http://192.168.31.136:3000/api/device/location", {
+      const res = await fetch(`${BACKEND_URL}/api/device/location`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ deviceCode: code }),
@@ -247,7 +248,7 @@ export default function Devices() {
         const ownerRef = ref(rtdb, `devices/${code}/ownerUid`);
         const ownerSnap = await get(ownerRef);
         if (!ownerSnap.exists()) await set(ownerRef, uid);
-      } catch {}
+      } catch { }
     } catch {
       Alert.alert("เกิดข้อผิดพลาด");
     }

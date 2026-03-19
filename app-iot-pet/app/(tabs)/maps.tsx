@@ -41,7 +41,7 @@ import { ref, set, get } from "firebase/database";
 import { pushAlertAndLog } from "@/utils/alertService";
 import { styles } from "@/assets/styles/maps.styles";
 
-const BACKEND_URL = "http://192.168.31.136:3000";
+const BACKEND_URL = "https://trackypet-iot-gps.onrender.com";
 const MIN_MOVE_DISTANCE = 3;
 
 /* storage keys */

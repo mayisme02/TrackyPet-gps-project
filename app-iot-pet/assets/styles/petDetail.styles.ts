@@ -84,7 +84,7 @@ export const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: "600",
     color: "#ffffff",
-    backgroundColor: "#009B4B",
+    backgroundColor: "#47AA00",
     paddingHorizontal: 10,
     paddingVertical: 2,
     borderRadius: 999,

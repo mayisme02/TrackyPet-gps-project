@@ -93,13 +93,13 @@ export const styles = StyleSheet.create({
 
   recordingHint: {
     marginTop: 2,
-    color: "#008D49",
+    color: "#47AA00",
     fontWeight: "700",
     fontSize: 12,
   },
 
   statusPill: {
-    backgroundColor: "#009B4B",
+    backgroundColor: "#47AA00",
     paddingHorizontal: 15,
     paddingVertical: 6,
     borderRadius: 999,
@@ -138,10 +138,10 @@ export const styles = StyleSheet.create({
   },
 
   petItemActive: {
-    backgroundColor: "#F9FFFC",
+    backgroundColor: "#FDFFF9",
     borderWidth: 0.5,
     borderRadius: 12,
-    borderColor: "#009B4B",
+    borderColor: "#47AA00",
     marginHorizontal: -(CARD_PADDING - ACTIVE_INSET),
     paddingHorizontal: CARD_PADDING - ACTIVE_INSET,
   },

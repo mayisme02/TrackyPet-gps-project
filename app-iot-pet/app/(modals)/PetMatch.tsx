@@ -368,7 +368,7 @@ useEffect(() => {
                     <Ionicons
                       name="checkmark-circle"
                       size={24}
-                      color="#009B4B"
+                      color="#47AA00"
                     />
                   )}
                 </TouchableOpacity>

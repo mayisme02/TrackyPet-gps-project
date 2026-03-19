@@ -44,7 +44,7 @@ import { styles } from "@/assets/styles/maps.styles";
 const BACKEND_URL = "http://192.168.31.136:3000";
 const MIN_MOVE_DISTANCE = 3;
 
-/* ✅ storage keys */
+/* storage keys */
 const ROUTE_FILTER_STORAGE_KEY = "routeFilter_v1";
 const ACTIVE_GEOFENCE_STORAGE_KEY = "activeGeofence_v1";
 const ROUTE_RECORDING_ENDED_EVENT = "routeRecordingEnded";
@@ -157,7 +157,7 @@ export default function MapTracker() {
   const [isRecording, setIsRecording] = useState(false);
   const [recordId, setRecordId] = useState<string | null>(null);
 
-  // ✅ Callout recording UI state
+  // Callout recording UI state
   const [calloutRecordingInfo, setCalloutRecordingInfo] = useState<{
     savedAtIso: string;
     fromIso: string;
@@ -276,7 +276,7 @@ export default function MapTracker() {
     // route id ของการบันทึกปัจจุบัน
     const rid = recordingCtxRef.current?.recordId ?? recordId ?? null;
 
-    // ✅ เขียน RTDB alerts + logs
+    // เขียน RTDB alerts + logs
     await pushAlertAndLog({
       deviceId: deviceCode,
       type,

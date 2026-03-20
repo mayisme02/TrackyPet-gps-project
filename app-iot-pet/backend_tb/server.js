@@ -80,7 +80,7 @@ app.post("/api/device/location", async (req, res) => {
   }
 });
 
-const serverPort = PORT || 10000;
+const serverPort = PORT || 3000;
 app.listen(serverPort, "0.0.0.0", () => {
   console.log(`🚀 Backend running on port ${serverPort}`);
 });

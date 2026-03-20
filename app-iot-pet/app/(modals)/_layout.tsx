@@ -6,8 +6,12 @@ export default function AuthLayout() {
       <Stack.Screen name="AddPet" />
       <Stack.Screen name="Editprofile" />
       <Stack.Screen name="EditPet" />
-      <Stack.Screen name="notification" />
+      <Stack.Screen name="PetList" />
       <Stack.Screen name="PetDetail" />
+      <Stack.Screen name="PetMatch" />
+      <Stack.Screen name="RouteHistory" />
+      <Stack.Screen name="RouteHistoryList" />
+      <Stack.Screen name="RouteHistoryPet" />
     </Stack>
   );
 }

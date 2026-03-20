@@ -1,211 +1,392 @@
-import React, { useState } from 'react';
+import React, { useState } from "react";
 import {
   Text,
-  StyleSheet,
   View,
   TouchableOpacity,
+  FlatList,
+  Alert,
+  Image,
   Modal,
   TextInput,
-  TouchableWithoutFeedback,
-  Keyboard,
-  Platform,
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import ParallaxScrollView from '@/components/ParallaxScrollView';
+  DeviceEventEmitter,
+} from "react-native";
+import { useFocusEffect } from "@react-navigation/native";
+import { useRouter } from "expo-router";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { auth, db, rtdb } from "../../firebase/firebase";
+import { ref, set, get } from "firebase/database";
+import { collection, onSnapshot, deleteDoc, doc } from "firebase/firestore";
+import { MaterialIcons } from "@expo/vector-icons";
+import { DEVICE_TYPES } from "../../assets/constants/deviceData";
+import ProfileHeader from "@/components/ProfileHeader";
+import { styles } from "@/assets/styles/devices.styles";
+import { BACKEND_URL } from "../../assets/constants/api";
+
+type Device = {
+  id: string;
+  code: string;
+  name: string;
+  createdAt: string;
+  type?: string;
+};
+
+type Pet = {
+  id: string;
+  name: string;
+  photoURL?: string;
+};
+
+const ACTIVE_DEVICE_CHANGED_EVENT = "activeDeviceChanged";
+const DEVICES_CHANGED_EVENT = "devicesChanged";
+
+const getDevicesStorageKey = (uid: string) => `devices_${uid}`;
+const getActiveDeviceStorageKey = (uid: string) => `activeDevice_${uid}`;
 
 export default function Devices() {
+  const router = useRouter();
+
+  const [devices, setDevices] = useState<Device[]>([]);
+  const [deviceMatches, setDeviceMatches] = useState<Record<string, any>>({});
+  const [petsMap, setPetsMap] = useState<Record<string, Pet>>({});
+
   const [modalVisible, setModalVisible] = useState(false);
-  const [code, setCode] = useState('');
-  const [error, setError] = useState('');
+  const [tempCode, setTempCode] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  const openModal = () => {
-    setCode('');
-    setError('');
-    setModalVisible(true);
-  };
+  const loadDevices = async () => {
+    try {
+      const uid = auth.currentUser?.uid;
+      if (!uid) {
+        setDevices([]);
+        return;
+      }
 
-  const closeModal = () => {
-    setModalVisible(false);
-    setError('');
-  };
+      const devicesKey = getDevicesStorageKey(uid);
+      const stored = await AsyncStorage.getItem(devicesKey);
+      const parsed: any[] = stored ? JSON.parse(stored) : [];
 
-  const handleConfirm = () => {
-    // ตัวอย่าง validation: ไม่ให้เป็นค่าว่าง
-    if (!code.trim()) {
-      setError('กรุณาป้อนรหัสอุปกรณ์');
-      return;
+      const normalized: Device[] = parsed
+        .map((d) => {
+          const code = String(d?.code ?? "").trim().toUpperCase();
+          if (!code) return null;
+
+          return {
+            id: String(d?.id ?? code),
+            code,
+            name: String(d?.name ?? "LilyGo A7670E"),
+            type: String(d?.type ?? "GPS_TRACKER_A7670"),
+            createdAt: String(d?.createdAt ?? new Date().toISOString()),
+          } as Device;
+        })
+        .filter(Boolean) as Device[];
+
+      const seen = new Set<string>();
+      const deduped = normalized.filter((d) => {
+        if (seen.has(d.code)) return false;
+        seen.add(d.code);
+        return true;
+      });
+
+      setDevices(deduped);
+      await AsyncStorage.setItem(devicesKey, JSON.stringify(deduped));
+    } catch {
+      setDevices([]);
     }
+  };
 
-    // TODO: ส่ง code ไปใช้งานจริง (API / navigation) ที่นี่
-    console.log('Confirmed device code:', code);
+  const subscribeMatches = () => {
+    if (!auth.currentUser) return;
+    const uid = auth.currentUser.uid;
 
-    // ปิด modal หลังยืนยัน
-    setModalVisible(false);
+    return onSnapshot(collection(db, "users", uid, "deviceMatches"), (snap) => {
+      const map: Record<string, any> = {};
+      snap.docs.forEach((d) => {
+        map[d.id] = d.data();
+      });
+      setDeviceMatches(map);
+    });
+  };
+
+  const subscribePets = () => {
+    if (!auth.currentUser) return;
+    const uid = auth.currentUser.uid;
+
+    return onSnapshot(collection(db, "users", uid, "pets"), (snap) => {
+      const map: Record<string, Pet> = {};
+      snap.docs.forEach((d) => {
+        map[d.id] = {
+          id: d.id,
+          ...(d.data() as any),
+        };
+      });
+      setPetsMap(map);
+    });
+  };
+
+  useFocusEffect(
+    React.useCallback(() => {
+      void loadDevices();
+      const unsubMatches = subscribeMatches();
+      const unsubPets = subscribePets();
+
+      const sub = DeviceEventEmitter.addListener(DEVICES_CHANGED_EVENT, () => {
+        void loadDevices();
+      });
+
+      return () => {
+        unsubMatches && unsubMatches();
+        unsubPets && unsubPets();
+        sub.remove();
+      };
+    }, [])
+  );
+
+  const deleteDevice = (device: Device) => {
+    Alert.alert("ยกเลิกการเชื่อมต่ออุปกรณ์", "", [
+      { text: "ยกเลิก", style: "cancel" },
+      {
+        text: "ยืนยัน",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            const uid = auth.currentUser?.uid;
+            if (!uid) return;
+
+            const devicesKey = getDevicesStorageKey(uid);
+            const activeDeviceKey = getActiveDeviceStorageKey(uid);
+
+            const updated = devices.filter((d) => d.code !== device.code);
+            await AsyncStorage.setItem(devicesKey, JSON.stringify(updated));
+            setDevices(updated);
+
+            const active = await AsyncStorage.getItem(activeDeviceKey);
+            if (active === device.code) {
+              await AsyncStorage.removeItem(activeDeviceKey);
+              DeviceEventEmitter.emit(ACTIVE_DEVICE_CHANGED_EVENT, { code: null });
+            }
+
+            await deleteDoc(doc(db, "users", uid, "deviceMatches", device.code));
+
+            DeviceEventEmitter.emit(DEVICES_CHANGED_EVENT);
+          } catch {
+            Alert.alert("เกิดข้อผิดพลาด", "ไม่สามารถลบอุปกรณ์ได้");
+          }
+        },
+      },
+    ]);
+  };
+
+  const fetchLocation = async (code: string) => {
+    try {
+      setLoading(true);
+
+      const res = await fetch(`${BACKEND_URL}/api/device/location`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ deviceCode: code }),
+      });
+
+      if (!res.ok) throw new Error();
+      return true;
+    } catch {
+      Alert.alert("ไม่พบอุปกรณ์", "กรุณาตรวจสอบรหัสอุปกรณ์");
+      return false;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const confirmAddDevice = async () => {
+    try {
+      const uid = auth.currentUser?.uid;
+      if (!uid) {
+        Alert.alert("ยังไม่ได้เข้าสู่ระบบ");
+        return;
+      }
+
+      const code = tempCode.trim().toUpperCase();
+      if (!code) {
+        Alert.alert("กรุณากรอกรหัสอุปกรณ์");
+        return;
+      }
+
+      const devicesKey = getDevicesStorageKey(uid);
+      const activeDeviceKey = getActiveDeviceStorageKey(uid);
+
+      const stored = await AsyncStorage.getItem(devicesKey);
+      const list: Device[] = stored ? JSON.parse(stored) : [];
+
+      if (list.some((d) => d.code === code)) {
+        Alert.alert("อุปกรณ์ถูกเพิ่มแล้ว");
+        return;
+      }
+
+      const ok = await fetchLocation(code);
+      if (!ok) return;
+
+      const newDevice: Device = {
+        id: code,
+        code,
+        type: "GPS_TRACKER_A7670",
+        name: "LilyGo A7670E",
+        createdAt: new Date().toISOString(),
+      };
+
+      const updated = [...list, newDevice];
+
+      await AsyncStorage.setItem(devicesKey, JSON.stringify(updated));
+      await AsyncStorage.setItem(activeDeviceKey, code);
+
+      setDevices(updated);
+      setModalVisible(false);
+      setTempCode("");
+
+      DeviceEventEmitter.emit(DEVICES_CHANGED_EVENT);
+      DeviceEventEmitter.emit(ACTIVE_DEVICE_CHANGED_EVENT, { code });
+
+      try {
+        const ownerRef = ref(rtdb, `devices/${code}/ownerUid`);
+        const ownerSnap = await get(ownerRef);
+        if (!ownerSnap.exists()) await set(ownerRef, uid);
+      } catch { }
+    } catch {
+      Alert.alert("เกิดข้อผิดพลาด");
+    }
+  };
+
+  const renderItem = ({ item }: { item: Device }) => {
+    const match = deviceMatches[item.code];
+    const latestPet = match?.petId ? petsMap[match.petId] : null;
+    const displayPhotoURL = latestPet?.photoURL ?? match?.photoURL ?? null;
+
+    const deviceType =
+      (item.type && DEVICE_TYPES[item.type]) ||
+      DEVICE_TYPES["GPS_TRACKER_A7670"];
+
+    return (
+      <TouchableOpacity
+        activeOpacity={0.9}
+        onPress={() =>
+          router.push({
+            pathname: "/PetMatch",
+            params: { device: JSON.stringify(item) },
+          })
+        }
+      >
+        <View style={styles.card}>
+          <Image
+            source={{ uri: deviceType.image.uri }}
+            style={styles.deviceImage}
+          />
+
+          <View style={{ flex: 1 }}>
+            <Text style={styles.deviceName}>{item.name}</Text>
+
+            {match ? (
+              <TouchableOpacity
+                onPress={(e: any) => {
+                  e?.stopPropagation?.();
+                  deleteDevice(item);
+                }}
+              >
+                <View style={styles.disconnectRow}>
+                  <MaterialIcons name="link-off" size={14} color="#DC2626" />
+                  <Text style={styles.disconnectText}>ยกเลิกการเชื่อมต่อ</Text>
+                </View>
+              </TouchableOpacity>
+            ) : (
+              <View style={styles.connectRow}>
+                <View style={styles.connectDot} />
+                <Text style={styles.connectText}>ยังไม่เชื่อมต่อ</Text>
+              </View>
+            )}
+          </View>
+
+          {displayPhotoURL ? (
+            <Image source={{ uri: displayPhotoURL }} style={styles.petAvatar} />
+          ) : (
+            <View style={styles.emptyAvatar}>
+              <MaterialIcons name="pets" size={22} color="#9CA3AF" />
+            </View>
+          )}
+        </View>
+      </TouchableOpacity>
+    );
   };
 
   return (
     <>
-      <ParallaxScrollView
-        headerBackgroundColor={{ light: '#f2bb14', dark: '#f2bb14' }}
-        headerImage={
-          <SafeAreaView style={styles.headerContainer}>
-            <Text style={styles.TextHeader}>อุปกรณ์</Text>
-          </SafeAreaView>
+      <FlatList
+        data={devices}
+        keyExtractor={(item) => item.code}
+        renderItem={renderItem}
+        style={{ backgroundColor: "#F3F4F6" }}
+        contentContainerStyle={{
+          paddingHorizontal: 16,
+          paddingTop: 16,
+          paddingBottom: 32,
+          flexGrow: 1,
+        }}
+        ItemSeparatorComponent={() => <View style={{ height: 14 }} />}
+        ListHeaderComponent={
+          <View style={{ marginHorizontal: -16, marginTop: -16, marginBottom: 16 }}>
+            <ProfileHeader
+              title="อุปกรณ์"
+              right={
+                <TouchableOpacity
+                  onPress={() => setModalVisible(true)}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
+                  <MaterialIcons name="add" size={28} color="#111827" />
+                </TouchableOpacity>
+              }
+            />
+          </View>
         }
-      >
-        <View style={styles.content}>
-          <TouchableOpacity style={styles.addButton} onPress={openModal}>
-            <Text style={styles.addButtonText}>เพิ่มอุปกรณ์</Text>
-          </TouchableOpacity>
-        </View>
-      </ParallaxScrollView>
+        ListEmptyComponent={
+          <View style={styles.emptyWrap}>
+            <MaterialIcons name="devices" size={90} color="#D1D5DB" />
+            <Text style={styles.emptyTitle}>ยังไม่มีอุปกรณ์</Text>
+            <Text style={styles.emptySub}>กดปุ่ม + เพื่อเพิ่มอุปกรณ์ติดตาม</Text>
+          </View>
+        }
+      />
 
-      {/* Modal popup สำหรับกรอกรหัส */}
-      <Modal
-        visible={modalVisible}
-        animationType="slide"
-        transparent
-        onRequestClose={closeModal}
-      >
-        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-          <View style={styles.modalOverlay}>
-            <View style={styles.modalContainer}>
-              <Text style={styles.modalTitle}>กรอกรหัสเพื่อเชื่อมต่ออุปกรณ์</Text>
+      <Modal visible={modalVisible} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalBox}>
+            <Text style={styles.modalTitle}>เพิ่มอุปกรณ์ติดตาม</Text>
 
-              <TextInput
-                value={code}
-                onChangeText={(t) => {
-                  setCode(t);
-                  if (error) setError('');
-                }}
-                placeholder="เช่น ABCD-1234"
-                placeholderTextColor="#999"
-                style={styles.input}
-                autoCapitalize="characters"
-                autoCorrect={false}
-                keyboardType={Platform.OS === 'ios' ? 'default' : 'visible-password'}
-                returnKeyType="done"
-                onSubmitEditing={handleConfirm}
-              />
+            <TextInput
+              style={styles.input}
+              placeholder="เช่น PET-001"
+              value={tempCode}
+              onChangeText={setTempCode}
+              autoCapitalize="characters"
+            />
 
-              {error ? <Text style={styles.errorText}>{error}</Text> : null}
+            <View style={styles.modalRow}>
+              <TouchableOpacity
+                style={[styles.submitBtn, { backgroundColor: "#aaa" }]}
+                onPress={() => setModalVisible(false)}
+                disabled={loading}
+              >
+                <Text style={styles.submitText}>ยกเลิก</Text>
+              </TouchableOpacity>
 
-              <View style={styles.modalButtons}>
-                <TouchableOpacity style={styles.cancelButton} onPress={closeModal}>
-                  <Text style={styles.cancelButtonText}>ยกเลิก</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity style={styles.confirmButton} onPress={handleConfirm}>
-                  <Text style={styles.confirmButtonText}>ยืนยัน</Text>
-                </TouchableOpacity>
-              </View>
+              <TouchableOpacity
+                style={styles.submitBtn}
+                disabled={loading}
+                onPress={confirmAddDevice}
+              >
+                <Text style={styles.submitText}>
+                  {loading ? "กำลังตรวจสอบ..." : "ยืนยัน"}
+                </Text>
+              </TouchableOpacity>
             </View>
           </View>
-        </TouchableWithoutFeedback>
+        </View>
       </Modal>
     </>
   );
 }
-
-const styles = StyleSheet.create({
-  headerContainer: {
-    height: 175,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  TextHeader: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: 'black',
-    textAlign: 'center',
-  },
-  content: {
-    padding: 20,
-  },
-
-  addButton: {
-    flexDirection: 'row',
-    gap: 10,
-    backgroundColor: '#000C78FF',
-    paddingVertical: 14,
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  addButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '700',
-  },
-
-  /* Modal styles */
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.4)',
-    justifyContent: 'center',
-    paddingHorizontal: 24,
-  },
-  modalContainer: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 20,
-    elevation: 10,
-    shadowColor: '#000',
-    shadowOpacity: 0.15,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 4 },
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    marginBottom: 12,
-
-  },
-  modalSubtitle: {
-    fontSize: 13,
-    color: '#666',
-    marginBottom: 12,
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: '#e6e6e6',
-    borderRadius: 8,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    fontSize: 16,
-    marginBottom: 8,
-  },
-  errorText: {
-    color: '#e74c3c',
-    fontSize: 13,
-    marginBottom: 8,
-  },
-  modalButtons: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    gap: 8,
-  },
-  cancelButton: {
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-    borderRadius: 8,
-    backgroundColor: '#f0f0f0',
-    marginRight: 8,
-    marginTop: 8
-  },
-  cancelButtonText: {
-    color: '#333',
-    fontWeight: '600',
-  },
-  confirmButton: {
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-    borderRadius: 8,
-    backgroundColor: '#081160FF',
-    marginTop: 8
-  },
-  confirmButtonText: {
-    color: '#fff',
-    fontWeight: '700',
-  },
-});

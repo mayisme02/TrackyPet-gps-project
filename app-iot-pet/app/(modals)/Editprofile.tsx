@@ -1,5 +1,14 @@
 import React, { useEffect, useState } from "react";
-import { View, Text, SafeAreaView, StyleSheet, TouchableOpacity, Image, ActivityIndicator, Alert, TextInput, ScrollView, StatusBar} from "react-native";
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  Image,
+  ActivityIndicator,
+  Alert,
+  TextInput,
+  ScrollView,
+} from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
@@ -7,6 +16,8 @@ import * as ImageManipulator from "expo-image-manipulator";
 import { auth, db } from "../../firebase/firebase";
 import { doc, getDoc, updateDoc } from "firebase/firestore";
 import { uploadToCloudinary } from "../../cloud/uploadToCloudinary";
+import ProfileHeader from "@/components/ProfileHeader";
+import { styles } from "@/assets/styles/editProfile.styles";
 
 export default function EditProfile() {
   const [username, setUsername] = useState("");
@@ -16,9 +27,8 @@ export default function EditProfile() {
   const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [loading, setLoading] = useState(true);
-  const currentImage = downloadUrl ?? localUri ?? null;
 
-  const handleBack = () => router.push("/(tabs)/profile");
+  const currentImage = downloadUrl ?? localUri ?? null;
 
   useEffect(() => {
     const fetchProfile = async () => {
@@ -43,24 +53,28 @@ export default function EditProfile() {
     fetchProfile();
   }, []);
 
+  /* ================= PICK IMAGE ================= */
   const pickImage = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== "granted") {
       Alert.alert("ต้องการสิทธิ์เข้าถึงรูปภาพ", "โปรดอนุญาตการเข้าถึงคลังรูปภาพ");
       return;
     }
+
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsEditing: true,
       aspect: [1, 1],
       quality: 1,
     });
+
     if (!result.canceled) {
       setLocalUri(result.assets[0].uri);
       setDownloadUrl(null);
     }
   };
 
+  /* ================= UPLOAD IMAGE ================= */
   const uploadImage = async () => {
     if (!localUri) return null;
     try {
@@ -81,6 +95,7 @@ export default function EditProfile() {
     }
   };
 
+  /* ================= SAVE ================= */
   const handleSave = async () => {
     try {
       const user = auth.currentUser;
@@ -109,25 +124,29 @@ export default function EditProfile() {
 
   if (loading) {
     return (
-      <SafeAreaView style={styles.center}>
+      <View style={styles.center}>
         <ActivityIndicator size="large" />
-      </SafeAreaView>
+      </View>
     );
   }
 
   return (
-    <View style={styles.container}>
-      <StatusBar backgroundColor="#f2bb14" barStyle="dark-content" />
-      
-      <View style={styles.headerContainer}>
-        <TouchableOpacity onPress={handleBack} style={styles.backButton}>
-          <Ionicons name="arrow-back" size={26} color="black" />
-        </TouchableOpacity>
-        <Text style={styles.topHeaderTitle}>แก้ไขโปรไฟล์</Text>
-      </View>
+    <>
+      {/* ===== HEADER ===== */}
+      <ProfileHeader
+        title="แก้ไขโปรไฟล์"
+        left={
+          <TouchableOpacity onPress={() => router.replace("/(tabs)/profile")}>
+            <Ionicons name="chevron-back" size={26} color="#000" />
+          </TouchableOpacity>
+        }
+      />
 
-      {/* Body */}
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.body}>
+      {/* ===== BODY ===== */}
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.body}
+      >
         <View style={styles.profileSection}>
           <TouchableOpacity onPress={pickImage}>
             {currentImage ? (
@@ -170,9 +189,9 @@ export default function EditProfile() {
         </View>
 
         {uploading && (
-          <View style={{ alignItems: "center", marginVertical: 10 }}>
+          <View style={styles.uploading}>
             <ActivityIndicator />
-            <Text style={{ fontSize: 13, color: "#666", marginTop: 4 }}>กำลังอัปโหลดรูปภาพ…</Text>
+            <Text style={styles.uploadingText}>กำลังอัปโหลดรูปภาพ…</Text>
           </View>
         )}
 
@@ -184,104 +203,6 @@ export default function EditProfile() {
           <Text style={styles.saveBtnText}>บันทึกการเปลี่ยนแปลง</Text>
         </TouchableOpacity>
       </ScrollView>
-    </View>
+    </>
   );
 }
-
-const styles = StyleSheet.create({
-  center: { flex: 1, justifyContent: "center", alignItems: "center" },
-  container: { flex: 1, backgroundColor: "#F9F9FB" },
-
-  headerContainer: {
-    backgroundColor: "#f2bb14",
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    height: 120,
-    paddingHorizontal: 16,
-    elevation: 3,
-    paddingTop: 50,
-  },
-  backButton: {
-    position: "absolute",
-    left: 10,
-    padding: 8,
-    top: 50,
-    paddingTop: 25
-  },
-  topHeaderTitle: {
-    fontSize: 20,
-    fontWeight: "700",
-    color: "black",
-  },
-
-  body: { padding: 20 },
-  profileSection: { 
-    alignItems: "center", 
-    marginBottom: 16,
-    marginTop: 20
-  },
-  profileImage: { 
-    width: 130, 
-    height: 130, 
-    borderRadius: 80, 
-    backgroundColor: "#eee" 
-  },
-  imagePlaceholder: {
-    width: 130, 
-    height: 130, 
-    borderRadius: 80,
-    backgroundColor: "#eee",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  editIcon: {
-    position: "absolute",
-    right: -4,
-    bottom: -4,
-    backgroundColor: "#fff",
-    borderRadius: 14,
-    padding: 6,
-    elevation: 3,
-  },
-  username: { 
-    fontSize: 20, 
-    fontWeight: "600", 
-    marginTop: 10, 
-    color: "#333" 
-  },
-  card: {
-    backgroundColor: "#fff",
-    borderRadius: 20,
-    padding: 20,
-    marginTop: 10,
-    shadowColor: "#000",
-    shadowOpacity: 0.05,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 2,
-  },
-  cardTitle: { fontWeight: "600", fontSize: 16, color: "#4a3b2d", marginBottom: 10 },
-  input: {
-    backgroundColor: "#F6F7F9",
-    borderWidth: 1,
-    borderColor: "#F1F1F1FF",
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 14,
-    marginBottom: 10,
-    fontSize: 14,
-    color: "#111",
-  },
-  saveBtn: {
-    backgroundColor: "#885900ff",
-    borderRadius: 10,
-    paddingVertical: 14,
-    alignItems: "center",
-    marginTop: 20,
-    shadowColor: "#000",
-    shadowOpacity: 0.1,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 3,
-  },
-  saveBtnText: { color: "#fff", fontWeight: "bold", fontSize: 16 },
-});

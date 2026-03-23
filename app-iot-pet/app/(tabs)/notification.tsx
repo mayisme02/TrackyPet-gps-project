@@ -11,22 +11,24 @@ import {
 } from "react-native";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { auth, db } from "../../firebase/firebase";
+import { auth, db, rtdb } from "../../firebase/firebase";
 import ProfileHeader from "@/components/ProfileHeader";
 import { useRouter } from "expo-router";
 import {
   collection,
   onSnapshot,
-  orderBy,
   query,
   doc,
   getDoc,
 } from "firebase/firestore";
+import { onValue, ref, remove } from "firebase/database";
 import { styles } from "@/assets/styles/notification.styles";
 
 /* ================= TYPES ================= */
 type AlertItem = {
   key: string;
+  rawKey?: string;
+  sourcePath?: "users" | "devices";
   type?: "exit" | "enter" | string;
   kind?: string;
   message?: string;
@@ -110,8 +112,19 @@ const timeAgoTH = (iso?: string, nowMs?: number) => {
   return `${diffYr} ปีที่แล้ว`;
 };
 
+const getCanonicalAlertKey = (a: Partial<AlertItem>) => {
+  return [
+    (a.type || "").toString().toLowerCase(),
+    a.routeId || "",
+    a.petId || "",
+    a.deviceCode || "",
+    a.atMs || 0,
+  ].join("|");
+};
+
 /* ================= STORAGE KEYS ================= */
-const getReadMapKey = (uid: string) => `notification_read_firestore_${uid}`;
+const getReadMapKey = (uid: string) => `notification_read_rtdb_${uid}`;
+const getActiveDeviceKey = (uid: string) => `activeDevice_${uid}`;
 
 export default function NotificationScreen() {
   const router = useRouter();
@@ -119,6 +132,7 @@ export default function NotificationScreen() {
   const [loading, setLoading] = useState(true);
   const [alerts, setAlerts] = useState<AlertItem[]>([]);
   const [uid, setUid] = useState<string | null>(auth.currentUser?.uid ?? null);
+  const [activeDeviceId, setActiveDeviceId] = useState<string | null>(null);
 
   const [nowTick, setNowTick] = useState(() => Date.now());
   const [openingKey, setOpeningKey] = useState<string | null>(null);
@@ -144,6 +158,7 @@ export default function NotificationScreen() {
         setAlerts([]);
         setPetsMap({});
         setReadMap({});
+        setActiveDeviceId(null);
         setLoading(false);
       }
     });
@@ -175,6 +190,31 @@ export default function NotificationScreen() {
       mounted = false;
     };
   }, [readKey]);
+
+  /* ================= LOAD ACTIVE DEVICE ================= */
+  useEffect(() => {
+    if (!uid) {
+      setActiveDeviceId(null);
+      return;
+    }
+
+    let mounted = true;
+
+    (async () => {
+      try {
+        const deviceId = await AsyncStorage.getItem(getActiveDeviceKey(uid));
+        if (!mounted) return;
+        setActiveDeviceId(deviceId || null);
+      } catch {
+        if (!mounted) return;
+        setActiveDeviceId(null);
+      }
+    })();
+
+    return () => {
+      mounted = false;
+    };
+  }, [uid]);
 
   /* ================= SUBSCRIBE PETS ================= */
   useEffect(() => {
@@ -209,7 +249,7 @@ export default function NotificationScreen() {
     return unsub;
   }, [uid]);
 
-  /* ================= SUBSCRIBE ALERTS ================= */
+  /* ================= SUBSCRIBE ALERTS (USERS + DEVICE, DEDUPE) ================= */
   useEffect(() => {
     if (!uid) {
       setAlerts([]);
@@ -219,53 +259,152 @@ export default function NotificationScreen() {
 
     setLoading(true);
 
-    const q = query(
-      collection(db, "users", uid, "alerts"),
-      orderBy("atMs", "desc")
-    );
+    const usersAlertsRef = ref(rtdb, `users/${uid}/alerts`);
 
-    const unsub = onSnapshot(
-      q,
-      (snap) => {
-        const rows: AlertItem[] = snap.docs.map((d) => {
-          const data = d.data() as any;
+    let usersAlerts: AlertItem[] = [];
+    let deviceAlerts: AlertItem[] = [];
 
-          return {
-            key: d.id,
-            type: data.type,
-            kind: data.kind,
-            message: data.message,
-            atIso: data.atIso,
-            atMs: data.atMs,
-            atUtc: data.atUtc,
-            atTh: data.atTh,
-            deviceCode: data.deviceCode ?? null,
-            radiusKm: data.radiusKm,
-            petId: data.petId ?? null,
-            petName: data.petName ?? null,
-            photoURL: data.photoURL ?? null,
-            routeId: data.routeId ?? null,
-          };
-        });
+    const rebuild = () => {
+      const mergedMap = new Map<string, AlertItem>();
 
-        const filtered = rows.filter((a) => {
+      [...usersAlerts, ...deviceAlerts].forEach((a) => {
+        const canonicalKey = getCanonicalAlertKey(a);
+        const existing = mergedMap.get(canonicalKey);
+
+        if (!existing) {
+          mergedMap.set(canonicalKey, {
+            ...a,
+            key: canonicalKey,
+          });
+          return;
+        }
+
+        const existingScore = [
+          existing.petName,
+          existing.photoURL,
+          existing.routeId,
+          existing.atIso,
+          existing.atUtc,
+          existing.message,
+        ].filter(Boolean).length;
+
+        const nextScore = [
+          a.petName,
+          a.photoURL,
+          a.routeId,
+          a.atIso,
+          a.atUtc,
+          a.message,
+        ].filter(Boolean).length;
+
+        if (nextScore >= existingScore) {
+          mergedMap.set(canonicalKey, {
+            ...existing,
+            ...a,
+            key: canonicalKey,
+          });
+        }
+      });
+
+      const merged = Array.from(mergedMap.values())
+        .filter((a) => {
           const t = (a.type || "").toString().toLowerCase();
           return t === "exit" || t === "enter";
-        });
+        })
+        .sort((a, b) => (b.atMs ?? 0) - (a.atMs ?? 0));
 
-        setAlerts(filtered);
-        setLoading(false);
+      setAlerts(merged);
+      setLoading(false);
+    };
+
+    const unsubUsers = onValue(
+      usersAlertsRef,
+      (snap) => {
+        const val = snap.val();
+
+        usersAlerts = !val
+          ? []
+          : Object.entries(val).map(([key, data]: any) => ({
+              key,
+              rawKey: key,
+              sourcePath: "users",
+              type: data?.type,
+              kind: data?.kind,
+              message: data?.message,
+              atIso: data?.atIso,
+              atMs: data?.atMs,
+              atUtc: data?.atUtc,
+              atTh: data?.atTh,
+              deviceCode: data?.deviceCode ?? null,
+              radiusKm: data?.radiusKm,
+              petId: data?.petId ?? null,
+              petName: data?.petName ?? null,
+              photoURL: data?.photoURL ?? null,
+              routeId: data?.routeId ?? null,
+            }));
+
+        rebuild();
       },
-      () => setLoading(false)
+      () => {
+        usersAlerts = [];
+        rebuild();
+      }
     );
 
-    return unsub;
-  }, [uid]);
+    let unsubDevice: null | (() => void) = null;
+
+    if (activeDeviceId) {
+      const deviceAlertsRef = ref(rtdb, `devices/${activeDeviceId}/alerts`);
+
+      unsubDevice = onValue(
+        deviceAlertsRef,
+        (snap) => {
+          const val = snap.val();
+
+          deviceAlerts = !val
+            ? []
+            : Object.entries(val).map(([key, data]: any) => ({
+                key,
+                rawKey: key,
+                sourcePath: "devices",
+                type: data?.type,
+                kind: data?.kind,
+                message: data?.message,
+                atIso: data?.atIso ?? data?.atUtc,
+                atMs:
+                  data?.atMs ??
+                  (data?.atUtc ? Date.parse(data.atUtc) : undefined),
+                atUtc: data?.atUtc,
+                atTh: data?.atTh,
+                deviceCode: data?.deviceCode ?? data?.device ?? activeDeviceId,
+                radiusKm: data?.radiusKm,
+                petId: data?.petId ?? null,
+                petName: data?.petName ?? null,
+                photoURL: data?.photoURL ?? null,
+                routeId: data?.routeId ?? null,
+              }));
+
+          rebuild();
+        },
+        () => {
+          deviceAlerts = [];
+          rebuild();
+        }
+      );
+    } else {
+      rebuild();
+    }
+
+    return () => {
+      unsubUsers();
+      if (unsubDevice) unsubDevice();
+    };
+  }, [uid, activeDeviceId]);
 
   /* ================= DELETE ONE ================= */
   const deleteOne = useCallback(
     (a: AlertItem) => {
-      if (!readKey) return;
+      if (!readKey || !uid) return;
 
       Alert.alert("ลบการแจ้งเตือน?", "ต้องการลบรายการนี้หรือไม่", [
         { text: "ยกเลิก", style: "cancel" },
@@ -278,6 +417,25 @@ export default function NotificationScreen() {
               delete next[a.key];
               setReadMap(next);
               await AsyncStorage.setItem(readKey, JSON.stringify(next));
+
+              const deletes: Promise<void>[] = [];
+
+              if (a.sourcePath === "users" && a.rawKey) {
+                deletes.push(
+                  remove(ref(rtdb, `users/${uid}/alerts/${a.rawKey}`))
+                );
+              }
+
+              if (a.sourcePath === "devices" && a.rawKey && activeDeviceId) {
+                deletes.push(
+                  remove(
+                    ref(rtdb, `devices/${activeDeviceId}/alerts/${a.rawKey}`)
+                  )
+                );
+              }
+
+              await Promise.allSettled(deletes);
+
               DeviceEventEmitter.emit("notifications:readmap_updated");
             } catch {
               Alert.alert("เกิดข้อผิดพลาด", "ไม่สามารถลบรายการได้");
@@ -286,7 +444,7 @@ export default function NotificationScreen() {
         },
       ]);
     },
-    [readKey, readMap]
+    [readKey, readMap, uid, activeDeviceId]
   );
 
   /* ================= OPEN ALERT ================= */
@@ -305,12 +463,18 @@ export default function NotificationScreen() {
         }
 
         if (!a.routeId) {
-          Alert.alert("ไม่มีข้อมูลเส้นทาง", "รายการนี้ไม่มีข้อมูลเส้นทาง หรือถูกลบไปแล้ว");
+          Alert.alert(
+            "ไม่มีข้อมูลเส้นทาง",
+            "รายการนี้ไม่มีข้อมูลเส้นทาง หรือถูกลบไปแล้ว"
+          );
           return;
         }
 
         if (!auth.currentUser) {
-          Alert.alert("ยังไม่ได้เข้าสู่ระบบ", "กรุณาเข้าสู่ระบบก่อนเพื่อดูข้อมูลเส้นทาง");
+          Alert.alert(
+            "ยังไม่ได้เข้าสู่ระบบ",
+            "กรุณาเข้าสู่ระบบก่อนเพื่อดูข้อมูลเส้นทาง"
+          );
           return;
         }
 
@@ -328,7 +492,10 @@ export default function NotificationScreen() {
           params: { routeId: a.routeId },
         });
       } catch {
-        Alert.alert("เกิดข้อผิดพลาด", "ไม่สามารถเปิดข้อมูลเส้นทางได้ในขณะนี้");
+        Alert.alert(
+          "เกิดข้อผิดพลาด",
+          "ไม่สามารถเปิดข้อมูลเส้นทางได้ในขณะนี้"
+        );
       } finally {
         setOpeningKey(null);
       }

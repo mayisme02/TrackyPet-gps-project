@@ -5,14 +5,14 @@ import FontAwesome6 from "@expo/vector-icons/FontAwesome6";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { FontAwesome5 } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { auth, db } from "../../firebase/firebase";
+import { auth, rtdb } from "../../firebase/firebase";
 import { Colors } from "@/assets/constants/Colors";
 import { useColorScheme } from "@/hooks/useColorScheme";
 import * as Notifications from "expo-notifications";
 import { onAuthStateChanged } from "firebase/auth";
 import { savePushTokenToFirestore } from "@/utils/pushNotifications";
 import { useRouter } from "expo-router";
-import { collection, onSnapshot, orderBy, query } from "firebase/firestore";
+import { onValue, ref } from "firebase/database";
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -24,7 +24,18 @@ Notifications.setNotificationHandler({
   }),
 });
 
-const getReadMapKey = (uid: string) => `notification_read_firestore_${uid}`;
+const getReadMapKey = (uid: string) => `notification_read_rtdb_${uid}`;
+const getActiveDeviceKey = (uid: string) => `activeDevice_${uid}`;
+
+const makeCanonicalKey = (a: any, fallbackDeviceCode = "") => {
+  const type = (a?.type || "").toString().toLowerCase();
+  const routeId = a?.routeId || "";
+  const petId = a?.petId || "";
+  const deviceCode = a?.deviceCode || a?.device || fallbackDeviceCode || "";
+  const atMs = a?.atMs || (a?.atUtc ? Date.parse(a.atUtc) : 0);
+
+  return [type, routeId, petId, deviceCode, atMs].join("|");
+};
 
 export default function TabLayout() {
   const colorScheme = useColorScheme();
@@ -43,7 +54,11 @@ export default function TabLayout() {
     const uid = user.uid;
 
     try {
-      const readRaw = await AsyncStorage.getItem(getReadMapKey(uid));
+      const [readRaw, activeDeviceId] = await Promise.all([
+        AsyncStorage.getItem(getReadMapKey(uid)),
+        AsyncStorage.getItem(getActiveDeviceKey(uid)),
+      ]);
+
       const readMap: Record<string, boolean> = readRaw ? JSON.parse(readRaw) : {};
 
       if (unsubRef.current) {
@@ -51,27 +66,60 @@ export default function TabLayout() {
         unsubRef.current = null;
       }
 
-      const q = query(
-        collection(db, "users", uid, "alerts"),
-        orderBy("atMs", "desc")
-      );
+      let usersAlerts: Record<string, any> = {};
+      let deviceAlerts: Record<string, any> = {};
 
-      const unsub = onSnapshot(q, (snap) => {
+      const rebuild = () => {
+        const merged = new Map<string, any>();
+
+        Object.entries(usersAlerts).forEach(([_, a]: any) => {
+          const canonicalKey = makeCanonicalKey(a);
+          const type = (a?.type || "").toString().toLowerCase();
+          if (type !== "exit" && type !== "enter") return;
+          merged.set(canonicalKey, a);
+        });
+
+        Object.entries(deviceAlerts).forEach(([_, a]: any) => {
+          const canonicalKey = makeCanonicalKey(a, activeDeviceId || "");
+          const type = (a?.type || "").toString().toLowerCase();
+          if (type !== "exit" && type !== "enter") return;
+
+          if (!merged.has(canonicalKey)) {
+            merged.set(canonicalKey, a);
+          }
+        });
+
         let count = 0;
 
-        snap.forEach((docSnap) => {
-          const a = docSnap.data() as any;
-          const id = docSnap.id;
-          const type = (a?.type || "").toString().toLowerCase();
-
-          if (type !== "exit" && type !== "enter") return;
-          if (!readMap[id]) count += 1;
+        Array.from(merged.keys()).forEach((canonicalKey) => {
+          if (!readMap[canonicalKey]) count += 1;
         });
 
         setUnreadCount(count);
-      });
+      };
 
-      unsubRef.current = () => unsub();
+      const cleanups: Array<() => void> = [];
+
+      const unsubUsers = onValue(ref(rtdb, `users/${uid}/alerts`), (snap) => {
+        usersAlerts = snap.val() || {};
+        rebuild();
+      });
+      cleanups.push(unsubUsers);
+
+      if (activeDeviceId) {
+        const unsubDevice = onValue(
+          ref(rtdb, `devices/${activeDeviceId}/alerts`),
+          (snap) => {
+            deviceAlerts = snap.val() || {};
+            rebuild();
+          }
+        );
+        cleanups.push(unsubDevice);
+      }
+
+      unsubRef.current = () => {
+        cleanups.forEach((fn) => fn());
+      };
     } catch {
       setUnreadCount(0);
     }
@@ -117,20 +165,22 @@ export default function TabLayout() {
   );
 
   useEffect(() => {
-    const sub = Notifications.addNotificationResponseReceivedListener((response) => {
-      const data = response.notification.request.content.data as {
-        routeId?: string;
-      };
+    const sub = Notifications.addNotificationResponseReceivedListener(
+      (response) => {
+        const data = response.notification.request.content.data as {
+          routeId?: string;
+        };
 
-      if (data?.routeId) {
-        router.push({
-          pathname: "/RouteHistory",
-          params: { routeId: data.routeId },
-        });
-      } else {
-        router.push("/(tabs)/notification");
+        if (data?.routeId) {
+          router.push({
+            pathname: "/RouteHistory",
+            params: { routeId: data.routeId },
+          });
+        } else {
+          router.push("/(tabs)/notification");
+        }
       }
-    });
+    );
 
     return () => sub.remove();
   }, [router]);
@@ -150,7 +200,9 @@ export default function TabLayout() {
         name="home"
         options={{
           title: "หน้าหลัก",
-          tabBarIcon: ({ color }) => <FontAwesome6 name="house" size={24} color={color} />,
+          tabBarIcon: ({ color }) => (
+            <FontAwesome6 name="house" size={24} color={color} />
+          ),
         }}
       />
 
@@ -158,7 +210,9 @@ export default function TabLayout() {
         name="devices"
         options={{
           title: "อุปกรณ์",
-          tabBarIcon: ({ color }) => <MaterialIcons name="devices" size={24} color={color} />,
+          tabBarIcon: ({ color }) => (
+            <MaterialIcons name="devices" size={24} color={color} />
+          ),
         }}
       />
 
@@ -166,7 +220,9 @@ export default function TabLayout() {
         name="maps"
         options={{
           title: "แผนที่",
-          tabBarIcon: ({ color }) => <FontAwesome5 name="map-marked-alt" size={24} color={color} />,
+          tabBarIcon: ({ color }) => (
+            <FontAwesome5 name="map-marked-alt" size={24} color={color} />
+          ),
         }}
       />
 
@@ -174,7 +230,9 @@ export default function TabLayout() {
         name="notification"
         options={{
           title: "แจ้งเตือน",
-          tabBarIcon: ({ color }) => <FontAwesome6 name="bell" size={24} color={color} />,
+          tabBarIcon: ({ color }) => (
+            <FontAwesome6 name="bell" size={24} color={color} />
+          ),
           tabBarBadge: unreadCount > 0 ? unreadCount : undefined,
         }}
       />
@@ -183,7 +241,9 @@ export default function TabLayout() {
         name="profile"
         options={{
           title: "บัญชีผู้ใช้",
-          tabBarIcon: ({ color }) => <FontAwesome6 name="user-pen" size={24} color={color} />,
+          tabBarIcon: ({ color }) => (
+            <FontAwesome6 name="user-pen" size={24} color={color} />
+          ),
         }}
       />
     </Tabs>

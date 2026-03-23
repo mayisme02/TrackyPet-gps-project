@@ -22,7 +22,6 @@ import MapView, {
 import { MaterialIcons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useFocusEffect } from "@react-navigation/native";
-import { auth, db, rtdb } from "../../firebase/firebase";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { DEVICE_TYPES } from "../../assets/constants/deviceData";
@@ -38,6 +37,7 @@ import {
   setDoc,
 } from "firebase/firestore";
 import { ref, set, get } from "firebase/database";
+import { auth, db, rtdb } from "../../firebase/firebase";
 import { pushAlertAndLog } from "@/utils/alertService";
 import { styles } from "@/assets/styles/maps.styles";
 
@@ -255,83 +255,90 @@ export default function MapTracker() {
   }
 
   const sendGeofenceAlert = useCallback(
-  async (type: "exit" | "enter", distance: number) => {
-    if (!deviceCode) return;
-
-    const now = new Date();
-    const atUtc = now.toISOString();
-    const atMs = now.getTime();
-    const atTh = now.toLocaleString("th-TH", {
-      dateStyle: "long",
-      timeStyle: "medium",
-    });
-
-    const ownerUid = auth.currentUser?.uid ?? null;
-
-    const message =
-      type === "exit"
-        ? `สัตว์เลี้ยงออกนอกพื้นที่ (${Math.round(distance)} ม.)`
-        : `สัตว์เลี้ยงกลับเข้าพื้นที่`;
-
-    // route id ของการบันทึกปัจจุบัน
-    const rid = recordingCtxRef.current?.recordId ?? recordId ?? null;
-
-    // เขียน RTDB alerts + logs
-    await pushAlertAndLog({
-      deviceId: deviceCode,
-      type,
-      message,
-      radiusKm: geofenceRadius / 1000,
-      atUtc,
-      atTh,
-      petId: petId ?? null,
-      petName: petName ?? null,
-      photoURL: petPhotoURL ?? null,
-      routeId: rid,
-      ownerUid,
-    });
-
-    try {
+    async (type: "exit" | "enter", distance: number) => {
+      if (!deviceCode) return;
       if (!auth.currentUser) return;
-      const uid = auth.currentUser.uid;
 
-      await addDoc(collection(db, "users", uid, "alerts"), {
+      const now = new Date();
+      const atUtc = now.toISOString();
+      const atMs = now.getTime();
+      const atTh = now.toLocaleString("th-TH", {
+        dateStyle: "long",
+        timeStyle: "medium",
+      });
+
+      const ownerUid = auth.currentUser.uid;
+
+      const message =
+        type === "exit"
+          ? `สัตว์เลี้ยงออกนอกพื้นที่`
+          : `สัตว์เลี้ยงกลับเข้าพื้นที่`;
+
+      const rid = recordingCtxRef.current?.recordId ?? recordId ?? null;
+
+      const payload = {
         type,
         kind: "GEOFENCE",
         message,
         deviceCode,
         petId: petId ?? null,
         petName: petName ?? null,
+        photoURL: petPhotoURL ?? null,
         routeId: rid,
         atIso: atUtc,
         atMs,
+        atUtc,
+        atTh,
+        radiusKm: geofenceRadius / 1000,
         lat: petLocation?.latitude ?? null,
         lng: petLocation?.longitude ?? null,
-        createdAt: serverTimestamp(),
         read: false,
-      });
+      };
 
-      if (rid) {
-        await addDoc(collection(db, "users", uid, "routeHistories", rid, "alerts"), {
+      try {
+        // เก็บ log / push notification เดิม
+        await pushAlertAndLog({
+          deviceId: deviceCode,
           type,
-          kind: "GEOFENCE",
           message,
-          deviceCode,
+          radiusKm: geofenceRadius / 1000,
+          atUtc,
+          atTh,
           petId: petId ?? null,
           petName: petName ?? null,
+          photoURL: petPhotoURL ?? null,
           routeId: rid,
-          atIso: atUtc,
-          atMs,
-          lat: petLocation?.latitude ?? null,
-          lng: petLocation?.longitude ?? null,
-          createdAt: serverTimestamp(),
+          ownerUid,
         });
-      }
-    } catch {}
-  },
-  [deviceCode, geofenceRadius, petId, petName, petPhotoURL, petLocation, recordId]
-);
 
+        // ✅ เขียนลง Realtime Database แทน Firestore
+        const alertId = `alert_${atMs}`;
+
+        await set(
+          ref(rtdb, `users/${ownerUid}/alerts/${alertId}`),
+          payload
+        );
+
+        await set(
+          ref(rtdb, `devices/${deviceCode}/alerts/${alertId}`),
+          payload
+        );
+
+        // ถ้ามี routeId ก็เก็บใน routeHistories alerts ด้วย
+        if (rid) {
+          await set(
+            ref(rtdb, `users/${ownerUid}/routeHistories/${rid}/alerts/${alertId}`),
+            payload
+          );
+        }
+
+        DeviceEventEmitter.emit("notifications:readmap_updated");
+      } catch (error) {
+        console.log("sendGeofenceAlert error:", error);
+      }
+    },
+    [deviceCode, geofenceRadius, petId, petName, petPhotoURL, petLocation, recordId]
+  );
   /* ================= FORMAT ================= */
   const formatThaiDate = (iso: string) =>
     new Date(iso).toLocaleDateString("th-TH", { day: "numeric", month: "long", year: "numeric" });
@@ -406,142 +413,149 @@ export default function MapTracker() {
         : "ลากจุดเพื่อปรับตำแหน่ง หรือบันทึก";
 
   /* ================= FETCH ================= */
-  const fetchLocation = async (code: string, options?: { silent?: boolean }): Promise<boolean> => {
-    try {
-      setLoading(true);
+  const fetchLocation = useCallback(
+    async (code: string, options?: { silent?: boolean }): Promise<boolean> => {
+      try {
+        setLoading(true);
 
-      const res = await fetch(`${BACKEND_URL}/api/device/location`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ deviceCode: code }),
-      });
-      if (!res.ok) throw new Error();
+        const res = await fetch(`${BACKEND_URL}/api/device/location`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ deviceCode: code }),
+        });
+        if (!res.ok) throw new Error();
 
-      const data = await res.json();
-      const timestamp = data.timestamp ?? new Date().toISOString();
+        const data = await res.json();
+        const timestamp = data.timestamp ?? new Date().toISOString();
 
-      const current: DeviceLocation = {
-        latitude: data.latitude,
-        longitude: data.longitude,
-        timestamp,
-        accuracy: data.acc ?? 30,
-      };
+        const current: DeviceLocation = {
+          latitude: data.latitude,
+          longitude: data.longitude,
+          timestamp,
+          accuracy: data.acc ?? 30,
+        };
 
-      setLocation(current);
-      setPetLocation(current);
+        setLocation(current);
+        setPetLocation(current);
 
-      // ===== FILTER JITTER (show path when moved >= 3m) =====
-      const tsMs = Date.parse(timestamp) || Date.now();
-      const acc = Number(current.accuracy ?? 999);
+        const tsMs = Date.parse(timestamp) || Date.now();
+        const acc = Number(current.accuracy ?? 999);
 
-      // กันจุดที่ accuracy แย่มาก (ส่วนใหญ่เป็น noise)
-      if (acc > MAX_ACCEPT_ACCURACY) return true;
+        if (acc > MAX_ACCEPT_ACCURACY) return true;
 
-      const prev = lastAcceptedRef.current;
-      const minMove = MIN_MOVE_DISTANCE; // fix threshold = 3m ตามที่ต้องการ
+        const prev = lastAcceptedRef.current;
+        const minMove = MIN_MOVE_DISTANCE;
 
-      if (prev) {
-        const dt = Math.max(1, (tsMs - prev.tsMs) / 1000);
-        const dist = distanceInMeters(prev.lat, prev.lng, current.latitude, current.longitude);
-        const speed = dist / dt;
+        if (prev) {
+          const dt = Math.max(1, (tsMs - prev.tsMs) / 1000);
+          const dist = distanceInMeters(prev.lat, prev.lng, current.latitude, current.longitude);
+          const speed = dist / dt;
 
-        // กัน teleport / ค่าโดดผิดปกติ
-        if (speed > MAX_PLAUSIBLE_SPEED) return true;
+          if (speed > MAX_PLAUSIBLE_SPEED) return true;
+          if (dist < minMove) return true;
+        }
 
-        // เดินเกิน 3 เมตรค่อยรับเข้าเส้นทาง
-        if (dist < minMove) return true;
-      }
+        lastAcceptedRef.current = { lat: current.latitude, lng: current.longitude, tsMs };
 
-      lastAcceptedRef.current = { lat: current.latitude, lng: current.longitude, tsMs };
+        const p: TrackPoint = {
+          latitude: current.latitude,
+          longitude: current.longitude,
+          timestamp,
+        };
 
-      const p: TrackPoint = { latitude: current.latitude, longitude: current.longitude, timestamp };
-      appendPoint(p, minMove); 
+        appendPoint(p, minMove);
 
-      if (activeGeofence && activeGeofence.length >= 3) {
-        const inside = isPointInPolygon(
-          { latitude: current.latitude, longitude: current.longitude },
-          activeGeofence
-        );
+        if (activeGeofence && activeGeofence.length >= 3) {
+          const inside = isPointInPolygon(
+            { latitude: current.latitude, longitude: current.longitude },
+            activeGeofence
+          );
 
-        const nowMs = Date.now();
+          const nowMs = Date.now();
 
-        // เก็บไว้เพื่อ UI (โชว์ว่าอยู่ใน/นอก)
-        prevInsideRef.current = inside;
-        setIsInsideGeofence(inside);
+          prevInsideRef.current = inside;
+          setIsInsideGeofence(inside);
 
-        if (inside) {
-          // กลับเข้าเขต -> เคลียร์ outside timer
-          outsideSinceRef.current = null;
+          if (inside) {
+            outsideSinceRef.current = null;
 
-          // เคยแจ้ง exit ไปแล้ว (exitArmedRef=false) แปลว่ากำลังกลับเข้าพื้นที่
-          // รอเข้าเขต "ต่อเนื่อง" 8 วิ แล้วค่อยยิง enter 1 ครั้ง
-          if (!exitArmedRef.current) {
-            if (!insideSinceRef.current) insideSinceRef.current = nowMs;
+            if (!exitArmedRef.current) {
+              if (!insideSinceRef.current) insideSinceRef.current = nowMs;
 
-            if (nowMs - insideSinceRef.current >= GEOFENCE_REARM_CONFIRM_MS) {
-              void sendGeofenceAlert("enter", 0); 
-
-              exitArmedRef.current = true; 
+              if (nowMs - insideSinceRef.current >= GEOFENCE_REARM_CONFIRM_MS) {
+                void sendGeofenceAlert("enter", 0);
+                exitArmedRef.current = true;
+                insideSinceRef.current = null;
+              }
+            } else {
               insideSinceRef.current = null;
             }
           } else {
             insideSinceRef.current = null;
-          }
-        } else {
-          // อยู่นอกเขต -> เคลียร์ inside timer
-          insideSinceRef.current = null;
 
-          // แจ้ง exit ได้แค่เมื่อ "armed" และอยู่นอกต่อเนื่องตามเวลาที่กำหนด
-          if (exitArmedRef.current) {
-            if (!outsideSinceRef.current) outsideSinceRef.current = nowMs;
+            if (exitArmedRef.current) {
+              if (!outsideSinceRef.current) outsideSinceRef.current = nowMs;
 
-            if (nowMs - outsideSinceRef.current >= GEOFENCE_EXIT_CONFIRM_MS) {
-              void sendGeofenceAlert("exit", 0);
-              if (isRecording) geofenceExitCountRef.current += 1;
+              if (nowMs - outsideSinceRef.current >= GEOFENCE_EXIT_CONFIRM_MS) {
+                void sendGeofenceAlert("exit", 0);
 
-              exitArmedRef.current = false;
-              outsideSinceRef.current = null;
+                if (isRecording) {
+                  geofenceExitCountRef.current += 1;
+                }
+
+                exitArmedRef.current = false;
+                outsideSinceRef.current = null;
+              }
             }
           }
         }
 
-      }
+        if (isRecording) {
+          const locked = recordingCtxRef.current;
+          if (!locked || locked.deviceCode !== code) return true;
 
-      // ===== SAVE POINT + METRICS =====
-      if (isRecording) {
-        const locked = recordingCtxRef.current;
-        if (!locked || locked.deviceCode !== code) return true;
+          void savePoint(locked.recordId, p);
 
-        void savePoint(locked.recordId, p);
-
-        const now = Date.now();
-        if (now - lastMetricsPushRef.current >= 10000) {
-          lastMetricsPushRef.current = now;
-          void pushMetrics(locked.recordId);
+          const now = Date.now();
+          if (now - lastMetricsPushRef.current >= 10000) {
+            lastMetricsPushRef.current = now;
+            void pushMetrics(locked.recordId);
+          }
         }
-      }
 
-      return true;
-    } catch {
-      if (!options?.silent) Alert.alert("ไม่พบอุปกรณ์", "กรุณาตรวจสอบรหัสอุปกรณ์");
-      return false;
-    } finally {
-      setLoading(false);
-    }
-  };
+        return true;
+      } catch (error) {
+
+        if (!options?.silent) {
+          Alert.alert("ไม่พบอุปกรณ์", "กรุณาตรวจสอบรหัสอุปกรณ์");
+        }
+        return false;
+      } finally {
+        setLoading(false);
+      }
+    },
+    [activeGeofence, isRecording, sendGeofenceAlert]
+  );
 
   /* ================= AUTO TRACK (ONLY WHEN RECORDING) ================= */
   useEffect(() => {
-    if (!isTracking || !isRecording) return;
-    const locked = recordingCtxRef.current;
-    if (!locked) return;
+    if (!deviceCode) return;
+
+    const shouldPoll =
+      isTracking || isRecording || !!(activeGeofence && activeGeofence.length >= 3);
+
+    if (!shouldPoll) return;
+
+    const codeToTrack = recordingCtxRef.current?.deviceCode ?? deviceCode;
+
+    void fetchLocation(codeToTrack, { silent: true });
 
     const timer = setInterval(() => {
-      void fetchLocation(locked.deviceCode, { silent: true });
+      void fetchLocation(codeToTrack, { silent: true });
     }, 5000);
 
     return () => clearInterval(timer);
-  }, [isTracking, isRecording]); 
+  }, [deviceCode, isTracking, isRecording, activeGeofence, fetchLocation]);
 
   /* ================= RECORDING CONTROL ================= */
   const stopRecording = async (finalStatus: "completed" | "cancelled") => {
@@ -675,69 +689,69 @@ export default function MapTracker() {
   };
 
   /* ================= LOAD PET MATCH (LATEST PET DATA) ================= */
-useEffect(() => {
-  if (!auth.currentUser || !deviceCode) {
-    setPetName(null);
-    setPetPhotoURL(null);
-    setPetId(null);
-    return;
-  }
+  useEffect(() => {
+    if (!auth.currentUser || !deviceCode) {
+      setPetName(null);
+      setPetPhotoURL(null);
+      setPetId(null);
+      return;
+    }
 
-  const uid = auth.currentUser.uid;
-  let unsubPet: null | (() => void) = null;
+    const uid = auth.currentUser.uid;
+    let unsubPet: null | (() => void) = null;
 
-  const unsubMatch = onSnapshot(
-    doc(db, "users", uid, "deviceMatches", deviceCode),
-    (matchSnap) => {
-      if (unsubPet) {
-        unsubPet();
-        unsubPet = null;
-      }
+    const unsubMatch = onSnapshot(
+      doc(db, "users", uid, "deviceMatches", deviceCode),
+      (matchSnap) => {
+        if (unsubPet) {
+          unsubPet();
+          unsubPet = null;
+        }
 
-      if (!matchSnap.exists()) {
-        setPetName(null);
-        setPetPhotoURL(null);
-        setPetId(null);
-        return;
-      }
+        if (!matchSnap.exists()) {
+          setPetName(null);
+          setPetPhotoURL(null);
+          setPetId(null);
+          return;
+        }
 
-      const matchData: any = matchSnap.data();
-      const matchedPetId = matchData.petId ?? null;
+        const matchData: any = matchSnap.data();
+        const matchedPetId = matchData.petId ?? null;
 
-      setPetId(matchedPetId);
+        setPetId(matchedPetId);
 
-      if (!matchedPetId) {
-        setPetName(matchData.petName ?? null);
-        setPetPhotoURL(matchData.photoURL ?? null);
-        setPetMarkerKey((k) => k + 1);
-        setMarkerReady(false);
-        return;
-      }
-
-      unsubPet = onSnapshot(
-        doc(db, "users", uid, "pets", matchedPetId),
-        (petSnap) => {
-          if (!petSnap.exists()) {
-            setPetName(matchData.petName ?? null);
-            setPetPhotoURL(matchData.photoURL ?? null);
-          } else {
-            const petData: any = petSnap.data();
-            setPetName(petData.name ?? matchData.petName ?? null);
-            setPetPhotoURL(petData.photoURL ?? null);
-          }
-
+        if (!matchedPetId) {
+          setPetName(matchData.petName ?? null);
+          setPetPhotoURL(matchData.photoURL ?? null);
           setPetMarkerKey((k) => k + 1);
           setMarkerReady(false);
+          return;
         }
-      );
-    }
-  );
 
-  return () => {
-    if (unsubPet) unsubPet();
-    unsubMatch();
-  };
-}, [deviceCode]);
+        unsubPet = onSnapshot(
+          doc(db, "users", uid, "pets", matchedPetId),
+          (petSnap) => {
+            if (!petSnap.exists()) {
+              setPetName(matchData.petName ?? null);
+              setPetPhotoURL(matchData.photoURL ?? null);
+            } else {
+              const petData: any = petSnap.data();
+              setPetName(petData.name ?? matchData.petName ?? null);
+              setPetPhotoURL(petData.photoURL ?? null);
+            }
+
+            setPetMarkerKey((k) => k + 1);
+            setMarkerReady(false);
+          }
+        );
+      }
+    );
+
+    return () => {
+      if (unsubPet) unsubPet();
+      unsubMatch();
+    };
+  }, [deviceCode]);
 
   /* ================= LOAD GEOFENCE (stored only) ================= */
   useEffect(() => {
@@ -902,49 +916,50 @@ useEffect(() => {
 
   /* ================= LOAD ACTIVE DEVICE ================= */
   useFocusEffect(
-  useCallback(() => {
-    const load = async () => {
-      const uid = auth.currentUser?.uid;
-      if (!uid) return; 
+    useCallback(() => {
+      const load = async () => {
+        const uid = auth.currentUser?.uid;
+        if (!uid) return;
 
-      const activeDeviceKey = getActiveDeviceStorageKey(uid);
-      const devicesKey = getDevicesStorageKey(uid);
+        const activeDeviceKey = getActiveDeviceStorageKey(uid);
+        const devicesKey = getDevicesStorageKey(uid);
 
-      const active = await AsyncStorage.getItem(activeDeviceKey);
-      const stored = await AsyncStorage.getItem(devicesKey);
-      const list: Device[] = stored ? JSON.parse(stored) : [];
+        const active = await AsyncStorage.getItem(activeDeviceKey);
+        const stored = await AsyncStorage.getItem(devicesKey);
+        const list: Device[] = stored ? JSON.parse(stored) : [];
 
-      if (!Array.isArray(list) || list.length === 0) {
-        setDeviceCode(null);
-        setDeviceName("GPS Tracker");
-        return;
-      }
+        if (!Array.isArray(list) || list.length === 0) {
+          setDeviceCode(null);
+          setDeviceName("GPS Tracker");
+          return;
+        }
 
-      let device = list.find((d) => d.code === active);
+        let device = list.find((d) => d.code === active);
 
-      if (!device) {
-        device = list[0];
-        await AsyncStorage.setItem(activeDeviceKey, device.code);
-      }
+        if (!device) {
+          device = list[0];
+          await AsyncStorage.setItem(activeDeviceKey, device.code);
+        }
 
-      setDeviceCode(device.code);
+        setDeviceCode(device.code);
+        setIsTracking(true);
 
-      if (device?.type && DEVICE_TYPES[device.type]) {
-        setDeviceName(DEVICE_TYPES[device.type].name);
-      } else {
-        setDeviceName("GPS Tracker");
-      }
-    };
+        if (device?.type && DEVICE_TYPES[device.type]) {
+          setDeviceName(DEVICE_TYPES[device.type].name);
+        } else {
+          setDeviceName("GPS Tracker");
+        }
+      };
 
-    void load();
-
-    const sub = DeviceEventEmitter.addListener("activeDeviceChanged", () => {
       void load();
-    });
 
-    return () => sub.remove();
-  }, [])
-);
+      const sub = DeviceEventEmitter.addListener("activeDeviceChanged", () => {
+        void load();
+      });
+
+      return () => sub.remove();
+    }, [])
+  );
 
   useEffect(() => {
     if (geofencePoints.length >= 2) setGeofencePath([...geofencePoints]);
@@ -976,90 +991,94 @@ useEffect(() => {
     return () => clearInterval(t);
   }, [savedRouteFilter, clearActiveGeofence]);
 
+  useEffect(() => {
+    console.log("UID:", auth.currentUser?.uid);
+  }, []);
+
   /* ================= ADD DEVICE ================= */
   const confirmAddDevice = async () => {
-  try {
-    const uid = auth.currentUser?.uid;
-    if (!uid) {
-      Alert.alert("ยังไม่ได้เข้าสู่ระบบ", "กรุณาเข้าสู่ระบบก่อน");
-      return;
-    }
-
-    const code = tempCode.trim().toUpperCase();
-    if (!code) {
-      Alert.alert("กรุณากรอกรหัสอุปกรณ์");
-      return;
-    }
-
-    const devicesKey = getDevicesStorageKey(uid);
-    const activeDeviceKey = getActiveDeviceStorageKey(uid);
-
-    const stored = await AsyncStorage.getItem(devicesKey);
-    const list: Device[] = stored ? JSON.parse(stored) : [];
-
-    if (list.some((d) => d.code === code)) {
-      Alert.alert("อุปกรณ์ถูกเพิ่มแล้ว");
-      return;
-    }
-
-    // 1) เช็กว่า API ใช้งานได้
-    const ok = await fetchLocation(code);
-    if (!ok) return;
-
-    // 2) เพิ่มอุปกรณ์ลง local ก่อน
-    const newDevice: Device = {
-      id: code,
-      code,
-      type: "GPS_TRACKER_A7670",
-      name: "LilyGo A7670E",
-      createdAt: new Date().toISOString(),
-    };
-
-    const updated = [...list, newDevice];
-
-    await AsyncStorage.setItem(devicesKey, JSON.stringify(updated));
-    await AsyncStorage.setItem(activeDeviceKey, code);
-
-    // 3) อัปเดต state ของหน้าปัจจุบัน
-    setDeviceCode(code);
-
-    const deviceInfo = DEVICE_TYPES[newDevice.type || "GPS_TRACKER_A7670"];
-    setDeviceName(deviceInfo?.name ?? "GPS Tracker");
-
-    lastAcceptedRef.current = null;
-    prevInsideRef.current = null;
-    setIsInsideGeofence(null);
-    lastMetricsPushRef.current = 0;
-
-    setIsTracking(true);
-    setModalVisible(false);
-    setTempCode("");
-
-    // 4) แจ้งหน้าอื่นให้ reload
-    DeviceEventEmitter.emit("devicesChanged");
-    DeviceEventEmitter.emit("activeDeviceChanged", { code });
-
-    // 5) ถ้าจะเก็บ ownerUid ค่อยทำทีหลังแบบไม่ทำให้การเพิ่มล้ม
     try {
-      const ownerRef = ref(rtdb, `devices/${code}/ownerUid`);
-      const ownerSnap = await get(ownerRef);
+      const uid = auth.currentUser?.uid;
+      if (!uid) {
+        Alert.alert("ยังไม่ได้เข้าสู่ระบบ", "กรุณาเข้าสู่ระบบก่อน");
+        return;
+      }
 
-      if (ownerSnap.exists()) {
-        const ownerUid = ownerSnap.val();
-        if (ownerUid !== uid) {
-          console.log("ownerUid belongs to another user");
+      const code = tempCode.trim().toUpperCase();
+      if (!code) {
+        Alert.alert("กรุณากรอกรหัสอุปกรณ์");
+        return;
+      }
+
+      const devicesKey = getDevicesStorageKey(uid);
+      const activeDeviceKey = getActiveDeviceStorageKey(uid);
+
+      const stored = await AsyncStorage.getItem(devicesKey);
+      const list: Device[] = stored ? JSON.parse(stored) : [];
+
+      if (list.some((d) => d.code === code)) {
+        Alert.alert("อุปกรณ์ถูกเพิ่มแล้ว");
+        return;
+      }
+
+      // 1) เช็กว่า API ใช้งานได้
+      const ok = await fetchLocation(code);
+      if (!ok) return;
+
+      // 2) เพิ่มอุปกรณ์ลง local ก่อน
+      const newDevice: Device = {
+        id: code,
+        code,
+        type: "GPS_TRACKER_A7670",
+        name: "LilyGo A7670E",
+        createdAt: new Date().toISOString(),
+      };
+
+      const updated = [...list, newDevice];
+
+      await AsyncStorage.setItem(devicesKey, JSON.stringify(updated));
+      await AsyncStorage.setItem(activeDeviceKey, code);
+
+      // 3) อัปเดต state ของหน้าปัจจุบัน
+      setDeviceCode(code);
+
+      const deviceInfo = DEVICE_TYPES[newDevice.type || "GPS_TRACKER_A7670"];
+      setDeviceName(deviceInfo?.name ?? "GPS Tracker");
+
+      lastAcceptedRef.current = null;
+      prevInsideRef.current = null;
+      setIsInsideGeofence(null);
+      lastMetricsPushRef.current = 0;
+
+      setIsTracking(true);
+      setModalVisible(false);
+      setTempCode("");
+
+      // 4) แจ้งหน้าอื่นให้ reload
+      DeviceEventEmitter.emit("devicesChanged");
+      DeviceEventEmitter.emit("activeDeviceChanged", { code });
+
+      // 5) ถ้าจะเก็บ ownerUid ค่อยทำทีหลังแบบไม่ทำให้การเพิ่มล้ม
+      try {
+        const ownerRef = ref(rtdb, `devices/${code}/ownerUid`);
+        const ownerSnap = await get(ownerRef);
+
+        if (ownerSnap.exists()) {
+          const ownerUid = ownerSnap.val();
+          if (ownerUid !== uid) {
+            console.log("ownerUid belongs to another user");
+          }
+        } else {
+          await set(ownerRef, uid);
         }
-      } else {
-        await set(ownerRef, uid);
+      } catch (e) {
+        console.log("ownerUid warning:", e);
       }
     } catch (e) {
-      console.log("ownerUid warning:", e);
+      console.log("confirmAddDevice error:", e);
+      Alert.alert("เกิดข้อผิดพลาด", "ไม่สามารถเพิ่มอุปกรณ์ได้");
     }
-  } catch (e) {
-    console.log("confirmAddDevice error:", e);
-    Alert.alert("เกิดข้อผิดพลาด", "ไม่สามารถเพิ่มอุปกรณ์ได้");
-  }
-};
+  };
   /* ================= GEOFENCE ACTIONS ================= */
   const cancelGeofence = () => {
     if (geofencePoints.length > 0) {

@@ -1232,6 +1232,7 @@ useEffect(() => {
 
     setTimeout(() => setMenuVisible(true), 250);
   };
+  
 
   /* ================= SAVE FILTER & GO ================= */
   const saveFilterAndGo = async () => {
@@ -1312,6 +1313,7 @@ useEffect(() => {
     if (done) return <MaterialIcons name="check-circle" size={22} color="#16A34A" />;
     return <MaterialIcons name="chevron-right" size={22} color="#9CA3AF" />;
   };
+  
 
   return (
     <View style={styles.container}>
@@ -1320,16 +1322,16 @@ useEffect(() => {
         {activeGeofence && activeGeofence.length >= 3 && (
           <Polygon
             coordinates={activeGeofence}
-            strokeColor="#A100CE"
+            strokeColor="#ff0d0d"
             strokeWidth={3}
-            fillColor="rgba(150, 23, 185, 0.21)"
+            fillColor="rgba(255, 0, 0, 0.55)"
             zIndex={1}
           />
         )}
 
         {/* drawing geofence */}
         {isGeofenceMode && geofencePoints.length > 1 && (
-          <Polyline coordinates={geofencePoints} strokeColor="#A100CE" strokeWidth={3} lineDashPattern={[8, 6]} zIndex={4} />
+          <Polyline coordinates={geofencePoints} strokeColor="#ff0d0d" strokeWidth={3} lineDashPattern={[8, 6]} zIndex={4} />
         )}
 
         {/* path tracking */}
@@ -1352,7 +1354,7 @@ useEffect(() => {
                 });
               }}
             >
-              <MaterialIcons name="radio-button-checked" size={18} color="#8F08B5" />
+              <MaterialIcons name="radio-button-checked" size={18} color="#ff0d0d" />
             </Marker>
           );
         })}
@@ -1703,5 +1705,8 @@ useEffect(() => {
         </View>
       </Modal>
     </View>
+
+    
   );
+  
 }

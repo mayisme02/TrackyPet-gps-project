@@ -7,29 +7,27 @@
     "icon": "./assets/images/LogoApp.png",
     "scheme": "appiotpet",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
       "config": {
         "googleMapsApiKey": "process.env.GOOGLE_MAPS_API_KEY"
-      }
+      },
+      "runtimeVersion": "1.0.0"
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/LogoApp.png",
         "backgroundColor": "#FFEEAA"
       },
-      "edgeToEdgeEnabled": true,
       "config": {
         "googleMaps": {
           "apiKey": "process.env.GOOGLE_MAPS_API_KEY"
         }
-      }
-    },
-    "web": {
-      "bundler": "metro",
-      "output": "static",
-      "favicon": "./assets/images/favicon.png"
+      },
+      "runtimeVersion": {
+        "policy": "appVersion"
+      },
+      "package": "com.sroithongthae.appiotpet"
     },
     "plugins": [
       "expo-router",
@@ -43,10 +41,29 @@
         }
       ],
       "expo-font",
-      "expo-web-browser"
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "extraProguardRules": "-keep class com.google.android.libraries.navigation.** { *; }"
+          }
+        }
+      ],
+      "expo-build-properties",
+      "@react-native-community/datetimepicker"
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "dbc3aeeb-d1f0-4a9f-b73c-ed3b85a04163"
+      }
+    },
+    "owner": "sroithongthae",
+    "updates": {
+      "url": "https://u.expo.dev/dbc3aeeb-d1f0-4a9f-b73c-ed3b85a04163"
     }
   }
 }

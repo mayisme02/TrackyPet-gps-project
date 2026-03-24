@@ -1339,16 +1339,16 @@ export default function MapTracker() {
         {activeGeofence && activeGeofence.length >= 3 && (
           <Polygon
             coordinates={activeGeofence}
-            strokeColor="#A100CE"
+            strokeColor="#CE0000"
             strokeWidth={3}
-            fillColor="rgba(150, 23, 185, 0.21)"
+            fillColor="rgba(235, 14, 14, 0.21)"
             zIndex={1}
           />
         )}
 
         {/* drawing geofence */}
         {isGeofenceMode && geofencePoints.length > 1 && (
-          <Polyline coordinates={geofencePoints} strokeColor="#A100CE" strokeWidth={3} lineDashPattern={[8, 6]} zIndex={4} />
+          <Polyline coordinates={geofencePoints} strokeColor="#CE0000" strokeWidth={3} lineDashPattern={[8, 6]} zIndex={4} />
         )}
 
         {/* path tracking */}
@@ -1371,7 +1371,7 @@ export default function MapTracker() {
                 });
               }}
             >
-              <MaterialIcons name="radio-button-checked" size={18} color="#8F08B5" />
+              <MaterialIcons name="radio-button-checked" size={18} color="#CE0000" />
             </Marker>
           );
         })}

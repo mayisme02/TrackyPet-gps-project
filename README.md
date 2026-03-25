@@ -34,7 +34,7 @@ A detailed guide for multiple platforms setup can be found [in the React Native 
 
 3. Run the application
 
-Scan the QR code using Expo Go on your mobile device (iOS/Android) Or press the following keys in the terminal
+Scan the QR code using [Expo Go](https://expo.dev/go) on your mobile device (iOS/Android) Or press the following keys in the terminal
 
 - i → Open iOS simulator
 - a → Open Android emulator

@@ -78,3 +78,39 @@ TrackyPet-gps-project/
 ├── app.json
 ├── eas.json
 └── README.md
+```
+
+## Features
+
+### 👤 User Management
+- Register and create an account with username, phone number, email, and password  
+- Secure login and logout functionality  
+- View and update user profile information  
+
+### 🐾 Pet Management
+- Add multiple pets under a single user account  
+- View, edit, and delete pet information  
+- Manage pet profiles with detailed attributes  
+
+### 📡 IoT Device Integration
+- Connect IoT devices using a unique device code  
+- View device status and disconnect devices when needed  
+- Link IoT devices with specific pets for tracking  
+
+### 📍 Real-time Tracking
+- Track pet location in real-time via interactive map  
+- Display live GPS data from IoT device  
+
+### 🗺️ Route Recording & History
+- Start and stop route recording with customizable time range  
+- Prevent device switching during active recording  
+- View route history on map with playback visualization  
+
+### 🚧 Geofencing & Alerts
+- Define safe zones (geofence) for pets  
+- Receive instant notifications when pets leave the defined area  
+
+### 📊 Activity Analytics
+- View total distance traveled by the pet  
+- Track duration of movement  
+- Monitor number of times the pet exits the safe zone  

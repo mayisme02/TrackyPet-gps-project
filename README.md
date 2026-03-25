@@ -19,4 +19,23 @@ A detailed guide for multiple platforms setup can be found [in the React Native 
 
 ### Setup Project
 
-- Clone this repository using `git clone `.
+- Clone this repository using `git clone https://github.com/mayisme02/TrackyPet-gps-project.git`.
+- `cd` into `app-iot-pet`.
+
+### Running the app
+
+1. Install dependencies
+   ```bash
+   npm install
+
+2. Start the development server
+   ```bash
+   npx expo start
+
+3. Run the application
+Scan the QR code using Expo Go on your mobile device (iOS/Android)
+Or press the following keys in the terminal:
+i → Open iOS simulator
+a → Open Android emulator
+w → Open in web browser
+Make sure your mobile device and computer are connected to the same network.

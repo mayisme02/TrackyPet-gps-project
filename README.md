@@ -44,149 +44,37 @@ Make sure your mobile device and computer are connected to the same network.
 
 ## Project Structure
 
-```bash
-├── app
+```text
+TrackyPet-gps-project/
+├── app/                        # Main application screens using Expo Router
+│   ├── (auth)/                 # Authentication screens
+│   ├── (modals)/               # Modal screens
+│   ├── (tabs)/                 # Bottom tab screens
 │   ├── _layout.tsx
-│   ├── (auth)
-│   │   ├── _layout.tsx
-│   │   ├── Login.tsx
-│   │   ├── Register.tsx
-│   │   └── Resetpassword.tsx
-│   ├── (modals)
-│   │   ├── _layout.tsx
-│   │   ├── AddPet.tsx
-│   │   ├── EditPet.tsx
-│   │   ├── Editprofile.tsx
-│   │   ├── PetDetail.tsx
-│   │   ├── PetList.tsx
-│   │   ├── PetMatch.tsx
-│   │   ├── RouteHistory.tsx
-│   │   ├── RouteHistoryList.tsx
-│   │   └── RouteHistoryPet.tsx
-│   ├── (tabs)
-│   │   ├── _layout.tsx
-│   │   ├── devices.tsx
-│   │   ├── home.tsx
-│   │   ├── maps.tsx
-│   │   ├── notification.tsx
-│   │   └── profile.tsx
 │   ├── index.tsx
 │   └── log.tsx
-├── app.json
-├── assets
-│   ├── constants
-│   │   ├── api.ts
-│   │   ├── breedData.ts
-│   │   ├── Colors.ts
-│   │   └── deviceData.ts
-│   ├── fonts
-│   │   ├── Fredoka-VariableFont.ttf
-│   │   ├── Mitr-Bold.ttf
-│   │   ├── Mitr-Light.ttf
-│   │   ├── Mitr-Medium.ttf
-│   │   ├── Mitr-Regular.ttf
-│   │   ├── Mitr-SemiBold.ttf
-│   │   └── SpaceMono-Regular.ttf
-│   ├── images
-│   │   ├── 01.png
-│   │   ├── adaptive-icon.png
-│   │   ├── clock.png
-│   │   ├── destination.png
-│   │   ├── favicon.png
-│   │   ├── flag.png
-│   │   ├── homecover.jpg
-│   │   ├── icon.png
-│   │   ├── location.png
-│   │   ├── LogoApp.png
-│   │   ├── partial-react-logo.png
-│   │   ├── petcover.jpg
-│   │   ├── react-logo.png
-│   │   ├── react-logo@2x.png
-│   │   ├── react-logo@3x.png
-│   │   ├── splash-icon.png
-│   │   ├── warning.png
-│   │   └── way.png
-│   └── styles
-│       ├── addPet.styles.ts
-│       ├── devices.styles.ts
-│       ├── editPet.styles.ts
-│       ├── editProfile.styles.ts
-│       ├── home.styles.ts
-│       ├── index.styles.ts
-│       ├── login.styles.ts
-│       ├── maps.styles.ts
-│       ├── notification.styles.ts
-│       ├── petDetail.styles.ts
-│       ├── petList.styles.ts
-│       ├── petMatch.styles.ts
-│       ├── profile.styles.ts
-│       ├── register.styles.ts
-│       ├── resetPassword.styles.ts
-│       ├── RouteHistory.styles.ts
-│       ├── RouteHistoryList.styles.ts
-│       └── RouteHistoryPet.styles.ts
-├── babel.config.js
-├── backend_tb
-│   ├── package-lock.json
+├── assets/
+│   ├── constants/              # Static constants and config values
+│   ├── images/                 # App images and icons
+│   ├── fonts/                  # Custom fonts
+│   └── styles/                 # Screen-specific styles
+├── backend_tb/                 # Node.js backend for ThingsBoard integration
 │   ├── package.json
 │   └── server.js
-├── cloud
-│   └── uploadToCloudinary.tsx
-├── components
-│   ├── ExternalLink.tsx
-│   ├── ParallaxScrollView.tsx
-│   ├── ProfileHeader.tsx
-│   ├── ThemedView.tsx
-│   └── ui
-│       ├── IconSymbol.ios.tsx
-│       ├── IconSymbol.tsx
-│       ├── TabBarBackground.ios.tsx
-│       └── TabBarBackground.tsx
-├── eas.json
-├── eslint.config.js
-├── expo-env.d.ts
-├── firebase
-│   └── firebase.js
-├── firebase.json
-├── functions
+├── cloud/
+│   └── uploadToCloudinary.tsx  # Cloudinary upload utility
+├── components/                 # Reusable UI components
+│   ├── ui/
+│   └── ProfileHeader.tsx
+├── firebase/
+│   └── firebase.js             # Firebase configuration
+├── functions/                  # Firebase Cloud Functions
 │   ├── index.js
-│   ├── package-lock.json
 │   └── package.json
-├── hooks
-│   ├── useColorScheme.ts
-│   ├── useColorScheme.web.ts
-│   ├── useNotificationBadge.ts
-│   └── useThemeColor.ts
-├── ios
-│   ├── appiotpet
-│   │   ├── AppDelegate.swift
-│   │   ├── appiotpet-Bridging-Header.h
-│   │   ├── appiotpet.entitlements
-│   │   ├── Images.xcassets
-│   │   ├── Info.plist
-│   │   ├── PrivacyInfo.xcprivacy
-│   │   ├── SplashScreen.storyboard
-│   │   └── Supporting
-│   ├── appiotpet.xcodeproj
-│   │   ├── project.pbxproj
-│   │   └── xcshareddata
-│   ├── appiotpet.xcworkspace
-│   │   ├── contents.xcworkspacedata
-│   │   └── xcuserdata
-│   ├── Podfile
-│   ├── Podfile.lock
-│   ├── Podfile.properties.json
-│   ├── TrackyPeT
-│   │   ├── Images.xcassets
-│   │   └── Supporting
-│   └── TrackyPeT.xcodeproj
-│       ├── project.xcworkspace
-│       └── xcshareddata
-├── package-lock.json
+├── hooks/                      # Custom React hooks
+├── ios/                        # Native iOS project files
+├── utils/                      # Utility functions and notification services
 ├── package.json
-├── README.md
-├── tsconfig.json
-└── utils
-    ├── alertService.ts
-    └── pushNotifications.ts
-```
+├── app.json
+├── eas.json
+└── README.md

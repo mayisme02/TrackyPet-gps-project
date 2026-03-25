@@ -8,4 +8,9 @@ Tracky PeT for mobile is a cross-platform application built in [React Native](ht
 Follow these instructions to build and run the project
 
 ### Prerequisites
-- React Native "
+- React Native `0.84`
+- TypeScript `6.0.2`
+
+> Tip: To ensure compatibility, use Node Version Manager (nvm) to manage Node.js versions and maintain a consistent React Native development environment.
+
+### Setup React Native

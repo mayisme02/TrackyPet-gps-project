@@ -14,3 +14,9 @@ Follow these instructions to build and run the project
 > Tip: To ensure compatibility, use Node Version Manager (nvm) to manage Node.js versions and maintain a consistent React Native development environment.
 
 ### Setup React Native
+
+A detailed guide for multiple platforms setup can be found [in the React Native installation guide](https://reactnative.dev/docs/environment-setup)
+
+### Setup Project
+
+- Clone this repository using `git clone `.

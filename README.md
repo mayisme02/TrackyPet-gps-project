@@ -33,8 +33,11 @@ A detailed guide for multiple platforms setup can be found [in the React Native 
    npx expo start
 
 3. Run the application
+
 Scan the QR code using Expo Go on your mobile device (iOS/Android) Or press the following keys in the terminal
+
 - i → Open iOS simulator
 - a → Open Android emulator
 - w → Open in web browser
+  
 Make sure your mobile device and computer are connected to the same network.

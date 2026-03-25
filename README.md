@@ -113,4 +113,11 @@ TrackyPet-gps-project/
 ### 📊 Activity Analytics
 - View total distance traveled by the pet  
 - Track duration of movement  
-- Monitor number of times the pet exits the safe zone  
+- Monitor number of times the pet exits the safe zone
+
+## Screenshots
+
+<p>
+   <img width="151" height="325" alt="image" src="https://github.com/user-attachments/assets/700daeba-dedb-4a49-8bd0-0f30099e2107" />
+
+</p>

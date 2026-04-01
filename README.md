@@ -103,12 +103,12 @@ The system integrates an IoT-based tracking device to collect real-time GPS data
 - View and update user profile information
   
 <p>
-   <img width="173" height="371" alt="image" src="https://github.com/user-attachments/assets/700daeba-dedb-4a49-8bd0-0f30099e2107" />
-   <img width="173" height="371" alt="image" src="https://github.com/user-attachments/assets/d755f0c8-8462-4b21-a378-e7b6fb005806" />
-   <img width="173" height="371" alt="image" src="https://github.com/user-attachments/assets/646245b1-0800-4344-91e0-27ca337117bf" />
-   <img width="173" height="371" alt="image" src="https://github.com/user-attachments/assets/5d383313-e62d-4955-9142-0c20a461c955" />
-   <img width="173" height="371" alt="image" src="https://github.com/user-attachments/assets/eaf6a7dc-e33e-4a63-8845-8fa0425df6fc" />
-   <img width="173" height="371" alt="image" src="https://github.com/user-attachments/assets/dddf3ade-dfcb-4523-8758-ae2b4c7212a6" />
+   <img width="151" height="325" alt="image" src="https://github.com/user-attachments/assets/700daeba-dedb-4a49-8bd0-0f30099e2107" />
+   <img width="151" height="325" alt="image" src="https://github.com/user-attachments/assets/d755f0c8-8462-4b21-a378-e7b6fb005806" />
+   <img width="151" height="325" alt="image" src="https://github.com/user-attachments/assets/646245b1-0800-4344-91e0-27ca337117bf" />
+   <img width="151" height="325" alt="image" src="https://github.com/user-attachments/assets/5d383313-e62d-4955-9142-0c20a461c955" />
+   <img width="151" height="325" alt="image" src="https://github.com/user-attachments/assets/eaf6a7dc-e33e-4a63-8845-8fa0425df6fc" />
+   <img width="151" height="325" alt="image" src="https://github.com/user-attachments/assets/dddf3ade-dfcb-4523-8758-ae2b4c7212a6" />
 </p>
 
 ### 🐾 Pet Management
@@ -117,12 +117,12 @@ The system integrates an IoT-based tracking device to collect real-time GPS data
 - Manage pet profiles with detailed attributes
 
 <p>
-   <img width="173" height="371" alt="image" src="https://github.com/user-attachments/assets/eee9208a-ec61-4ad9-a3dc-979325dd11ac" />
-   <img width="173" height="371" alt="image" src="https://github.com/user-attachments/assets/e3f77b30-7b60-4d9d-8579-a59b4693617c" />
-   <img width="173" height="371" alt="image" src="https://github.com/user-attachments/assets/53fba087-9471-4879-b789-fc85a7611c6d" />
-   <img width="173" height="371" alt="image" src="https://github.com/user-attachments/assets/d995ed89-beea-4aee-8797-f56e3b983575" />
-   <img width="173" height="371" alt="image" src="https://github.com/user-attachments/assets/4016e304-62d9-40db-bc4f-3592f961ca54" />
-   <img width="173" height="371" alt="image" src="https://github.com/user-attachments/assets/a7aa432f-bace-4f35-9512-179786d55127" />
+   <img width="151" height="325" alt="image" src="https://github.com/user-attachments/assets/eee9208a-ec61-4ad9-a3dc-979325dd11ac" />
+   <img width="151" height="325" alt="image" src="https://github.com/user-attachments/assets/e3f77b30-7b60-4d9d-8579-a59b4693617c" />
+   <img width="151" height="325" alt="image" src="https://github.com/user-attachments/assets/53fba087-9471-4879-b789-fc85a7611c6d" />
+   <img width="151" height="325" alt="image" src="https://github.com/user-attachments/assets/d995ed89-beea-4aee-8797-f56e3b983575" />
+   <img width="151" height="325" alt="image" src="https://github.com/user-attachments/assets/4016e304-62d9-40db-bc4f-3592f961ca54" />
+   <img width="151" height="325" alt="image" src="https://github.com/user-attachments/assets/a7aa432f-bace-4f35-9512-179786d55127" />
 
 </p>
 
@@ -205,5 +205,5 @@ The system integrates an IoT-based tracking device to collect real-time GPS data
 </br>
 
 [![Github](https://img.shields.io/badge/-Github-000?style=flat&logo=Github&logoColor=white)](https://github.com/mayisme02 )
-[![Linkedin](https://img.shields.io/badge/-LinkedIn-blue?style=flat&logo=Linkedin&logoColor=white)](www.linkedin.com/in/manitchaya-th-943ab73a9)
+[![Linkedin](https://img.shields.io/badge/-LinkedIn-blue?style=flat&logo=Linkedin&logoColor=white)](https://www.linkedin.com/in/manitchaya-th-943ab73a9/)
 [![Gmail](https://img.shields.io/badge/-Gmail-c14438?style=flat&logo=Gmail&logoColor=white)](mailto:manitchaya.tha02@gmail.com)

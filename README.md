@@ -79,6 +79,19 @@ TrackyPet-gps-project/
 ├── eas.json
 └── README.md
 ```
+## IoT Module 
+
+The system integrates an IoT-based tracking device to collect real-time GPS data and transmit it to the mobile application through cloud services. 
+
+- ESP32-based development board: [LILYGO TTGO T-A7670E with GPS](https://lilygo.cc/products/t-sim-a7670e)
+- Built-in GPS module
+- 4G LTE connectivity (SIM-based)
+- External battery power supply
+
+### Device 
+> The actual IoT device used in this project for real-time GPS tracking. 
+<p> <img width="273" height="471" src="https://github.com/user-attachments/assets/4bbe7e45-0e14-4eb2-afc4-379f1f48ccca" /> </p> 
+<p> <img width="250" height="600" src="https://github.com/user-attachments/assets/0e63a9c7-6b89-4b2f-acbe-74adc371eb68" /> </p>
 
 ## Features
 
